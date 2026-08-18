@@ -248,7 +248,7 @@ object TleParser {
      * 指数位解析），本函数选择尾数 e 使 round-trip 误差最小。
      */
     private fun formatExponentialField(value: Double): String {
-        if (value == 0.0) return " 00000 0"
+        if (value == 0.0) return " 00000+0"
         var exponent = 0
         var scaled = value * 1e5
         // 在 5 位尾数内保留最大有效数字（|m| ≥ 10000），超过则退位

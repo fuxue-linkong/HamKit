@@ -70,7 +70,7 @@ class ReminderRefreshWorker(
                 val fresh = dataSource.fetchAmateurTLEs(
                     enableAmateur = settingsStore.tleSourceAmateur,
                     enableSatnogs = settingsStore.tleSourceSatnogs,
-                    enableActive = settingsStore.tleSourceActive
+                    enableActive = true
                 )
                 cacheStore.save(fresh, Instant.now())
                 fresh

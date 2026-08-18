@@ -57,22 +57,39 @@ data class SourcedTLE(
  * 再附加 AMSAT 状态报告。返回全部业余卫星（不做 catalog 过滤），
  * 不在 SatelliteCatalog 中的卫星 modes 为空（UI 显示"未知"）。
  */
-class SatelliteDataSource {
+data class TleSourceUrls(
+    val satnogs: String,
+    val amateur: String,
+    val active: String,
+    val iss: String,
+) {
+    companion object {
+        val Cdn = TleSourceUrls(
+            satnogs = "https://tle.hamkit.click/tle/satnogs.3le",
+            amateur = "https://tle.hamkit.click/tle/amateur.3le",
+            active = "https://tle.hamkit.click/tle/active.3le",
+            iss = "https://tle.hamkit.click/tle/iss.3le",
+        )
+    }
+}
 
+class SatelliteDataSource(
+    private val sourceUrls: TleSourceUrls = TleSourceUrls.Cdn,
     // 基于共享单例派生：共享连接池/线程池，仅覆盖本服务的超时配置
-    private val client = HttpClientProvider.client.newBuilder()
+    private val client: okhttp3.OkHttpClient = HttpClientProvider.client.newBuilder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
-        .build()
-
+        .build(),
     // active 源（全量活跃卫星 CSV，gzip 后约 900KB）单独用更长读取超时，
     // 避免弱网下 30s 内未读完被静默跳过，导致卫星列表只有 ~600 颗而非 16k+。
-    private val activeClient = HttpClientProvider.client.newBuilder()
+    private val activeClient: okhttp3.OkHttpClient = HttpClientProvider.client.newBuilder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(90, TimeUnit.SECONDS)
-        .build()
-
-    private val amsatStatusApi = AmsatStatusApiService()
+        .build(),
+    private val fetchAmsatStatus: suspend () -> Map<String, String> = {
+        AmsatStatusApiService().fetchStatusSummaries()
+    },
+) {
 
     /**
      * 获取业余卫星 TLE 列表（返回数据源提供的全部业余卫星，不做 catalog 过滤）。
@@ -108,8 +125,12 @@ class SatelliteDataSource {
             if (enableAmateur) {
                 tleDeferreds += async { runCatchingCancellable { fetchCelesTrakTLEs() } }
             }
-            if (enableActive) {
-                tleDeferreds += async { runCatchingCancellable { fetchActiveTLEs() } }
+            val activeResultIndex = if (enableActive) {
+                tleDeferreds.size.also {
+                    tleDeferreds += async { runCatchingCancellable { fetchActiveTLEs() } }
+                }
+            } else {
+                null
             }
             if (!customUrl.isNullOrBlank()) {
                 tleDeferreds += async { runCatchingCancellable { fetchCustomTLEs(customUrl) } }
@@ -117,11 +138,21 @@ class SatelliteDataSource {
             // ISS/ARISS 单星源：恒定补全，失败不影响结果
             val issDeferred = async { runCatchingCancellable { fetchIssTLE() } }
             // AMSAT 状态与 TLE 源正交，始终附加状态标签
-            val amsatStatusDeferred = async { runCatchingCancellable { amsatStatusApi.fetchStatusSummaries() } }
+            val amsatStatusDeferred = async { runCatchingCancellable { fetchAmsatStatus() } }
 
             val tleResults = tleDeferreds.awaitAll()
             val issResult = issDeferred.await()
             val amsatStatusResult = amsatStatusDeferred.await()
+
+            // active 是完整卫星目录的唯一来源。若它失败或只解析出异常少的记录，
+            // 不允许用 satnogs/amateur 的约 600 条部分结果覆盖已有 16k+ 缓存。
+            activeResultIndex?.let { index ->
+                requireCompleteActiveCatalog(
+                    tleResults[index].getOrElse { throwable ->
+                        throw IOException("tle.hamkit.click 全量 active 卫星源下载失败", throwable)
+                    }
+                )
+            }
 
             // 所有启用的 TLE 源都失败时抛异常，避免返回空列表覆盖本地缓存。
             // AMSAT 状态失败不在此判定内。
@@ -199,14 +230,14 @@ class SatelliteDataSource {
      */
     private fun fetchSatnogsTLEs(): List<SourcedTLE> {
         val request = Request.Builder()
-            .url(SATNOGS_URL)
+            .url(sourceUrls.satnogs)
             .build()
 
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("SatNOGS 请求失败：${response.code}")
+                throw IOException("tle.hamkit.click satnogs 源请求失败：${response.code}")
             }
-            val body = response.body?.string() ?: throw IOException("SatNOGS 响应为空")
+            val body = response.body?.string() ?: throw IOException("tle.hamkit.click satnogs 源响应为空")
             val triples = parseThreeLineTLEs(body)
             val tles = mutableListOf<SourcedTLE>()
             for ((tle0, tle1, tle2) in triples) {
@@ -246,14 +277,14 @@ class SatelliteDataSource {
      */
     private fun fetchCelesTrakTLEs(): List<SourcedTLE> {
         val request = Request.Builder()
-            .url(CELESTRAK_URL)
+            .url(sourceUrls.amateur)
             .build()
 
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("CelesTrak 请求失败：${response.code}")
+                throw IOException("tle.hamkit.click amateur 源请求失败：${response.code}")
             }
-            val body = response.body?.string() ?: throw IOException("CelesTrak 响应为空")
+            val body = response.body?.string() ?: throw IOException("tle.hamkit.click amateur 源响应为空")
             val tles = mutableListOf<SourcedTLE>()
 
             val triples = parseThreeLineTLEs(body)
@@ -313,32 +344,46 @@ class SatelliteDataSource {
     }
 
     /**
-     * 从 CelesTrak 拉取全部活跃卫星（GROUP=active，CSV 格式）。
+     * 不允许把 16k+ active 目录降级为 satnogs/amateur 的约 672 条部分结果。
+     * 该校验必须在合并前通过，调用方才会写入本地缓存。
+     */
+    @Throws(IOException::class)
+    internal fun requireCompleteActiveCatalog(activeTles: List<SourcedTLE>) {
+        if (activeTles.size < MIN_ACTIVE_TLE_COUNT) {
+            throw IOException(
+                "tle.hamkit.click 全量 active 卫星源数据异常：仅解析出 ${activeTles.size} 条，" +
+                    "预期至少 $MIN_ACTIVE_TLE_COUNT 条"
+            )
+        }
+    }
+
+    /**
+     * 从 tle.hamkit.click 拉取全部活跃卫星（3le 文本格式，16k+ 颗）。
      *
-     * 包含所有在轨活跃卫星（含 ISS、GEO 通信星等非业余卫星），
-     * 由 [TleParser] 将 CSV 行转换为标准三行 TLE。
+     * 包含所有在轨活跃卫星（含 ISS、GEO 通信星等非业余卫星）。
      * 来源标记为 "ACTIVE"；合并时仅在 amateur/satnogs 缺失的 NORAD 号上补全。
      */
     private fun fetchActiveTLEs(): List<SourcedTLE> {
         val request = Request.Builder()
-            .url(ACTIVE_URL)
+            .url(sourceUrls.active)
             .build()
 
         activeClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("CelesTrak active 请求失败：${response.code}")
+                throw IOException("tle.hamkit.click active 源请求失败：${response.code}")
             }
-            val body = response.body?.string() ?: throw IOException("CelesTrak active 响应为空")
+            val body = response.body?.string() ?: throw IOException("tle.hamkit.click active 源响应为空")
             val tles = mutableListOf<SourcedTLE>()
-            for ((name, line1, line2) in TleParser.parseActiveCsv(body)) {
-                val noradCatId = line1.substring(2, 7).trim().toIntOrNull() ?: continue
+            for ((tle0, tle1, tle2) in parseThreeLineTLEs(body)) {
+                if (tle1.length < 7) continue
+                val noradCatId = tle1.substring(2, 7).trim().toIntOrNull() ?: continue
                 if (noradCatId <= 0) continue
                 try {
                     tles.add(
                         SourcedTLE(
-                            tle = TleElements.fromThreeLines(arrayOf(name, line1, line2)),
+                            tle = TleElements.fromThreeLines(arrayOf(tle0, tle1, tle2)),
                             source = "ACTIVE",
-                            rawLines = arrayOf(name, line1, line2)
+                            rawLines = arrayOf(tle0, tle1, tle2)
                         )
                     )
                 } catch (_: IllegalArgumentException) {
@@ -356,14 +401,14 @@ class SatelliteDataSource {
      */
     private fun fetchIssTLE(): List<SourcedTLE> {
         val request = Request.Builder()
-            .url(ISS_URL)
+            .url(sourceUrls.iss)
             .build()
 
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("ISS TLE 请求失败：${response.code}")
+                throw IOException("tle.hamkit.click ISS 源请求失败：${response.code}")
             }
-            val body = response.body?.string() ?: throw IOException("ISS TLE 响应为空")
+            val body = response.body?.string() ?: throw IOException("tle.hamkit.click ISS 源响应为空")
             val tles = mutableListOf<SourcedTLE>()
             for ((tle0, tle1, tle2) in parseThreeLineTLEs(body)) {
                 val noradCatId = tle1.substring(2, 7).trim().toIntOrNull() ?: continue
@@ -442,19 +487,8 @@ class SatelliteDataSource {
     companion object {
         private const val TAG = "SatelliteDataSource"
 
-        // TLE 源走 tle.hamkit.click CDN（S3 源站 + CloudFront 分发），
-        // 由 scripts/upload_tle_to_s3.sh 定时从 CelesTrak 拉取并上传，避免国内
-        // 直连 celestrak.org 不稳定。镜像内容与 CelesTrak 原始响应一致，
-        // 解析/合并逻辑不变；修改 S3 key 须同步 scripts/upload_tle_to_s3.sh。
-        private const val SATNOGS_URL =
-            "https://tle.hamkit.click/tle/satnogs.3le"
-        private const val CELESTRAK_URL =
-            "https://tle.hamkit.click/tle/amateur.3le"
-        // 全部活跃卫星（CSV 格式，Phase 3 新增）
-        private const val ACTIVE_URL =
-            "https://tle.hamkit.click/tle/active.csv"
-        // ISS / ARISS 单星源（Phase 3 新增）
-        private const val ISS_URL =
-            "https://tle.hamkit.click/tle/iss.3le"
+        // 当前 active.csv 有 16k+ 条。10k 是容忍目录正常波动、又能识别部分源
+        // 降级（satnogs + amateur 约 672 条）的保守下限。
+        internal const val MIN_ACTIVE_TLE_COUNT = 10_000
     }
 }

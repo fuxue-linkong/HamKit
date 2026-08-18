@@ -959,14 +959,15 @@ class MainViewModel : ViewModel() {
 
     /**
      * 拉取 TLE 并写入本地缓存，返回最新 TLE 列表。
-     * 数据源按设置页开关（amateur/satnogs/active）组合。
+     * active 是完整 16k+ 卫星目录的来源，必须始终启用；历史版本可能将其
+     * SharedPreferences 值持久化为 false，不能让旧值导致更新退回约 600 颗。
      * 缓存写入（JSON 序列化）放在 IO 调度器执行，避免阻塞主线程。
      */
     private suspend fun fetchAndCacheTLEs(): List<SourcedTLE> {
         val tles = satelliteDataSource.fetchAmateurTLEs(
             enableAmateur = settingsStore.tleSourceAmateur,
             enableSatnogs = settingsStore.tleSourceSatnogs,
-            enableActive = settingsStore.tleSourceActive
+            enableActive = true
         )
         val now = Instant.now()
         withContext(Dispatchers.IO) { satelliteCache.save(tles, now) }
