@@ -34,6 +34,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.hamkit.R
@@ -55,14 +56,25 @@ import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 /**
  * 卫星筛选内容组件（供弹窗或子页复用）。
  * 修改即时写回 [com.example.hamkit.ui.MainViewModel]。
+ *
+ * @param horizontalPadding 左右留白。Miuix 弹窗内已有 OverlayDialog 的
+ *   insideMargin(24dp)，传 0 避免叠加；独立子页没有这层内边距，沿用 12dp。
  */
 @Composable
 fun SatelliteFilterDialogContent(
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    horizontalPadding: Dp = 12.dp,
 ) {
     when (LocalUiMode.current) {
-        UiMode.Miuix -> SatelliteFilterContentMiuix(onDismiss = onDismiss)
-        UiMode.Material -> SatelliteFilterContentMaterial(onDismiss = onDismiss)
+        UiMode.Miuix -> SatelliteFilterContentMiuix(
+            onDismiss = onDismiss,
+            horizontalPadding = horizontalPadding
+        )
+
+        UiMode.Material -> SatelliteFilterContentMaterial(
+            onDismiss = onDismiss,
+            horizontalPadding = horizontalPadding
+        )
     }
 }
 
@@ -81,7 +93,8 @@ fun SatelliteFilterScreen() {
 
 @Composable
 private fun SatelliteFilterContentMiuix(
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    horizontalPadding: Dp,
 ) {
     val mainViewModel = LocalMainViewModel.current
     val filter by mainViewModel.satelliteFilter
@@ -101,7 +114,10 @@ private fun SatelliteFilterContentMiuix(
             .fillMaxWidth()
             .overScrollVertical()
             .scrollEndHaptic(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+            horizontal = horizontalPadding,
+            vertical = 12.dp
+        ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         overscrollEffect = null,
     ) {
@@ -206,7 +222,8 @@ private fun MiuixFilterSectionCard(title: String, content: @Composable () -> Uni
                 fontSize = 13.sp,
                 color = colorScheme.onSurfaceVariantSummary
             )
-            Spacer(Modifier.height(4.dp))
+            // 分组标题与首行之间留 8dp，避免读起来挤在一起
+            Spacer(Modifier.height(8.dp))
             content()
         }
     }
@@ -218,7 +235,7 @@ private fun MiuixFilterSelectableRow(label: String, selected: Boolean, onClick: 
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(vertical = 8.dp),
+            .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
@@ -253,7 +270,7 @@ private fun MiuixFilterSwitchRow(label: String, checked: Boolean, onClick: () ->
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(vertical = 8.dp),
+            .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
@@ -286,7 +303,8 @@ private fun MiuixFilterSwitchRow(label: String, checked: Boolean, onClick: () ->
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SatelliteFilterContentMaterial(
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    horizontalPadding: Dp,
 ) {
     val mainViewModel = LocalMainViewModel.current
     val filter by mainViewModel.satelliteFilter
@@ -304,7 +322,10 @@ private fun SatelliteFilterContentMaterial(
     LazyColumn(
         modifier = Modifier
             .fillMaxWidth(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+            horizontal = horizontalPadding,
+            vertical = 12.dp
+        ),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         // 顶部重置行：有筛选条件时显示
@@ -405,7 +426,8 @@ private fun MaterialFilterSectionCard(title: String, content: @Composable () -> 
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Spacer(Modifier.height(4.dp))
+            // 与 Miuix 皮肤保持一致：标题与首行之间 8dp
+            Spacer(Modifier.height(8.dp))
             content()
         }
     }
