@@ -43,7 +43,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.hamkit.R
@@ -92,17 +91,19 @@ fun SatelliteCategoryManagerDialogMiuix(
     var editingName by remember { mutableStateOf("") }
     var pendingDelete by remember { mutableStateOf<SatelliteCategory?>(null) }
 
+    // 不覆盖 insideMargin：Miuix 默认 24dp 会同时作用于标题与内容，
+    // 置 0 会让「管理分类」标题贴住弹窗顶边（官方默认即 24dp）
     OverlayDialog(
         show = show,
         title = stringResource(R.string.satellite_category_manage),
         onDismissRequest = onDismissRequest,
-        insideMargin = DpSize(0.dp, 0.dp),
         content = {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 24.dp, vertical = 8.dp),
+                    // 水平留白由 insideMargin 统一提供，这里只补内容纵向间距
+                    .padding(vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 CategoryCreationRow(
@@ -200,7 +201,6 @@ private fun MiuixConfirmDialog(
         show = show,
         title = title,
         onDismissRequest = onDismiss,
-        insideMargin = DpSize(24.dp, 24.dp),
         content = {
             Column(modifier = Modifier.fillMaxWidth()) {
                 MiuixText(
@@ -270,13 +270,12 @@ fun SatelliteCategoryPickerDialogMiuix(
         show = show,
         title = stringResource(R.string.satellite_category_picker_title, satelliteName),
         onDismissRequest = onDismissRequest,
-        insideMargin = DpSize(0.dp, 0.dp),
         content = {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 24.dp, vertical = 8.dp),
+                    .padding(vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 MiuixSwitchRow(
@@ -405,11 +404,15 @@ private fun MiuixCategoryRow(
                 }
             )
             .clickable(onClick = onToggleFilter)
-            .padding(horizontal = 8.dp, vertical = 10.dp),
+            .padding(horizontal = 8.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Column(modifier = Modifier.weight(1f)) {
+        // 名称与数量之间保留 2dp，否则两行文字会贴在一起
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
             MiuixText(text = category.name, fontSize = 15.sp, color = colorScheme.onSurface)
             MiuixText(
                 text = stringResource(R.string.satellite_category_satellite_count, count),
@@ -453,7 +456,7 @@ private fun MiuixCheckRow(
             // heightIn + toggleable：保证 48dp 最小触控区，并向无障碍服务暴露勾选语义
             .heightIn(min = 48.dp)
             .toggleable(value = checked, role = Role.Checkbox, onValueChange = { onClick() })
-            .padding(vertical = 8.dp),
+            .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
@@ -492,11 +495,14 @@ private fun MiuixSwitchRow(
             .fillMaxWidth()
             .heightIn(min = 48.dp)
             .toggleable(value = checked, role = Role.Switch, onValueChange = { onClick() })
-            .padding(vertical = 8.dp),
+            .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Column(modifier = Modifier.weight(1f)) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
             MiuixText(text = label, fontSize = 14.sp, color = colorScheme.onSurface)
             MiuixText(text = description, fontSize = 11.sp, color = colorScheme.onSurfaceVariantSummary)
         }
@@ -629,7 +635,10 @@ fun SatelliteCategoryManagerDialogMaterial(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
                                 Text(
                                     text = category.name,
                                     style = MaterialTheme.typography.bodyLarge,
@@ -733,7 +742,10 @@ fun SatelliteCategoryPickerDialogMaterial(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
                         Text(
                             text = stringResource(R.string.satellite_reminder_toggle),
                             style = MaterialTheme.typography.bodyLarge
