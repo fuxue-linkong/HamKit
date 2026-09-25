@@ -3,7 +3,15 @@ name: CI Build APK
 # ─────────────────────────────────────────────────────────────
 # 持续集成工作流（对应发布流程第 1-2 步）
 #   1. push 触发单元测试
-#   2. 内部测试 → 构建 Debug APK 作为 artifact 供开发团队验证
+#   2. 内部测试 → 构建 **Release（正式版）APK** 作为 artifact 供验证
+#
+# 正式版构建方式（与本地发版一致，勿改回 assembleDebug）：
+#   - 构建类型 release：开启 R8 混淆 + 资源收缩
+#   - 签名密钥从 GitHub Secrets 注入（KEYSTORE_BASE64 / KEYSTORE_PASSWORD /
+#     KEY_ALIAS / KEY_PASSWORD）；未配置时 app/build.gradle.kts 自动回退到
+#     debug keystore，保证 CI 不因缺少密钥而失败（构建类型仍为 release）
+#   - 注入真签名时用 apksigner 校验 v1+v2+v3，并输出 SHA-1/SHA-256 指纹
+#   - 随产物上传 R8 mapping.txt，供线上崩溃栈回溯
 #
 # 行业规范：
 #   - 最小权限（workflow / job 级别 contents: read）
@@ -39,13 +47,17 @@ env:
 jobs:
   # 合并 test + build 为单 job：复用 Gradle 缓存和编译产物，节省 2-3 分钟
   test-and-build:
-    name: Test & Build APK
+    name: Test & Build Release APK
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # release 需跑 R8 + 资源收缩，比 debug 慢，预留更长时间
+    timeout-minutes: 40
     # bot 提交跳过构建，避免循环触发
     if: ${{ github.event_name != 'push' || github.event.head_commit.author.name != 'github-actions[bot]' }}
     permissions:
       contents: read
+    env:
+      # 映射到 job 级：step 的 if 条件里无法可靠地直接读取 secrets
+      KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -97,13 +109,65 @@ jobs:
           retention-days: 30
           if-no-files-found: warn
 
-      # 构建 Debug APK：复用 test 阶段已编译的 .class，加速 assembleDebug
-      - name: Build Debug APK
+      # ── 正式版签名：解码 release keystore（未配置 secrets 时跳过）──
+      # 与发布流程同一套 secrets，保证 CI 产物与本地发版签名一致
+      - name: Decode release keystore
+        id: keystore
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::notice title=未注入签名密钥::KEYSTORE_BASE64 为空，本次回退到 debug keystore 签名（构建类型仍为 release）"
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          mkdir -p signing
+          echo "$KEYSTORE_BASE64" | tr -d '\n\r ' | base64 -d > signing/release.keystore
+          if [ ! -s signing/release.keystore ]; then
+            echo "::error::解码后的 keystore 为空，请检查 KEYSTORE_BASE64"
+            exit 1
+          fi
+          echo "Decoded keystore size: $(stat -c%s signing/release.keystore) bytes"
+          if ! keytool -list -keystore signing/release.keystore -alias "$KEY_ALIAS" -storepass "$KEYSTORE_PASSWORD" > /dev/null 2>&1; then
+            echo "::error::keystore 校验失败，请检查 KEYSTORE_BASE64 / KEY_ALIAS / KEYSTORE_PASSWORD"
+            exit 1
+          fi
+          echo "Keystore verified successfully."
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
+      # 无签名密钥时的回退：显式生成 debug keystore
+      # （自定义 signingConfig 指向不存在的文件时 AGP 不会自动补建）
+      - name: Ensure fallback debug keystore
+        if: steps.keystore.outputs.signed != 'true'
+        run: |
+          DEBUG_KEYSTORE="$HOME/.android/debug.keystore"
+          if [ -f "$DEBUG_KEYSTORE" ]; then
+            echo "debug keystore 已存在：$DEBUG_KEYSTORE"
+            exit 0
+          fi
+          mkdir -p "$HOME/.android"
+          keytool -genkeypair -v \
+            -keystore "$DEBUG_KEYSTORE" \
+            -storepass android -keypass android \
+            -alias androiddebugkey \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+          echo "已生成回退用 debug keystore：$DEBUG_KEYSTORE"
+
+      # 构建 Release APK：与本地发版同一套流程（R8 混淆 + 资源收缩）
+      - name: Build Release APK
         id: build
         if: success()
+        env:
+          # 注入真签名；文件不存在时 app/build.gradle.kts 自动回退 debug keystore
+          KEYSTORE_PATH: ${{ github.workspace }}/signing/release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           set -o pipefail
-          gradle assembleDebug \
+          gradle assembleRelease \
             --console=plain \
             --stacktrace \
             --no-daemon 2>&1 | tee build.log
@@ -117,14 +181,90 @@ jobs:
           echo "=== Full outputs/apk tree ==="
           find app/build/outputs/apk -type f 2>/dev/null || echo "(no outputs/apk directory)"
 
-      - name: Upload Debug APK
+      # 签名验证：仅注入真签名时执行（debug keystore 回退时无对比意义）
+      - name: Verify APK signature
+        id: signature
+        if: always() && steps.keystore.outputs.signed == 'true' && steps.build.outcome == 'success'
+        run: |
+          # lsplugin.apksign 可能改变输出路径，用 find 动态定位
+          APK_PATH=$(find app/build/outputs/apk -name "*.apk" -type f | head -1)
+          if [ -z "$APK_PATH" ] || [ ! -f "$APK_PATH" ]; then
+            echo "::error::未在 app/build/outputs/apk 找到 Release APK"
+            find app/build/outputs -name "*.apk" -type f || true
+            exit 1
+          fi
+          echo "Found APK: $APK_PATH"
+
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner 2>/dev/null | sort -V | tail -1)
+          if [ -z "$APKSIGNER" ]; then
+            echo "::error::未找到 apksigner（$ANDROID_HOME/build-tools）"
+            exit 1
+          fi
+          echo "Using apksigner: $APKSIGNER"
+
+          # 验证 APK 签名有效性（v1+v2+v3 方案）
+          echo "=== Verify APK signature ==="
+          "$APKSIGNER" verify --verbose --print-certs "$APK_PATH"
+
+          # 提取签名指纹用于跨版本一致性对比
+          echo ""
+          echo "=== Signature fingerprint ==="
+          FINGERPRINT_SHA1=$(keytool -printcert -jarfile "$APK_PATH" | grep -E "SHA-?1:" | head -1 | awk '{print $NF}')
+          FINGERPRINT_SHA256=$(keytool -printcert -jarfile "$APK_PATH" | grep -E "SHA-?256:" | head -1 | awk '{print $NF}')
+          echo "SHA-1:   $FINGERPRINT_SHA1"
+          echo "SHA-256: $FINGERPRINT_SHA256"
+          if [ -z "$FINGERPRINT_SHA1" ] || [ -z "$FINGERPRINT_SHA256" ]; then
+            echo "::warning::指纹提取失败，输出 keytool 原始结果以便排查"
+            keytool -printcert -jarfile "$APK_PATH" || true
+          fi
+          echo "fingerprint_sha1=$FINGERPRINT_SHA1" >> "$GITHUB_OUTPUT"
+          echo "fingerprint_sha256=$FINGERPRINT_SHA256" >> "$GITHUB_OUTPUT"
+
+          # 指纹报告随 artifact 保留，便于与后续正式版对比
+          mkdir -p signing-report
+          cat > signing-report/signature-fingerprint.txt <<EOF
+          HamKit Release APK Signature Fingerprint
+          ========================================
+          Commit:  ${{ github.sha }}
+          Branch:  ${{ github.ref_name }}
+          Run:     ${{ github.run_id }}
+          Date:    $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+
+          SHA-1:   $FINGERPRINT_SHA1
+          SHA-256: $FINGERPRINT_SHA256
+
+          Notes:
+          - 同一 keystore 下，各次正式版构建的指纹应保持一致。
+          - 指纹变化说明签名密钥被替换，用户必须先卸载旧版本再安装。
+          EOF
+
+      - name: Upload Release APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug-${{ github.run_id }}
+          name: app-release-${{ github.run_id }}
           # 使用通配符：lsplugin.apksign 等插件可能把 APK 输出到非默认路径或改名
           path: app/build/outputs/apk/**/*.apk
           retention-days: 14
+          if-no-files-found: error
+
+      # R8 映射文件：线上崩溃栈回溯必需，与正式版产物一并保留
+      - name: Upload ProGuard mapping
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mapping-release-${{ github.run_id }}
+          path: app/build/outputs/mapping/release/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload signature report
+        if: steps.keystore.outputs.signed == 'true' && steps.build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: signature-report-${{ github.run_id }}
+          path: signing-report/signature-fingerprint.txt
+          retention-days: 90
           if-no-files-found: error
 
       - name: Upload build log
@@ -150,14 +290,25 @@ jobs:
       - name: Publish CI status report
         if: always()
         run: |
+          if [ "${{ steps.keystore.outputs.signed }}" = "true" ]; then
+            SIGN_DESC="release keystore（正式签名）"
+          else
+            SIGN_DESC="debug keystore（未注入 secrets 的回退签名）"
+          fi
+
           echo "## CI Build Status" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| Item | Value |" >> "$GITHUB_STEP_SUMMARY"
           echo "|------|-------|" >> "$GITHUB_STEP_SUMMARY"
           echo "| Branch | \`${{ github.ref_name }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Commit | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Build type | release（R8 混淆 + 资源收缩） |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Signing | $SIGN_DESC |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Test | ${{ steps.test.outcome }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Build | ${{ steps.build.outcome }} |" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ steps.keystore.outputs.signed }}" = "true" ]; then
+            echo "| SHA-256 | \`${{ steps.signature.outputs.fingerprint_sha256 }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          fi
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
           # 测试结果摘要（如果 test-output.log 存在）
@@ -177,7 +328,7 @@ jobs:
           fi
 
           if [ "${{ steps.build.outcome }}" = "success" ]; then
-            echo "✅ CI build succeeded, Debug APK generated as artifact." >> "$GITHUB_STEP_SUMMARY"
+            echo "✅ CI build succeeded, Release APK generated as artifact." >> "$GITHUB_STEP_SUMMARY"
           elif [ "${{ steps.test.outcome }}" = "failure" ]; then
             echo "❌ Unit tests failed, build skipped." >> "$GITHUB_STEP_SUMMARY"
           else
@@ -200,7 +351,7 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| Job | Status |" >> "$GITHUB_STEP_SUMMARY"
           echo "|------|------|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Test & Build | ${{ needs.test-and-build.result }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Test & Build Release | ${{ needs.test-and-build.result }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
           if [ "${{ needs.test-and-build.result }}" = "success" ] || [ "${{ needs.test-and-build.result }}" = "skipped" ]; then
