@@ -143,7 +143,7 @@ fun SettingPager(
  * 以字节数为上限读取 SAF 文件内容。
  *
  * 不能在解析层之前先 `readBytes()` 再校验长度：那样超大文件已经被完整读进内存，
- * 仍可能 OOM 或被系统杀死（SAF 用 `*/*` 打开，用户可能误选任意大文件）。
+ * 仍可能 OOM 或被系统杀死（选择文件时用的是通配 MIME 类型，用户可能误选任意大文件）。
  * 这里边读边计数，超限立即失败。UTF-8 下字节数 ≥ 字符数，故以字符上限作字节上限更严格。
  */
 private fun readBoundedText(context: Context, uri: Uri, maxBytes: Int): String {
