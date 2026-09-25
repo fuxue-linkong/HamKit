@@ -142,7 +142,6 @@
     <string name="filter_only_in_pass" translatable="false">仅在境卫星</string>
     <string name="filter_only_upcoming" translatable="false">仅即将入境</string>
     <string name="filter_only_amsat" translatable="false">仅 AMSAT 收录</string>
-    <string name="filter_only_favorites" translatable="false">仅已关注</string>
     <string name="filter_more" translatable="false">更多</string>
     <string name="filter_reset" translatable="false">重置筛选</string>
     <string name="filter_title" translatable="false">筛选卫星</string>
@@ -152,9 +151,40 @@
     <string name="filter_mode_unknown" translatable="false">未知</string>
     <string name="filter_apply" translatable="false">应用筛选</string>
     <string name="satellite_management" translatable="false">卫星详情</string>
-    <string name="satellite_management_desc" translatable="false">点击卫星可添加或取消特别关注。关注的卫星在即将过境和在境时会以高亮显示。</string>
-    <string name="favorites_count" translatable="false">已关注</string>
-    <string name="favorited" translatable="false">已关注</string>
+    <string name="satellite_management_desc" translatable="false">点击卫星可归入自定义分类。已归入分类的卫星在列表中高亮显示，可用「分类」按钮管理与筛选。</string>
+    <string name="reminder_count" translatable="false">提醒数量</string>
+
+    <!-- 卫星自定义分类 -->
+    <string name="satellite_category_title" translatable="false">分类</string>
+    <string name="satellite_category_manage" translatable="false">管理分类</string>
+    <string name="satellite_category_count" translatable="false">分类数</string>
+    <string name="satellite_categorized_count" translatable="false">已分类</string>
+    <string name="satellite_category_empty" translatable="false">暂无分类，先新建一个吧</string>
+    <string name="satellite_category_new" translatable="false">新建</string>
+    <string name="satellite_category_name_hint" translatable="false">分类名称</string>
+    <string name="satellite_category_rename" translatable="false">重命名</string>
+    <string name="satellite_category_delete" translatable="false">删除分类</string>
+    <string name="satellite_category_delete_confirm" translatable="false">删除分类「%1$s」？该分类下 %2$d 颗卫星的归属将被移除（不影响过境提醒）。</string>
+    <string name="satellite_category_satellite_count" translatable="false">%1$d 颗卫星</string>
+    <string name="satellite_category_picker_title" translatable="false">%1$s · 分类与提醒</string>
+    <string name="satellite_reminder_toggle" translatable="false">过境提醒</string>
+    <string name="satellite_reminder_on" translatable="false">已开启，过境前会通知</string>
+    <string name="satellite_reminder_off" translatable="false">未开启</string>
+    <string name="satellite_reminder_feedback_on" translatable="false">已开启 %1$s 的过境提醒</string>
+    <string name="satellite_reminder_feedback_pending" translatable="false">已开启过境提醒，将在下次过境预测后生效</string>
+    <string name="satellite_reminder_feedback_off" translatable="false">已关闭过境提醒</string>
+    <string name="filter_category_section" translatable="false">按分类</string>
+
+    <!-- 分类配置导入 / 导出 -->
+    <string name="settings_export_categories" translatable="false">导出分类配置</string>
+    <string name="settings_export_categories_summary" translatable="false">导出为 JSON 文件，可分享给其他 HamKit 用户</string>
+    <string name="settings_export_categories_success" translatable="false">分类配置已导出</string>
+    <string name="settings_export_categories_failed" translatable="false">导出失败：%1$s</string>
+    <string name="settings_import_categories" translatable="false">导入分类配置</string>
+    <string name="settings_import_categories_summary" translatable="false">从 JSON 文件导入，与现有分类合并</string>
+    <string name="settings_import_categories_success" translatable="false">导入完成：新增 %1$d 个分类、更新 %2$d 个分类、新增 %3$d 条卫星归属、开启 %4$d 个过境提醒</string>
+    <string name="settings_import_categories_no_change" translatable="false">导入完成：与现有分类配置一致，无变化</string>
+    <string name="settings_import_categories_failed" translatable="false">导入失败：%1$s</string>
     <string name="mode_unknown" translatable="false">未知</string>
     <string name="max_elevation" translatable="false">最大仰角</string>
     <string name="aos_time" translatable="false">入境</string>
@@ -193,7 +223,7 @@
 
     <!-- 日程提醒设置 -->
     <string name="reminder_section_title" translatable="false">日程提醒</string>
-    <string name="reminder_section_desc" translatable="false">收藏卫星后自动创建过境提醒，在 AOS 前推送通知</string>
+    <string name="reminder_section_desc" translatable="false">在卫星管理页为卫星开启「过境提醒」后，将在 AOS 前推送通知</string>
     <string name="reminder_master_switch" translatable="false">启用日程提醒</string>
     <string name="reminder_lead_time" translatable="false">提前提醒时间</string>
     <string name="reminder_lead_minutes_format" translatable="false">%1$d 分钟</string>
@@ -204,7 +234,7 @@
     <string name="reminder_vibration" translatable="false">通知振动</string>
     <string name="reminder_view_list" translatable="false">查看提醒列表</string>
     <string name="reminder_list_title" translatable="false">提醒列表</string>
-    <string name="reminder_list_empty" translatable="false">暂无提醒。收藏卫星后将自动添加过境提醒。</string>
+    <string name="reminder_list_empty" translatable="false">暂无提醒。在卫星管理页为卫星开启「过境提醒」后将自动添加。</string>
     <string name="reminder_item_off" translatable="false">已关闭</string>
     <string name="reminder_item_on" translatable="false">已启用</string>
     <string name="reminder_notification_title" translatable="false">%1$s 即将过境</string>

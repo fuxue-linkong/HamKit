@@ -2,7 +2,6 @@ package com.example.hamkit.ui.screen.home
 
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
-import com.example.hamkit.data.satellite.SatelliteInfo
 import com.example.hamkit.data.weather.WeatherResult
 import com.example.hamkit.ui.LocationUiState
 import com.example.hamkit.ui.SatelliteUiState
@@ -28,8 +27,6 @@ data class HomeBusinessState(
     val weatherLoading: Boolean,
     val weatherError: String?,
     val dailyQuote: String,
-    val favorites: Set<Int>,
-    val nextSatellite: SatelliteInfo? = null,
     val timeCardBackgroundFile: File? = null,
     val timeCardMaskColor: Color = Color(0xFF3A5F7F.toInt()),
 )
@@ -40,7 +37,6 @@ data class HomeActions(
     val onOpenUrl: (String) -> Unit,
     val onRefreshLocation: () -> Unit = {},
     val onRefreshWeather: () -> Unit = {},
-    val onToggleFavorite: (Int) -> Unit = {},
     val onSatelliteManagementClick: () -> Unit = {},
     val onCWPracticeClick: () -> Unit = {},
     val onLocationDetailClick: () -> Unit = {},

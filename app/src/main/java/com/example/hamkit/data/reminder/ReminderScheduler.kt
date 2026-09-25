@@ -120,7 +120,8 @@ class ReminderScheduler(private val context: Context) {
         }
         // 启动每日刷新 Worker
         scheduleDailyRefresh()
-        // 取消已不在 items 中的提醒（如取消收藏）由调用方在 toggleFavorite 中处理
+        // 取消已不在 items 中的提醒（如关闭某颗卫星的提醒开关）
+        // 由调用方在 MainViewModel.setSatelliteReminderEnabled 中处理
     }
 
     /**

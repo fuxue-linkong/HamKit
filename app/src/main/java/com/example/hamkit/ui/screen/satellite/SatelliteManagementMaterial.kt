@@ -1,4 +1,4 @@
-﻿package com.example.hamkit.ui.screen.satellite
+package com.example.hamkit.ui.screen.satellite
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -29,11 +29,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FilterList
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.StarBorder
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -72,6 +73,7 @@ import androidx.lifecycle.compose.dropUnlessResumed
 import com.example.hamkit.R
 import com.example.hamkit.data.satellite.RadioInfo
 import com.example.hamkit.data.satellite.SatelliteCatalog
+import com.example.hamkit.data.satellite.SatelliteCategoryConfig
 import com.example.hamkit.data.satellite.SatelliteInfo
 import com.example.hamkit.data.satellite.SatelliteListItem
 import com.example.hamkit.data.satellite.SatelliteStatusSegmenter
@@ -104,9 +106,11 @@ fun SatelliteManagementMaterial() {
     val mainViewModel = LocalMainViewModel.current
     val locationState by mainViewModel.locationState
     val satelliteState by mainViewModel.satelliteState
-    val favorites by mainViewModel.favoriteSatellites
+    val categoryConfig by mainViewModel.satelliteCategoryConfig
     val filter by mainViewModel.satelliteFilter
     var showFilterDialog by rememberSaveable { mutableStateOf(false) }
+    var showCategoryManager by rememberSaveable { mutableStateOf(false) }
+    var categoryPickerTarget by remember { mutableStateOf<Int?>(null) }
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
 
@@ -132,9 +136,8 @@ fun SatelliteManagementMaterial() {
             satelliteState = satelliteState,
             satelliteItems = mainViewModel.satelliteItems,
             filter = filter,
-            favorites = favorites,
+            categoryConfig = categoryConfig,
             statusTracker = mainViewModel.statusTracker,
-            onToggleFavorite = mainViewModel::toggleFavorite,
             onSatelliteClick = { catalogNumber ->
                 navigator.push(Route.SatelliteDetail(catalogNumber))
             },
@@ -142,6 +145,9 @@ fun SatelliteManagementMaterial() {
                 mainViewModel.updateSatelliteFilter(filter.copy(nameQuery = query))
             },
             onShowFilterDialog = { showFilterDialog = true },
+            onShowCategoryManager = { showCategoryManager = true },
+            onShowCategoryPicker = { catalogNumber -> categoryPickerTarget = catalogNumber },
+            onToggleReminder = mainViewModel::toggleSatelliteReminder,
             onGetLocation = mainViewModel::refreshLocationOnly,
             onUpdateSource = mainViewModel::refreshSatelliteSourceOnly,
             contentPadding = innerPadding,
@@ -158,6 +164,21 @@ fun SatelliteManagementMaterial() {
                 SatelliteFilterDialogContent(onDismiss = { showFilterDialog = false })
             }
         }
+
+        if (showCategoryManager) {
+            SatelliteCategoryManagerDialogMaterial(
+                show = showCategoryManager,
+                onDismissRequest = { showCategoryManager = false }
+            )
+        }
+
+        categoryPickerTarget?.let { target ->
+            SatelliteCategoryPickerDialogMaterial(
+                show = true,
+                catalogNumber = target,
+                onDismissRequest = { categoryPickerTarget = null }
+            )
+        }
     }
 }
 
@@ -167,12 +188,14 @@ private fun SatelliteManagementContentMaterial(
     satelliteState: SatelliteUiState,
     satelliteItems: List<SatelliteListItem>,
     filter: SatelliteFilter,
-    favorites: Set<Int>,
+    categoryConfig: SatelliteCategoryConfig,
     statusTracker: SatelliteStatusTracker,
-    onToggleFavorite: (Int) -> Unit,
     onSatelliteClick: (Int) -> Unit,
     onNameQueryChange: (String) -> Unit,
     onShowFilterDialog: () -> Unit,
+    onShowCategoryManager: () -> Unit,
+    onShowCategoryPicker: (Int) -> Unit,
+    onToggleReminder: (Int) -> Unit,
     onGetLocation: () -> Unit,
     onUpdateSource: () -> Unit,
     contentPadding: PaddingValues,
@@ -181,11 +204,20 @@ private fun SatelliteManagementContentMaterial(
     @Suppress("UnusedVariable")
     val statusEntries = statusTracker.statusMap.value
 
-    val filteredSatellites = remember(satelliteItems, filter, favorites) {
-        satelliteItems.applyFilterToItems(filter, favorites)
+    // 分类 id → 名称，用于列表项展示已归入的分类
+    val categoryNames = remember(categoryConfig) {
+        categoryConfig.categories.associate { it.id to it.name }
+    }
+
+    val filteredSatellites = remember(satelliteItems, filter, categoryConfig) {
+        satelliteItems.applyFilterToItems(filter, categoryConfig.membership)
     }
     val totalCount = satelliteItems.size
-    val favoriteCount = satelliteItems.count { it.catalogNumber in favorites }
+    val categorizedNumbers = categoryConfig.categorizedCatalogNumbers
+    // 预计算已分类数量：列表规模可达 1.6 万，且本页存在 5 秒一次的倒计时重组
+    val categorizedCount = remember(satelliteItems, categorizedNumbers) {
+        satelliteItems.count { it.catalogNumber in categorizedNumbers }
+    }
 
     // 统一倒计时时钟
     var inPassNowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -210,10 +242,10 @@ private fun SatelliteManagementContentMaterial(
         }
     }
 
-    // 排序：收藏优先 → 在境优先 → 有活跃转发器 → AOS 升序（无过境的排最后）
-    val sortedSatellites = remember(filteredSatellites, favorites) {
+    // 排序：已分类优先 → 在境优先 → 有活跃转发器 → AOS 升序（无过境的排最后）
+    val sortedSatellites = remember(filteredSatellites, categorizedNumbers) {
         filteredSatellites.sortedWith(
-            compareByDescending<SatelliteListItem> { it.catalogNumber in favorites }
+            compareByDescending<SatelliteListItem> { it.catalogNumber in categorizedNumbers }
                 .thenByDescending { it.isCurrentlyVisible }
                 .thenByDescending { it.hasActiveTransmitter }
                 .thenBy { it.pass?.aosTime ?: Instant.MAX }
@@ -238,10 +270,12 @@ private fun SatelliteManagementContentMaterial(
                 lastSatelliteTime = satelliteState.lastSatelliteUpdateTime,
                 totalCount = totalCount,
                 filteredCount = filteredSatellites.size,
-                favoriteCount = favoriteCount,
+                categorizedCount = categorizedCount,
+                categoryCount = categoryConfig.categories.size,
                 filter = filter,
                 onNameQueryChange = onNameQueryChange,
                 onShowFilterDialog = onShowFilterDialog,
+                onShowCategoryManager = onShowCategoryManager,
                 onGetLocation = onGetLocation,
                 onUpdateSource = onUpdateSource
             )
@@ -287,11 +321,16 @@ private fun SatelliteManagementContentMaterial(
                     SatelliteItemMaterial(
                         satellite = sat,
                         effectiveStatus = effectiveStatus,
-                        isFavorite = sat.catalogNumber in favorites,
+                        assignedCategoryNames = categoryConfig
+                            .categoryIdsOf(sat.catalogNumber)
+                            .mapNotNull { categoryNames[it] }
+                            .sorted(),
+                        reminderEnabled = sat.catalogNumber in categoryConfig.reminderFlags,
                         isStatusInherited = isInherited,
                         nowMillis = if (sat.isCurrentlyVisible) inPassNowMillis else 0L,
                         statusSegments = satelliteState.segmentStatuses[sat.catalogNumber],
-                        onToggleFavorite = { onToggleFavorite(sat.catalogNumber) },
+                        onOpenCategoryPicker = { onShowCategoryPicker(sat.catalogNumber) },
+                        onToggleReminder = { onToggleReminder(sat.catalogNumber) },
                         onSatelliteClick = { onSatelliteClick(sat.catalogNumber) }
                     )
                 }
@@ -311,10 +350,12 @@ private fun SatelliteOverviewCardMaterial(
     lastSatelliteTime: Instant?,
     totalCount: Int,
     filteredCount: Int,
-    favoriteCount: Int,
+    categorizedCount: Int,
+    categoryCount: Int,
     filter: SatelliteFilter,
     onNameQueryChange: (String) -> Unit,
     onShowFilterDialog: () -> Unit,
+    onShowCategoryManager: () -> Unit,
     onGetLocation: () -> Unit,
     onUpdateSource: () -> Unit
 ) {
@@ -358,13 +399,18 @@ private fun SatelliteOverviewCardMaterial(
                     modifier = Modifier.weight(1f)
                 )
                 ManagementStatMaterial(
-                    label = stringResource(R.string.favorites_count),
-                    value = favoriteCount.toString(),
+                    label = stringResource(R.string.satellite_categorized_count),
+                    value = categorizedCount.toString(),
+                    modifier = Modifier.weight(1f)
+                )
+                ManagementStatMaterial(
+                    label = stringResource(R.string.satellite_category_count),
+                    value = categoryCount.toString(),
                     modifier = Modifier.weight(1f)
                 )
             }
 
-            // 筛选计数 + 筛选按钮
+            // 筛选 / 分类入口
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Start,
@@ -376,8 +422,15 @@ private fun SatelliteOverviewCardMaterial(
                     onClick = onShowFilterDialog
                 )
 
+                // 分类入口：紧邻筛选按钮，视觉语言一致
+                SatelliteCategoryButtonMaterial(
+                    active = filter.categoryIds.isNotEmpty(),
+                    onClick = onShowCategoryManager
+                )
+
                 // 计数文字：激活时从按钮右侧淡入，不改变按钮位置
                 androidx.compose.animation.AnimatedVisibility(
+                    modifier = Modifier.weight(1f, fill = false),
                     visible = filter.isActive && totalCount > 0,
                     enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandHorizontally(),
                     exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkHorizontally()
@@ -529,6 +582,55 @@ private fun SatelliteFilterButtonMaterial(
     }
 }
 
+// ---- 分类入口 ----
+
+/**
+ * 分类入口按钮（Material3）：与 [SatelliteFilterButtonMaterial] 视觉语言一致。
+ *
+ * @param active 当前是否按分类筛选（有选中分类时高亮）
+ */
+@Composable
+private fun SatelliteCategoryButtonMaterial(
+    active: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .border(
+                width = 1.dp,
+                color = if (active) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.outline,
+                shape = RoundedCornerShape(10.dp)
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Category,
+            contentDescription = null,
+            tint = if (active) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = stringResource(R.string.satellite_category_title),
+            style = MaterialTheme.typography.labelMedium,
+            color = if (active) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (active) {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary)
+            )
+        }
+    }
+}
+
 // ---- 卫星列表项 ----
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -536,11 +638,13 @@ private fun SatelliteFilterButtonMaterial(
 private fun SatelliteItemMaterial(
     satellite: SatelliteListItem,
     effectiveStatus: String,
-    isFavorite: Boolean,
+    assignedCategoryNames: List<String>,
+    reminderEnabled: Boolean,
     isStatusInherited: Boolean,
     nowMillis: Long,
     statusSegments: List<SegmentStatus>?,
-    onToggleFavorite: () -> Unit,
+    onOpenCategoryPicker: () -> Unit,
+    onToggleReminder: () -> Unit,
     onSatelliteClick: () -> Unit
 ) {
     // 分段时间线默认折叠，点击展开按钮展开
@@ -562,12 +666,13 @@ private fun SatelliteItemMaterial(
         }
     }
 
+    val hasCategory = assignedCategoryNames.isNotEmpty()
     val cardContainerColor = when {
-        isFavorite -> MaterialTheme.colorScheme.tertiaryContainer
+        hasCategory -> MaterialTheme.colorScheme.tertiaryContainer
         else -> MaterialTheme.colorScheme.surface
     }
     val cardContentColor = when {
-        isFavorite -> MaterialTheme.colorScheme.onTertiaryContainer
+        hasCategory -> MaterialTheme.colorScheme.onTertiaryContainer
         else -> MaterialTheme.colorScheme.onSurface
     }
 
@@ -581,7 +686,7 @@ private fun SatelliteItemMaterial(
                         color = MaterialTheme.colorScheme.primary,
                         shape = RoundedCornerShape(12.dp)
                     )
-                } else if (isFavorite) {
+                } else if (hasCategory) {
                     Modifier.border(
                         width = 1.5.dp,
                         color = MaterialTheme.colorScheme.tertiary,
@@ -602,7 +707,7 @@ private fun SatelliteItemMaterial(
                 .fillMaxWidth()
                 .padding(16.dp)
         ) {
-            // 第一行：名 + 编号 + 仰角 + 收藏 + 展开按钮（点击卡片进入详情页）
+            // 第一行：名 + 编号 + 仰角 + 分类 + 提醒 + 展开按钮（点击卡片进入详情页）
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -634,13 +739,36 @@ private fun SatelliteItemMaterial(
                             color = cardContentColor
                         )
                     }
-                    IconButton(onClick = onToggleFavorite, modifier = Modifier.size(48.dp)) {
+                    IconButton(onClick = onOpenCategoryPicker, modifier = Modifier.size(48.dp)) {
                         Icon(
-                            imageVector = if (isFavorite) Icons.Filled.Star else Icons.Filled.StarBorder,
-                            contentDescription = null,
+                            imageVector = Icons.Filled.Category,
+                            contentDescription = stringResource(R.string.satellite_category_title),
                             modifier = Modifier.size(18.dp),
-                            tint = if (isFavorite) MaterialTheme.colorScheme.tertiary
+                            tint = if (hasCategory) MaterialTheme.colorScheme.tertiary
                             else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    // 过境提醒开关：可直接切换，避免「开关只读、无法发现」的问题
+                    IconButton(onClick = onToggleReminder, modifier = Modifier.size(48.dp)) {
+                        Icon(
+                            imageVector = if (reminderEnabled) {
+                                Icons.Filled.Notifications
+                            } else {
+                                Icons.Filled.NotificationsNone
+                            },
+                            contentDescription = stringResource(
+                                if (reminderEnabled) {
+                                    R.string.satellite_reminder_on
+                                } else {
+                                    R.string.satellite_reminder_off
+                                }
+                            ),
+                            modifier = Modifier.size(18.dp),
+                            tint = if (reminderEnabled) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
                         )
                     }
                     // 转发器/时间线展开按钮（卡片点击已改为进入详情页）
@@ -664,6 +792,13 @@ private fun SatelliteItemMaterial(
             ) {
                 if (effectiveStatus.isNotEmpty()) {
                     StatusChipM(status = effectiveStatus, isStatusInherited = isStatusInherited)
+                }
+                // 已归入的分类：最多显示 3 个，其余用 +N 表示
+                if (assignedCategoryNames.isNotEmpty()) {
+                    assignedCategoryNames.take(3).forEach { name -> CategoryChipM(name = name) }
+                    if (assignedCategoryNames.size > 3) {
+                        CategoryChipM(name = "+${assignedCategoryNames.size - 3}")
+                    }
                 }
                 val modes = satellite.effectiveModes
                 if (modes.isEmpty()) {
@@ -917,6 +1052,17 @@ private fun ModeChipM(mode: String) {
         else -> MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
     }
     ChipM(text = mode, bgColor = bgColor, contentColor = contentColor)
+}
+
+/** 分类名称徽章（Material 版）：与模式徽章区分，使用 tertiary 色系。 */
+@Composable
+private fun CategoryChipM(name: String) {
+    ChipM(
+        // 已分类卡片的容器本身就是 tertiaryContainer，徽章必须换色才能看出边界
+        text = name,
+        bgColor = MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+    )
 }
 
 @Composable

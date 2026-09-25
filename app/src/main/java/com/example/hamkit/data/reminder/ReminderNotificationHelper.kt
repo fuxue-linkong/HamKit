@@ -181,6 +181,6 @@ class ReminderNotificationHelper(private val context: Context) {
         const val CHANNEL_ID = "satellite_pass_reminder"
         const val AUTO_ADD_ID = 9001
         private const val CHANNEL_NAME = "卫星过境提醒"
-        private const val CHANNEL_DESC = "在收藏卫星过境前推送提醒通知"
+        private const val CHANNEL_DESC = "在已开启过境提醒的卫星过境前推送通知"
     }
 }

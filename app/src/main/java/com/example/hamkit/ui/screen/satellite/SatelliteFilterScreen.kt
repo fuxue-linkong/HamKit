@@ -94,6 +94,8 @@ private fun SatelliteFilterContentMiuix(
         add("" to unknownModeLabel)
     }
 
+    val categoryConfig by mainViewModel.satelliteCategoryConfig
+
     LazyColumn(
         modifier = Modifier
             .fillMaxWidth()
@@ -162,11 +164,29 @@ private fun SatelliteFilterContentMiuix(
                     checked = filter.onlyAmsat,
                     onClick = { onFilterChange(filter.copy(onlyAmsat = !filter.onlyAmsat)) }
                 )
-                MiuixFilterSwitchRow(
-                    label = stringResource(R.string.filter_only_favorites),
-                    checked = filter.onlyFavorites,
-                    onClick = { onFilterChange(filter.copy(onlyFavorites = !filter.onlyFavorites)) }
-                )
+            }
+        }
+
+        // 分类筛选（取代原「仅已关注」：收藏已并入分类体系）
+        if (categoryConfig.categories.isNotEmpty()) {
+            item {
+                MiuixFilterSectionCard(title = stringResource(R.string.filter_category_section)) {
+                    categoryConfig.sortedCategories().forEach { category ->
+                        val selected = category.id in filter.categoryIds
+                        MiuixFilterSelectableRow(
+                            label = category.name,
+                            selected = selected,
+                            onClick = {
+                                val ids = if (selected) {
+                                    filter.categoryIds - category.id
+                                } else {
+                                    filter.categoryIds + category.id
+                                }
+                                onFilterChange(filter.copy(categoryIds = ids))
+                            }
+                        )
+                    }
+                }
             }
         }
     }
@@ -204,6 +224,7 @@ private fun MiuixFilterSelectableRow(label: String, selected: Boolean, onClick: 
     ) {
         MiuixText(
             text = label,
+            modifier = Modifier.weight(1f),
             fontSize = 14.sp,
             color = colorScheme.onSurface
         )
@@ -278,6 +299,8 @@ private fun SatelliteFilterContentMaterial(
         add("" to unknownModeLabel)
     }
 
+    val categoryConfig by mainViewModel.satelliteCategoryConfig
+
     LazyColumn(
         modifier = Modifier
             .fillMaxWidth(),
@@ -340,11 +363,29 @@ private fun SatelliteFilterContentMaterial(
                     checked = filter.onlyAmsat,
                     onToggle = { onFilterChange(filter.copy(onlyAmsat = !filter.onlyAmsat)) }
                 )
-                FilterSwitchRowMaterial(
-                    label = stringResource(R.string.filter_only_favorites),
-                    checked = filter.onlyFavorites,
-                    onToggle = { onFilterChange(filter.copy(onlyFavorites = !filter.onlyFavorites)) }
-                )
+            }
+        }
+
+        // 分类筛选（取代原「仅已关注」：收藏已并入分类体系）
+        if (categoryConfig.categories.isNotEmpty()) {
+            item {
+                MaterialFilterSectionCard(title = stringResource(R.string.filter_category_section)) {
+                    categoryConfig.sortedCategories().forEach { category ->
+                        val selected = category.id in filter.categoryIds
+                        FilterCheckRowMaterial(
+                            label = category.name,
+                            checked = selected,
+                            onToggle = {
+                                val ids = if (selected) {
+                                    filter.categoryIds - category.id
+                                } else {
+                                    filter.categoryIds + category.id
+                                }
+                                onFilterChange(filter.copy(categoryIds = ids))
+                            }
+                        )
+                    }
+                }
             }
         }
     }
@@ -382,6 +423,7 @@ private fun FilterCheckRowMaterial(label: String, checked: Boolean, onToggle: ()
     ) {
         Text(
             text = label,
+            modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface
         )

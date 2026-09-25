@@ -55,4 +55,7 @@ data class SettingsScreenActions(
     val onCheckUpdateNow: () -> Unit = {},
     val onDownloadAndInstall: () -> Unit = {},
     val onClearUpdateResult: () -> Unit = {},
+    // 卫星分类配置导入 / 导出回调
+    val onExportSatelliteCategories: () -> Unit = {},
+    val onImportSatelliteCategories: () -> Unit = {},
 )

@@ -21,6 +21,7 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Update
+import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -248,9 +249,42 @@ fun SettingPagerMiuix(
                             summary = if (businessState.reminderItems.isEmpty()) {
                                 stringResource(id = R.string.reminder_list_empty)
                             } else {
-                                stringResource(id = R.string.favorites_count) + ": ${businessState.reminderItems.size}"
+                                stringResource(id = R.string.reminder_count) + ": ${businessState.reminderItems.size}"
                             },
                             onClick = actions.onOpenReminderList
+                        )
+                    }
+
+                    Card(
+                        modifier = Modifier
+                            .padding(top = 12.dp)
+                            .fillMaxWidth(),
+                    ) {
+                        ArrowPreference(
+                            title = stringResource(id = R.string.settings_export_categories),
+                            summary = stringResource(id = R.string.settings_export_categories_summary),
+                            startAction = {
+                                Icon(
+                                    Icons.Rounded.Upload,
+                                    modifier = Modifier.padding(end = 6.dp),
+                                    contentDescription = stringResource(id = R.string.settings_export_categories),
+                                    tint = colorScheme.onBackground
+                                )
+                            },
+                            onClick = actions.onExportSatelliteCategories
+                        )
+                        ArrowPreference(
+                            title = stringResource(id = R.string.settings_import_categories),
+                            summary = stringResource(id = R.string.settings_import_categories_summary),
+                            startAction = {
+                                Icon(
+                                    Icons.Rounded.Download,
+                                    modifier = Modifier.padding(end = 6.dp),
+                                    contentDescription = stringResource(id = R.string.settings_import_categories),
+                                    tint = colorScheme.onBackground
+                                )
+                            },
+                            onClick = actions.onImportSatelliteCategories
                         )
                     }
 

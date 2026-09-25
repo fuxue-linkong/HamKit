@@ -42,7 +42,6 @@ fun HomePager(
     val weatherLoading by mainViewModel.weatherLoading
     val weatherError by mainViewModel.weatherError
     val dailyQuote by mainViewModel.dailyQuote
-    val favoriteSatellites by mainViewModel.favoriteSatellites
     val timeCardBackgroundFile by mainViewModel.timeCardBackgroundFile
     val timeCardMaskColor by mainViewModel.timeCardMaskColor
 
@@ -81,20 +80,12 @@ fun HomePager(
         onOpenUrl = uriHandler::openUri,
         onRefreshLocation = { mainViewModel.refreshLocation() },
         onRefreshWeather = { mainViewModel.refreshWeather(force = true) },
-        onToggleFavorite = mainViewModel::toggleFavorite,
         onSatelliteManagementClick = { navigator.push(Route.SatelliteManagement) },
         onCWPracticeClick = { navigator.push(Route.CWPractice) },
         onLocationDetailClick = { navigator.push(Route.LocationDetail) },
         onAprsClick = { navigator.push(Route.AprsMain) },
         onFt8Click = { navigator.push(Route.Ft8Main) },
     )
-
-    // 计算下一次过境卫星，用于天气卡显示
-    val nextSatellite = remember(satelliteState.satellites, favoriteSatellites) {
-        satelliteState.satellites
-            .filter { it.catalogNumber in favoriteSatellites || !it.isCurrentlyVisible }
-            .minByOrNull { it.aosTime }
-    }
 
     val businessState = HomeBusinessState(
         location = locationState,
@@ -103,8 +94,6 @@ fun HomePager(
         weatherLoading = weatherLoading,
         weatherError = weatherError,
         dailyQuote = dailyQuote,
-        favorites = favoriteSatellites,
-        nextSatellite = nextSatellite,
         timeCardBackgroundFile = timeCardBackgroundFile,
         timeCardMaskColor = timeCardMaskColor,
     )

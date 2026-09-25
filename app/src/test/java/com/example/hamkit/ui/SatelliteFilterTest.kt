@@ -1,4 +1,4 @@
-﻿package com.example.hamkit.ui
+package com.example.hamkit.ui
 
 import com.example.hamkit.data.satellite.SatelliteInfo
 import org.junit.Assert.assertEquals
@@ -93,12 +93,37 @@ class SatelliteFilterTest {
     }
 
     @Test
-    fun `filter onlyFavorites shows only favorited satellites`() {
-        val favorites = setOf(1, 3)
-        val filter = SatelliteFilter(onlyFavorites = true)
-        val result = testSats.applyFilter(filter, favorites)
+    fun `filter by category shows only satellites in that category`() {
+        val membership = mapOf(1 to setOf("c1"), 3 to setOf("c2"))
+        val filter = SatelliteFilter(categoryIds = setOf("c1"))
+        val result = testSats.applyFilter(filter, membership)
+        assertEquals(1, result.size)
+        assertEquals(1, result[0].catalogNumber)
+    }
+
+    @Test
+    fun `filter by multiple categories uses OR semantics`() {
+        val membership = mapOf(1 to setOf("c1"), 3 to setOf("c2"), 4 to setOf("c3"))
+        val filter = SatelliteFilter(categoryIds = setOf("c1", "c2"))
+        val result = testSats.applyFilter(filter, membership)
         assertEquals(2, result.size)
-        assertTrue(result.all { it.catalogNumber in favorites })
+        assertTrue(result.any { it.catalogNumber == 1 })
+        assertTrue(result.any { it.catalogNumber == 3 })
+    }
+
+    @Test
+    fun `category filter matches satellite belonging to several categories`() {
+        val membership = mapOf(2 to setOf("c1", "c9"))
+        val filter = SatelliteFilter(categoryIds = setOf("c9"))
+        val result = testSats.applyFilter(filter, membership)
+        assertEquals(1, result.size)
+        assertEquals(2, result[0].catalogNumber)
+    }
+
+    @Test
+    fun `empty category filter does not filter by category`() {
+        val result = testSats.applyFilter(SatelliteFilter(), emptyMap())
+        assertEquals(4, result.size)
     }
 
     @Test
@@ -131,7 +156,7 @@ class SatelliteFilterTest {
         assertTrue(SatelliteFilter(onlyUpcoming = true).isActive)
         assertTrue(SatelliteFilter(onlyInPass = true).isActive)
         assertTrue(SatelliteFilter(onlyAmsat = true).isActive)
-        assertTrue(SatelliteFilter(onlyFavorites = true).isActive)
+        assertTrue(SatelliteFilter(categoryIds = setOf("c1")).isActive)
     }
 
     @Test

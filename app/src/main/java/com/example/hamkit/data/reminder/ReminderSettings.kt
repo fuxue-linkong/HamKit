@@ -37,9 +37,10 @@ enum class RepeatMode {
 }
 
 /**
- * 单条提醒项。每颗收藏卫星对应一条提醒，记录下一次过境信息。
+ * 单条提醒项。每颗已开启过境提醒的卫星对应一条提醒，记录下一次过境信息。
  *
- * 自动跟随收藏状态生成/删除，无需用户手动创建。
+ * 由卫星级提醒开关（`SatelliteCategoryConfig.reminderFlags`）驱动生成/删除，
+ * 与卫星的分类归属无关，无需用户手动创建。
  */
 @Immutable
 data class ReminderItem(

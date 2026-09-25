@@ -6,6 +6,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.hamkit.BuildConfig
+import com.example.hamkit.R
 import com.example.hamkit.data.HitokotoApiService
 import com.example.hamkit.data.LandscapeImageStore
 import com.example.hamkit.data.LocationResult
@@ -19,11 +21,16 @@ import com.example.hamkit.data.reminder.ReminderStore
 import com.example.hamkit.data.reminder.RepeatMode
 import com.example.hamkit.data.satellite.AmsatStatusApiService
 import com.example.hamkit.data.satellite.AmsatPageScraper
+import com.example.hamkit.data.satellite.CategoryMergeResult
 import com.example.hamkit.data.satellite.FavoriteSatellitesStore
 import com.example.hamkit.data.satellite.RadioInfo
 import com.example.hamkit.data.satellite.RadioInfoRepository
 import com.example.hamkit.data.satellite.SatelliteCacheStore
 import com.example.hamkit.data.satellite.SatelliteCatalog
+import com.example.hamkit.data.satellite.SatelliteCategory
+import com.example.hamkit.data.satellite.SatelliteCategoryConfig
+import com.example.hamkit.data.satellite.SatelliteCategoryExchange
+import com.example.hamkit.data.satellite.SatelliteCategoryStore
 import com.example.hamkit.data.satellite.SatelliteDataSource
 import com.example.hamkit.data.satellite.SatelliteInfo
 import com.example.hamkit.data.satellite.SatelliteListItem
@@ -33,6 +40,11 @@ import com.example.hamkit.data.satellite.SatelliteStatusTracker
 import com.example.hamkit.data.satellite.SegmentStatus
 import com.example.hamkit.data.satellite.SatelliteStatusSegmenter
 import com.example.hamkit.data.satellite.SourcedTLE
+import com.example.hamkit.data.satellite.addCategory
+import com.example.hamkit.data.satellite.removeCategory
+import com.example.hamkit.data.satellite.renameCategory
+import com.example.hamkit.data.satellite.toggleAssignment
+import com.example.hamkit.data.satellite.toggleReminder
 import com.example.hamkit.data.weather.ApiKeyMissingException
 import com.example.hamkit.data.weather.WeatherApiException
 import com.example.hamkit.data.weather.WeatherApiService
@@ -92,7 +104,9 @@ class MainViewModel : ViewModel() {
     private val settingsStore = SettingsStore(app)
     private val satelliteCache = SatelliteCacheStore(app)
     private val predictCache = SatellitePredictCacheStore(app)
-    private val favoriteStore = FavoriteSatellitesStore(app)
+    // 历史「收藏」存储：收藏已并入分类体系，此存储仅用于一次性迁移读取。
+    private val legacyFavoriteStore = FavoriteSatellitesStore(app)
+    private val categoryStore = SatelliteCategoryStore(app)
     private val reminderStore = ReminderStore(app)
     private val weatherApiService = WeatherApiService()
     private val weatherStore = WeatherStore(app)
@@ -159,6 +173,27 @@ class MainViewModel : ViewModel() {
             }
         }
 
+    // 卫星名称索引缓存。satelliteItems 是全量重建的昂贵 getter（~16k 条），
+    // 分类/提醒弹窗只需要一个名字，不应为此反复重建整个列表。
+    private var nameIndexSource: List<SourcedTLE>? = null
+    private var nameIndex: Map<Int, String> = emptyMap()
+
+    /**
+     * 按 NORAD 编号取卫星名称；取不到时回退为编号字符串。
+     *
+     * 名称索引按 [SatelliteState.cachedTles] 的实例身份缓存：TLE 未变化时只做一次
+     * Map 查询，TLE 更新后自动重建。
+     */
+    fun satelliteNameOf(catalogNumber: Int): String {
+        val tles = _satelliteState.value.cachedTles
+        if (tles !== nameIndexSource) {
+            nameIndexSource = tles
+            nameIndex = tles.associate { it.tle.catnum to it.tle.name.trim() }
+        }
+        return nameIndex[catalogNumber]?.takeIf { it.isNotEmpty() }
+            ?: catalogNumber.toString()
+    }
+
     // CW练习状态
     private val _cwSettings = mutableStateOf(CWSettings())
     val cwSettings: State<CWSettings> = _cwSettings
@@ -192,10 +227,13 @@ class MainViewModel : ViewModel() {
     }
 
     /**
-     * 用户关注的卫星 NORAD 编号集合，进程重启后可从本地恢复。
+     * 卫星分类配置：分类定义 + 卫星归属 + 卫星级提醒开关。
+     *
+     * 首次构造时执行一次历史「收藏」迁移（幂等，失败不标记、下次重试），
+     * 迁移后老用户的提醒行为保持不变。
      */
-    private val _favoriteSatellites = mutableStateOf(favoriteStore.load())
-    val favoriteSatellites: State<Set<Int>> = _favoriteSatellites
+    private val _satelliteCategoryConfig = mutableStateOf(loadCategoryConfigWithMigration())
+    val satelliteCategoryConfig: State<SatelliteCategoryConfig> = _satelliteCategoryConfig
 
     /**
      * 日程提醒设置。从本地恢复，进程重启后保留用户偏好。
@@ -204,7 +242,7 @@ class MainViewModel : ViewModel() {
     val reminderSettings: State<ReminderSettings> = _reminderSettings
 
     /**
-     * 提醒项列表。每颗收藏卫星对应一条，记录下次过境信息。
+     * 提醒项列表。每颗已开启过境提醒的卫星对应一条，记录下次过境信息。
      */
     private val _reminderItems = mutableStateOf(reminderStore.loadItems())
     val reminderItems: State<List<ReminderItem>> = _reminderItems
@@ -431,38 +469,138 @@ class MainViewModel : ViewModel() {
     }
 
     /**
-     * 切换某颗卫星的关注状态并持久化。
+     * 加载分类配置，并在首次运行时执行一次历史「收藏」迁移。
      *
-     * 收藏时：自动从已预测的卫星列表中查找对应 [SatelliteInfo]，
-     *         构造 [ReminderItem] 写入 [ReminderStore] 并调度闹钟；
-     *         若该卫星暂无过境预测，则仅记录反馈提示。
-     * 取消收藏时：删除对应提醒项并取消闹钟。
+     * 迁移语义：把原「收藏」集合写入内置分类「我的关注」，并同步写入卫星级提醒开关，
+     * 保证升级前会被提醒的卫星，升级后**仍然被提醒**。
+     *
+     * 迁移逻辑本身收敛在 [SatelliteCategoryStore.loadConfigWithLegacyMigration]，
+     * 与后台 `ReminderRefreshWorker` 共用同一实现，避免出现两套真相。
      */
-    fun toggleFavorite(catalogNumber: Int) {
-        val updated = favoriteStore.toggle(catalogNumber)
-        _favoriteSatellites.value = updated
+    private fun loadCategoryConfigWithMigration(): SatelliteCategoryConfig =
+        categoryStore.loadConfigWithLegacyMigration(legacyFavoriteStore.load())
 
-        val nowFavorite = catalogNumber in updated
-        if (nowFavorite) {
-            // 收藏：查找已预测的卫星过境信息，自动创建提醒
-            val satInfo = _satelliteState.value.satellites.firstOrNull { it.catalogNumber == catalogNumber }
-            if (satInfo != null && !satInfo.isCurrentlyVisible) {
-                // 仅对未来过境创建提醒（在境卫星 AOS 已过去）
-                addReminderForSatellite(satInfo)
-                _reminderFeedback.value = "已收藏 ${satInfo.name}，自动添加过境提醒"
-            } else if (satInfo != null && satInfo.isCurrentlyVisible) {
-                // 当前在境，无法创建提醒，但不阻塞收藏
-                _reminderFeedback.value = "已收藏 ${satInfo.name}，当前在境，下次过境预测后将自动添加提醒"
-            } else {
-                _reminderFeedback.value = "已收藏，暂无过境预测数据，将在下次刷新后自动添加提醒"
-            }
-        } else {
-            // 取消收藏：删除提醒
+    /**
+     * 以不可变方式更新分类配置并持久化。
+     *
+     * 写入走 [SatelliteCategoryStore.mutate]（进程级锁 + 读-改-写），
+     * 既避免与后台 Worker 的迁移互相覆盖，也能把 Worker 已落盘的迁移结果并回内存状态。
+     */
+    private fun updateCategoryConfig(
+        transform: (SatelliteCategoryConfig) -> SatelliteCategoryConfig
+    ) {
+        _satelliteCategoryConfig.value = categoryStore.mutate(transform)
+    }
+
+    /**
+     * 新建分类。名称为空白时忽略。
+     */
+    fun addSatelliteCategory(name: String) {
+        if (name.isBlank()) return
+        updateCategoryConfig { it.addCategory(name).first }
+    }
+
+    /**
+     * 重命名分类。
+     */
+    fun renameSatelliteCategory(categoryId: String, newName: String) {
+        updateCategoryConfig { it.renameCategory(categoryId, newName) }
+    }
+
+    /**
+     * 删除分类。内置分类不可删除；**不影响任何卫星的提醒开关**。
+     */
+    fun removeSatelliteCategory(categoryId: String) {
+        updateCategoryConfig { it.removeCategory(categoryId) }
+    }
+
+    /**
+     * 切换某颗卫星在某个分类中的归属。
+     *
+     * 注意：分类只负责「组织 / 筛选」，**不会创建或删除任何过境提醒**
+     * （提醒由 [setSatelliteReminderEnabled] 单独控制）。
+     */
+    fun toggleSatelliteCategory(catalogNumber: Int, categoryId: String) {
+        updateCategoryConfig { it.toggleAssignment(catalogNumber, categoryId) }
+    }
+
+    /**
+     * 切换某颗卫星的过境提醒开关（原「收藏即提醒」的副作用已平移到此处）。
+     */
+    fun toggleSatelliteReminder(catalogNumber: Int) {
+        setSatelliteReminderEnabled(
+            catalogNumber = catalogNumber,
+            enabled = catalogNumber !in _satelliteCategoryConfig.value.reminderFlags,
+        )
+    }
+
+    /**
+     * 设置某颗卫星的过境提醒开关。
+     *
+     * `reminderFlags` 是「是否需要提醒」的**唯一权威来源**：提醒项与闹钟都由它派生。
+     * 开启时若已有未来过境预测则立即写入提醒项并调度闹钟，
+     * 否则等待下次过境预测刷新后自动补建；关闭时删除提醒项并取消闹钟。
+     *
+     * 幂等：重复开启不会重复建项，但会补建缺失的提醒项，
+     * 避免出现「开关为开却没有提醒」的悬挂状态。
+     */
+    fun setSatelliteReminderEnabled(catalogNumber: Int, enabled: Boolean) {
+        val alreadyEnabled = catalogNumber in _satelliteCategoryConfig.value.reminderFlags
+        if (alreadyEnabled != enabled) {
+            updateCategoryConfig { it.toggleReminder(catalogNumber) }
+        }
+
+        if (!enabled) {
             reminderStore.removeItem(catalogNumber)
             reminderScheduler.cancel(catalogNumber)
             _reminderItems.value = reminderStore.loadItems()
-            _reminderFeedback.value = "已取消收藏并移除提醒"
+            _reminderFeedback.value = app.getString(R.string.satellite_reminder_feedback_off)
+            return
         }
+
+        // 已开启：提醒项已存在则无需处理
+        if (reminderStore.loadItems().any { it.catalogNumber == catalogNumber }) return
+
+        val satInfo = _satelliteState.value.satellites
+            .firstOrNull { it.catalogNumber == catalogNumber }
+        val hasFuturePass = satInfo != null &&
+            satInfo.aosTime.toEpochMilli() > System.currentTimeMillis()
+        if (satInfo != null && hasFuturePass) {
+            addReminderForSatellite(satInfo)
+            _reminderFeedback.value = app.getString(R.string.satellite_reminder_feedback_on, satInfo.name)
+        } else {
+            _reminderFeedback.value = app.getString(R.string.satellite_reminder_feedback_pending)
+        }
+    }
+
+    /**
+     * 导出分类配置为可分享的 JSON 文本。
+     *
+     * 附带卫星名称仅用于提升文件可读性，导入时以 NORAD 编号为准。
+     */
+    fun exportSatelliteCategories(): String {
+        val satelliteNames = _satelliteState.value.cachedTles
+            .associate { it.tle.catnum to it.tle.name.trim() }
+        return SatelliteCategoryExchange.export(
+            config = _satelliteCategoryConfig.value,
+            satelliteNames = satelliteNames,
+            appVersion = BuildConfig.VERSION_NAME,
+        )
+    }
+
+    /**
+     * 从 JSON 文本导入分类配置（合并策略，不删除既有数据）。
+     *
+     * @return 成功时返回合并统计，失败时返回可展示给用户的错误。
+     */
+    fun importSatelliteCategories(json: String): Result<CategoryMergeResult> {
+        val incoming = SatelliteCategoryExchange.parse(json).getOrElse { error ->
+            return Result.failure(error)
+        }
+        val merged = SatelliteCategoryExchange.merge(_satelliteCategoryConfig.value, incoming)
+        _satelliteCategoryConfig.value = merged.config
+        categoryStore.saveConfig(merged.config)
+        return Result.success(merged)
     }
 
     /**
@@ -500,30 +638,44 @@ class MainViewModel : ViewModel() {
     }
 
     /**
-     * 切换单个提醒项的启用状态。
+     * 切换单个提醒项的启用状态（提醒列表页）。
+     *
+     * 直接委托给 [setSatelliteReminderEnabled]：`reminderFlags` 是唯一权威来源，
+     * 这样提醒列表与卫星页「分类与提醒」弹窗对同一颗卫星展示一致的开关状态。
      */
     fun setReminderItemEnabled(catalogNumber: Int, enabled: Boolean) {
-        val updatedList = reminderStore.setItemEnabled(catalogNumber, enabled)
-        _reminderItems.value = updatedList
-        val item = updatedList.firstOrNull { it.catalogNumber == catalogNumber } ?: return
-        if (enabled) {
-            reminderScheduler.schedule(item, _reminderSettings.value)
-        } else {
-            reminderScheduler.cancel(catalogNumber)
-        }
+        setSatelliteReminderEnabled(catalogNumber, enabled = enabled)
     }
 
     /**
-     * 手动删除单个提醒项（不取消收藏，仅停止提醒）。
+     * 删除单个提醒项（提醒列表页）：等同于关闭该卫星的过境提醒。
+     *
+     * 必须同时清除 `reminderFlags`，否则下一次过境预测刷新或后台 Worker
+     * 会依据残留的开关把提醒项重新建回来（「删除后复活」）。
      */
     fun deleteReminderItem(catalogNumber: Int) {
-        reminderStore.removeItem(catalogNumber)
-        reminderScheduler.cancel(catalogNumber)
-        _reminderItems.value = reminderStore.loadItems()
+        setSatelliteReminderEnabled(catalogNumber, enabled = false)
     }
 
     val hasLocationPermission: Boolean
         get() = locationHelper.hasPermission()
+
+    /**
+     * 启动时按已开启提醒集合重新注册闹钟（幂等）。
+     *
+     * 只做「重新注册」：不会创建新的提醒项（那需要过境预测结果），
+     * 因此不会引入额外副作用；总开关关闭时直接跳过。
+     *
+     * 提醒项读取（JSON 解析）放在 IO 调度器，避免给冷启动关键路径增加主线程磁盘 IO。
+     */
+    private suspend fun reconcileRemindersOnLaunch() {
+        val settings = _reminderSettings.value
+        if (!settings.enabled) return
+        if (_satelliteCategoryConfig.value.reminderFlags.isEmpty()) return
+        val items = withContext(Dispatchers.IO) { reminderStore.loadItems() }
+        if (items.isEmpty()) return
+        reminderScheduler.scheduleAll(items, settings)
+    }
 
     /**
      * ViewModel 初始化：从本地缓存加载 TLE，并按需触发后台更新。
@@ -534,6 +686,12 @@ class MainViewModel : ViewModel() {
     suspend fun initializeIfNeeded() {
         if (initialized) return
         initialized = true
+
+        // 启动时对齐一次提醒闹钟。
+        // 迁移或后台 Worker 可能已经改动了提醒开关/提醒项，而本次启动若命中
+        // 15 分钟的过境预测缓存，就不会走到 refreshRemindersFromPrediction，
+        // 导致「开关为开却长时间没有闹钟」。这里按已开启提醒集合重注册一次（幂等）。
+        reconcileRemindersOnLaunch()
 
         // 并行从本地缓存恢复 TLE 与预测结果（IO 密集型，避免在主线程解析 JSON）
         val cachedTle = withContext(Dispatchers.IO) { satelliteCache.load() }
@@ -1094,29 +1252,31 @@ class MainViewModel : ViewModel() {
     }
 
     /**
-     * 基于最新预测结果刷新收藏卫星的提醒项。
+     * 基于最新预测结果刷新**已开启提醒**卫星的提醒项。
      *
-     * - 对每颗已收藏且在未来有过境的卫星：更新或新建 [ReminderItem] 并重新调度
+     * - 对每颗已开启提醒且在未来有过境的卫星：更新或新建 [ReminderItem] 并重新调度
      * - 对当前在境的卫星：跳过（AOS 已过去）
-     * - 对已不在预测列表中的收藏卫星：保留旧提醒项不动（避免预测窗口外的卫星被清空）
+     * - 对已不在预测列表中的卫星：保留旧提醒项不动（避免预测窗口外的卫星被清空）
+     *
+     * 注意：判定依据是卫星级提醒开关 `reminderFlags`，与分类归属无关。
      */
     private fun refreshRemindersFromPrediction(satellites: List<SatelliteInfo>) {
-        val favorites = _favoriteSatellites.value
-        if (favorites.isEmpty()) return
+        val reminderFlags = _satelliteCategoryConfig.value.reminderFlags
+        if (reminderFlags.isEmpty()) return
 
         val settings = _reminderSettings.value
         // 仅对未来过境创建提醒：AOS 必须在未来。
         // 旧逻辑用 !isCurrentlyVisible 过滤，但预测器对在境卫星返回的是下次过境，
         // 旧过滤会把下次过境一起丢弃。改以 AOS 时间为准。
         val nowMillis = java.lang.System.currentTimeMillis()
-        val futureFavorites = satellites.filter {
-            it.catalogNumber in favorites && it.aosTime.toEpochMilli() > nowMillis
+        val futureReminders = satellites.filter {
+            it.catalogNumber in reminderFlags && it.aosTime.toEpochMilli() > nowMillis
         }
-        if (futureFavorites.isEmpty()) return
+        if (futureReminders.isEmpty()) return
 
         val updatedItems = reminderStore.loadItems().toMutableList()
         var changed = false
-        futureFavorites.forEach { sat ->
+        futureReminders.forEach { sat ->
             val item = ReminderItem(
                 catalogNumber = sat.catalogNumber,
                 name = sat.name,
@@ -1400,33 +1560,36 @@ fun isSatelliteSourceExpired(lastUpdate: Instant?, now: Instant = Instant.now())
  *
  * @param modes 工作模式多选筛选，空集合表示不按模式筛选。可选值：FM/SSTV/DSTAR/CW/USB/LSB/""(未知)
  * @param nameQuery 名称搜索关键词，大小写不敏感匹配卫星名称或 NORAD 编号，空字符串表示不搜索
+ * @param categoryIds 分类多选筛选，空集合表示不按分类筛选。命中任一选中分类即通过（OR 语义）。
+ *        取代了原 `onlyFavorites`：收藏已并入分类体系。
  * @param onlyUpcoming 仅显示即将入境（不含当前在境）
  * @param onlyInPass 仅显示当前在境
  * @param onlyAmsat 仅显示 AMSAT 状态 API 中的卫星（即有 status 报告的）
- * @param onlyFavorites 仅显示已关注卫星
  */
 data class SatelliteFilter(
     val modes: Set<String> = emptySet(),
     val nameQuery: String = "",
+    val categoryIds: Set<String> = emptySet(),
     val onlyUpcoming: Boolean = false,
     val onlyInPass: Boolean = false,
-    val onlyAmsat: Boolean = false,
-    val onlyFavorites: Boolean = false
+    val onlyAmsat: Boolean = false
 ) {
     /**
      * 当前筛选是否处于激活状态（任一条件被设置）。
      */
     val isActive: Boolean
-        get() = modes.isNotEmpty() || nameQuery.isNotBlank() ||
-            onlyUpcoming || onlyInPass || onlyAmsat || onlyFavorites
+        get() = modes.isNotEmpty() || nameQuery.isNotBlank() || categoryIds.isNotEmpty() ||
+            onlyUpcoming || onlyInPass || onlyAmsat
 }
 
 /**
  * 应用筛选条件到卫星列表（[SatelliteListItem] 版本，基于转发器模式）。
+ *
+ * @param membership 卫星分类归属（NORAD → 分类 id 集合），用于 [SatelliteFilter.categoryIds]。
  */
 fun List<SatelliteListItem>.applyFilterToItems(
     filter: SatelliteFilter,
-    favorites: Set<Int> = emptySet()
+    membership: Map<Int, Set<String>> = emptyMap()
 ): List<SatelliteListItem> {
     if (!filter.isActive) return this
     val query = filter.nameQuery.trim()
@@ -1441,17 +1604,20 @@ fun List<SatelliteListItem>.applyFilterToItems(
         val upcomingOk = !filter.onlyUpcoming || !sat.isCurrentlyVisible
         val inPassOk = !filter.onlyInPass || sat.isCurrentlyVisible
         val amsatOk = !filter.onlyAmsat || sat.status.isNotBlank()
-        val favoriteOk = !filter.onlyFavorites || sat.catalogNumber in favorites
-        modeOk && nameOk && upcomingOk && inPassOk && amsatOk && favoriteOk
+        val categoryOk = filter.categoryIds.isEmpty() ||
+            membership[sat.catalogNumber].orEmpty().any { it in filter.categoryIds }
+        modeOk && nameOk && upcomingOk && inPassOk && amsatOk && categoryOk
     }
 }
 
 /**
  * 应用筛选条件到卫星列表。
+ *
+ * @param membership 卫星分类归属（NORAD → 分类 id 集合），用于 [SatelliteFilter.categoryIds]。
  */
 fun List<SatelliteInfo>.applyFilter(
     filter: SatelliteFilter,
-    favorites: Set<Int> = emptySet()
+    membership: Map<Int, Set<String>> = emptyMap()
 ): List<SatelliteInfo> {
     if (!filter.isActive) return this
     val query = filter.nameQuery.trim()
@@ -1466,8 +1632,9 @@ fun List<SatelliteInfo>.applyFilter(
         val upcomingOk = !filter.onlyUpcoming || !sat.isCurrentlyVisible
         val inPassOk = !filter.onlyInPass || sat.isCurrentlyVisible
         val amsatOk = !filter.onlyAmsat || sat.status.isNotBlank()
-        val favoriteOk = !filter.onlyFavorites || sat.catalogNumber in favorites
-        modeOk && nameOk && upcomingOk && inPassOk && amsatOk && favoriteOk
+        val categoryOk = filter.categoryIds.isEmpty() ||
+            membership[sat.catalogNumber].orEmpty().any { it in filter.categoryIds }
+        modeOk && nameOk && upcomingOk && inPassOk && amsatOk && categoryOk
     }
 }
 
