@@ -115,7 +115,7 @@ class SatelliteFilterIntegrationTest {
         assertTrue(SatelliteFilter(onlyInPass = true).isActive)
         assertTrue(SatelliteFilter(onlyUpcoming = true).isActive)
         assertTrue(SatelliteFilter(onlyAmsat = true).isActive)
-        assertTrue(SatelliteFilter(onlyFavorites = true).isActive)
+        assertTrue(SatelliteFilter(categoryIds = setOf("c1")).isActive)
         assertTrue(SatelliteFilter(modes = setOf("FM")).isActive)
     }
 
@@ -164,19 +164,22 @@ class SatelliteFilterIntegrationTest {
     }
 
     @Test
-    fun applyFilter_onlyFavorites() {
+    fun applyFilter_byCategory() {
         val satellites = listOf(
             testSatellite(25544),
             testSatellite(43013),
             testSatellite(99999)
         )
-        val favorites = setOf(25544, 99999)
+        val membership = mapOf(
+            25544 to setOf("amateur"),
+            99999 to setOf("amateur", "linear")
+        )
         val result = satellites.applyFilter(
-            SatelliteFilter(onlyFavorites = true),
-            favorites = favorites
+            SatelliteFilter(categoryIds = setOf("amateur")),
+            membership = membership
         )
         assertEquals(2, result.size)
-        assertTrue(result.all { it.catalogNumber in favorites })
+        assertTrue(result.all { it.catalogNumber in setOf(25544, 99999) })
     }
 
     @Test

@@ -10,9 +10,9 @@ import org.json.JSONObject
  *
  * 同时保存：
  * 1. [ReminderSettings] —— 用户偏好（开关、提前分钟数、重复模式、声音/振动）
- * 2. List<[ReminderItem]> —— 每颗收藏卫星的下一次过境提醒项
+ * 2. List<[ReminderItem]> —— 每颗已开启提醒卫星的下一次过境提醒项
  *
- * 进程重启后可恢复，提醒列表与收藏卫星一一对应。
+ * 进程重启后可恢复，提醒列表与「已开启过境提醒」的卫星一一对应。
  */
 class ReminderStore(context: Context) {
 

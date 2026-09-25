@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Update
+import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeFlexibleTopAppBar
@@ -225,7 +226,7 @@ fun SettingPagerMaterial(
                                     if (businessState.reminderItems.isEmpty()) {
                                         stringResource(id = R.string.reminder_list_empty)
                                     } else {
-                                        stringResource(id = R.string.favorites_count) + ": ${businessState.reminderItems.size}"
+                                        stringResource(id = R.string.reminder_count) + ": ${businessState.reminderItems.size}"
                                     }
                                 )
                             },
@@ -235,6 +236,43 @@ fun SettingPagerMaterial(
                         )
                     }
                 }
+            )
+
+            // 卫星分类配置导入 / 导出
+            SegmentedColumn(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                content = listOf(
+                    {
+                        SegmentedListItem(
+                            onClick = actions.onExportSatelliteCategories,
+                            headlineContent = { Text(stringResource(id = R.string.settings_export_categories)) },
+                            supportingContent = {
+                                Text(stringResource(id = R.string.settings_export_categories_summary))
+                            },
+                            leadingContent = {
+                                Icon(Icons.Filled.Upload, null)
+                            },
+                            trailingContent = {
+                                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null)
+                            },
+                        )
+                    },
+                    {
+                        SegmentedListItem(
+                            onClick = actions.onImportSatelliteCategories,
+                            headlineContent = { Text(stringResource(id = R.string.settings_import_categories)) },
+                            supportingContent = {
+                                Text(stringResource(id = R.string.settings_import_categories_summary))
+                            },
+                            leadingContent = {
+                                Icon(Icons.Filled.Download, null)
+                            },
+                            trailingContent = {
+                                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null)
+                            },
+                        )
+                    }
+                )
             )
 
             SegmentedColumn(

@@ -39,7 +39,7 @@ sealed interface Route : NavKey, Parcelable {
     @Serializable
     data object CWPractice : Route
 
-    /** 卫星管理：管理关注卫星列表 */
+    /** 卫星管理：卫星列表、分类与过境提醒 */
     @Parcelize
     @Serializable
     data object SatelliteManagement : Route

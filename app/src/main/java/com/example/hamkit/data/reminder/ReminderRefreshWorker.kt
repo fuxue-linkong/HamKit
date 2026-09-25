@@ -6,6 +6,7 @@ import androidx.work.WorkerParameters
 import com.example.hamkit.data.SettingsStore
 import com.example.hamkit.data.satellite.FavoriteSatellitesStore
 import com.example.hamkit.data.satellite.SatelliteCacheStore
+import com.example.hamkit.data.satellite.SatelliteCategoryStore
 import com.example.hamkit.data.satellite.SatelliteDataSource
 import com.example.hamkit.data.satellite.SatellitePredictor
 import kotlinx.coroutines.CancellationException
@@ -19,7 +20,8 @@ import java.time.Instant
  * 1. 从 [SettingsStore] 读取用户最后已知位置（由 MainViewModel 在前台定位时持久化）
  * 2. 从 [SatelliteCacheStore] 读取 TLE 缓存；若缓存超过 24 小时则重新下载
  * 3. 用 [SatellitePredictor] 预测未来 48 小时的卫星过境
- * 4. 过滤出收藏卫星（[FavoriteSatellitesStore]），更新 [ReminderStore] 中的提醒项
+ * 4. 过滤出已开启提醒的卫星（[SatelliteCategoryStore] 中的卫星级提醒开关，
+ *    必要时先就地完成历史「收藏」迁移），更新 [ReminderStore] 中的提醒项
  * 5. 用 [ReminderScheduler] 重新注册所有 AlarmManager 闹钟
  *
  * 此 Worker 可在应用进程不存在时独立运行，保证后台持续推送提醒通知。
@@ -38,7 +40,7 @@ class ReminderRefreshWorker(
         return try {
             val settingsStore = SettingsStore(applicationContext)
             val reminderStore = ReminderStore(applicationContext)
-            val favoriteStore = FavoriteSatellitesStore(applicationContext)
+            val categoryStore = SatelliteCategoryStore(applicationContext)
             val settings = reminderStore.loadSettings()
 
             // 提醒功能未启用时，仅取消现有闹钟，不做预测
@@ -87,19 +89,25 @@ class ReminderRefreshWorker(
                 hoursAhead = 48
             )
 
-            // 过滤出收藏卫星的未来过境（AOS 在未来）。
+            // 过滤出已开启提醒的卫星的未来过境（AOS 在未来）。
+            // 判定依据是卫星级提醒开关，与分类归属无关。
+            // 这里与 MainViewModel 共用 loadConfigWithLegacyMigration：
+            // 若历史「收藏」迁移尚未执行（例如升级后用户还没打开过应用），
+            // 本 Worker 会就地完成迁移，避免因提醒开关为空而漏更新提醒。
             // 旧逻辑用 !isCurrentlyVisible 过滤，但预测器对在境卫星返回的是下次过境，
             // 旧过滤会把下次过境一起丢弃。改以 AOS 时间为准。
-            val favorites = favoriteStore.load()
+            val reminderFlags = categoryStore
+                .loadConfigWithLegacyMigration(FavoriteSatellitesStore(applicationContext).load())
+                .reminderFlags
             val nowMillis = System.currentTimeMillis()
-            val futureFavorites = satellites.filter {
-                it.catalogNumber in favorites && it.aosTime.toEpochMilli() > nowMillis
+            val futureReminders = satellites.filter {
+                it.catalogNumber in reminderFlags && it.aosTime.toEpochMilli() > nowMillis
             }
 
-            if (futureFavorites.isNotEmpty()) {
+            if (futureReminders.isNotEmpty()) {
                 // 更新提醒项
                 val updatedItems = reminderStore.loadItems().toMutableList()
-                futureFavorites.forEach { sat ->
+                futureReminders.forEach { sat ->
                     val item = ReminderItem(
                         catalogNumber = sat.catalogNumber,
                         name = sat.name,
