@@ -21,7 +21,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -52,7 +51,8 @@ fun SstvSettingsScreen(
     val viewModel = appViewModel<SstvViewModel>()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val scrollBehavior = MiuixScrollBehavior()
-    val galleryCount = remember(uiState.status) { viewModel.galleryEntries().size }
+    // 图库数量由 ViewModel 在协程中统计（文件 IO 不落在主线程，也不随 status 反复触发）
+    val galleryCount = uiState.galleryCount
 
     Scaffold(
         topBar = {
