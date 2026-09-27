@@ -74,9 +74,6 @@ class SstvDecoder(
         val visOutcome = SstvVisDetector(sampleRate).process(audio)
         val mode = forcedMode ?: visOutcome?.mode
         ?: return Outcome.Failure("未识别到 VIS 头，请手动选择模式")
-        if (!mode.decodable) {
-            return Outcome.Failure("${mode.displayName} 当前版本不支持解码")
-        }
         val hedrShiftHz = visOutcome?.hedrShiftHz ?: 0.0
         val searchFrom = visOutcome?.stopEndSample?.toInt()?.coerceAtLeast(0) ?: 0
 
@@ -87,7 +84,40 @@ class SstvDecoder(
             phaseSpan = SstvDemodulator.recommendPhaseSpan(samplesPerPixel),
         )
         val freqs = demodulator.demodulate(audio)
-        val validFrom = demodulator.transientSamples
+
+        return decodeFromFrequencies(
+            freqs = freqs,
+            mode = mode,
+            hedrShiftHz = hedrShiftHz,
+            searchFromSample = searchFrom,
+            validFromSample = demodulator.transientSamples,
+        )
+    }
+
+    /**
+     * 从**已解调的频率流**解码。
+     *
+     * 这是把「解调」与「解码」拆开的入口：实时接收时 [SstvRecorder] 保持一个
+     * 降频器实例做**增量解调**，只需对新增音频解调一次即可反复解码，避免每轮
+     * 部分解码都从头解调整段音频（原先的实现是 O(n²)，一帧内累计解调约 15 倍
+     * 单帧样本量）。离线与测试路径仍走 [decode]。
+     *
+     * @param freqs 逐样本瞬时频率（Hz），下标 0 对应图像数据的起点
+     * @param mode 已确定的模式
+     * @param hedrShiftHz VIS 测得的失谐量（若同步脉冲足够多会被其实测值取代）
+     * @param searchFromSample 从该样本开始搜索行同步脉冲
+     * @param validFromSample 该位置之前的样本处于解调瞬态，不予采样
+     */
+    fun decodeFromFrequencies(
+        freqs: FloatArray,
+        mode: SstvMode,
+        hedrShiftHz: Double,
+        searchFromSample: Int = 0,
+        validFromSample: Int = 0,
+    ): Outcome {
+        if (!mode.decodable) {
+            return Outcome.Failure("${mode.displayName} 当前版本不支持解码")
+        }
 
         // ── ③ 行同步 + slant 拟合 ──
         val fit = SstvSync.findSyncPulses(
@@ -95,7 +125,7 @@ class SstvDecoder(
             mode = mode,
             sampleRate = sampleRate,
             hedrShiftHz = hedrShiftHz,
-            startIndex = maxOf(searchFrom, validFrom),
+            startIndex = maxOf(searchFromSample, validFromSample),
         ) ?: return Outcome.Failure("未检测到足够的行同步脉冲，请检查音频质量")
 
         // ── ④⑤ 逐行采样并组装图像 ──
@@ -113,7 +143,7 @@ class SstvDecoder(
         var decodedLines = 0
         for (line in 0 until mode.radioLines) {
             if (!decodeRadioLine(
-                    freqs, fit, mode, line, effectiveShiftHz, pixels, validFrom, effectiveRate,
+                    freqs, fit, mode, line, effectiveShiftHz, pixels, validFromSample, effectiveRate,
                 )
             ) {
                 break

@@ -381,6 +381,45 @@ class SstvCodecTest {
     }
 
     @Test
+    fun `从频率流解码与整段解码结果一致`() {
+        // decodeFromFrequencies 是实时增量管线（Recorder）使用的入口，
+        // 必须与离线 decode 完全等价，否则「边收边解码」会与「收完再解码」不一致
+        val mode = SstvMode.ROBOT_36
+        val image = solidImage(0x808080, mode.linePixels, mode.imageLines)
+        val audio = SstvEncoder(sampleRate).encode(image, mode)
+
+        val viaAudio = decodeSuccessfully(SstvDecoder(sampleRate), audio)
+
+        val detector = SstvVisDetector(sampleRate)
+        val vis = detector.process(audio)
+        assertNotNull("频率流入口需要 VIS 提供起点与失谐量", vis)
+        val demodulator = SstvDemodulator(
+            sampleRate = sampleRate,
+            phaseSpan = SstvDemodulator.recommendPhaseSpan(mode.pixelSeconds * sampleRate),
+        )
+        val freqs = demodulator.demodulate(audio)
+        val outcome = SstvDecoder(sampleRate).decodeFromFrequencies(
+            freqs = freqs,
+            mode = mode,
+            hedrShiftHz = vis!!.hedrShiftHz,
+            searchFromSample = vis.stopEndSample.toInt().coerceAtLeast(0),
+            validFromSample = demodulator.transientSamples,
+        )
+        assertTrue(
+            "频率流解码失败：${(outcome as? SstvDecoder.Outcome.Failure)?.reason}",
+            outcome is SstvDecoder.Outcome.Success,
+        )
+        val viaFreqs = (outcome as SstvDecoder.Outcome.Success).result
+
+        assertEquals("解码行数应一致", viaAudio.decodedLines, viaFreqs.decodedLines)
+        assertEquals("行周期比应一致", viaAudio.slantRatio, viaFreqs.slantRatio, 1e-6)
+        assertTrue(
+            "两条入口的像素应完全一致",
+            viaAudio.pixels.contentEquals(viaFreqs.pixels),
+        )
+    }
+
+    @Test
     fun `手动指定模式可跳过 VIS`() {
         val mode = SstvMode.ROBOT_36
         val image = solidImage(0x808080, mode.linePixels, mode.imageLines)

@@ -261,9 +261,13 @@ fun SstvMainScreen(
                     Text("模式选择", style = MiuixTheme.textStyles.title4, color = colorScheme.onBackground)
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "默认自动识别 VIS；弱信号下可手动锁定模式",
+                        if (uiState.presetApplied) {
+                            "当前为卫星预置模式，仅本次接收有效；选择任意模式即可取消"
+                        } else {
+                            "默认自动识别 VIS；弱信号下可手动锁定模式"
+                        },
                         style = MiuixTheme.textStyles.body2,
-                        color = colorScheme.onBackground,
+                        color = if (uiState.presetApplied) colorScheme.primary else colorScheme.onBackground,
                     )
                     Spacer(Modifier.height(8.dp))
                     Row(
