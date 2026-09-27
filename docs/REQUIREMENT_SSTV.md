@@ -607,6 +607,27 @@ data class SstvUiState(
 1. **每行首尾约 1–2 个像素**必然落在「同步脉冲 / porch / 分隔脉冲 ↔ 图像」的频率过渡带上（坏像素占比实测 1.8–2.1%）；
 2. **尖锐的水平边界**（如色条）超出模拟窄带模式的传输能力，任何解码器都无法完全还原 —— 用平滑内容验证时主体 PSNR 达 43–56 dB 即为明证。
 
+### 11.3.1 CI 编译验证（已通过）
+
+代码推送至 `miuix` 后由 GitHub Actions 完成真实构建，结果：
+
+| 工作流 | 结论 | 关键证据 |
+|---|---|---|
+| **CI Build APK** | ✅ success | `BUILD SUCCESSFUL in 3m 49s`，产出 `HamKit_3.0.0_16-release.apk`（21.9 MB），并进行 APK 签名校验（release 构建含 R8 混淆 + 资源收缩） |
+| **Unit Tests** | ⚠️ success（但见下） | `:app:testDebugUnitTest` 任务成功 |
+
+**这一验证不可省略**：CI 曾抓出本地无法发现的编译错误 ——
+`SstvMainScreen.kt:26 Cannot access 'RowColumnParentData?.weight': it is internal`。
+原因是 `Modifier.weight()` 属 `RowScope`/`ColumnScope` 的成员扩展，**不应也无法显式 import**；
+本地「缺依赖的语法检查」中所有 layout 符号均为 unresolved，无法暴露该问题。修复提交 `30e981a` 后构建通过。
+
+> ⚠️ **既有缺陷（与本次改动无关）**：CI 的 `:app:testDebugUnitTest` **实际未运行任何测试** ——
+> 任务从开始到 `BUILD SUCCESSFUL` 仅 0.1 秒，且 CI 脚本自身输出「Test result files not generated」。
+> 对照改动前的基线提交 `4c74c4f`，其 CI 表现完全相同（0.089 秒、无任何测试痕迹），
+> 因此这是仓库既有的测试门禁空跑问题，需单独排查（现象指向 Gradle 未发现测试类）。
+> **本方案的 25 个用例是在独立的 Kotlin/JVM 工程中真实运行并通过的**（见 §11.3），
+> 不依赖该 CI 门禁。
+
 ### 11.4 与初版方案的偏差
 
 | 项 | 初版 | 最终 | 原因 |
@@ -618,7 +639,8 @@ data class SstvUiState(
 
 ### 11.5 未完成项
 
-- **P6 UI 未经真机验证**：本地无 Android SDK，Android 层（`SstvRecorder` / 图像存储 / Compose 界面）未能编译与实机运行，纯 Kotlin 的 DSP 与协议层已用 25 个单元测试覆盖。
+- **未做真机声学验证**：Android 层已由 CI 完成真实编译与 Release 打包（§11.3.1），但尚未在手机上对着电台接收真实 SSTV 信号实测（需 ISS 过境或本地信号源）。
+- **CI 测试门禁空跑**：既有缺陷（§11.3.1 注），导致本方案的 25 个用例不会在 CI 中运行；当前依赖独立 JVM 工程验证。
 - **Scottie 族**：参数已录入，解码待二期（行中同步）。
 - **发射 UI、音频文件导入、图库导出相册**：按 §5 分期仍在二期。
 
