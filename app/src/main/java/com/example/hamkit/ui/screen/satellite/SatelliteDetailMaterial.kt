@@ -182,6 +182,35 @@ fun SatelliteDetailMaterial(catalogNumber: Int, onBack: () -> Unit = {}) {
                 }
             }
 
+            // SSTV 卫星：一键接收入口（ARISS 的 ISS 活动使用 PD-120）
+            if (radios.any { it.mode.contains("SSTV", ignoreCase = true) }) {
+                DetailCardMaterial {
+                    DetailRowMaterial(label = "SSTV 图像传输", value = "该卫星支持")
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = if (catalogNumber == 25544) {
+                            "ARISS 活动通常在 145.800 MHz 使用 PD-120，单帧约 126 秒。"
+                        } else {
+                            "该卫星的转发器标注了 SSTV 模式，可进入解码器接收图像。"
+                        },
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = dropUnlessResumed {
+                            navigator.push(
+                                Route.SstvMain(
+                                    presetModeName = if (catalogNumber == 25544) "PD_120" else null
+                                )
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("接收 SSTV 图像")
+                    }
+                }
+            }
+
             // 操作按钮
             Row(
                 modifier = Modifier.fillMaxWidth(),

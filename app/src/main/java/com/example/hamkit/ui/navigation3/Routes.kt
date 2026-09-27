@@ -113,4 +113,19 @@ sealed interface Route : NavKey, Parcelable {
     @Parcelize
     @Serializable
     data object Ft8Settings : Route
+
+    /**
+     * SSTV 慢扫描电视：接收与解码。
+     *
+     * @param presetModeName 预置锁定的模式名（如 ISS 的 PD_120）；来自卫星详情页的
+     *   「接收 SSTV」入口，为 null 时使用 VIS 自动识别
+     */
+    @Parcelize
+    @Serializable
+    data class SstvMain(val presetModeName: String? = null) : Route
+
+    /** SSTV 设置：模式锁定、保存策略与图库管理 */
+    @Parcelize
+    @Serializable
+    data object SstvSettings : Route
 }

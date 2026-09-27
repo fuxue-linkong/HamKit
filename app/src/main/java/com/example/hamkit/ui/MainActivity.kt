@@ -92,6 +92,8 @@ import com.example.hamkit.ui.screen.aprs.AprsMessageScreen
 import com.example.hamkit.ui.screen.aprs.AprsSymbolPickerScreen
 import com.example.hamkit.ui.screen.ft8.Ft8MainScreen
 import com.example.hamkit.ui.screen.ft8.Ft8SettingsScreen
+import com.example.hamkit.ui.screen.sstv.SstvMainScreen
+import com.example.hamkit.ui.screen.sstv.SstvSettingsScreen
 import com.example.hamkit.ui.screen.settings.SettingsScreenActions
 import com.example.hamkit.ui.screen.settings.UpdateDialogs
 import com.example.hamkit.ui.theme.HamKitTheme
@@ -223,6 +225,8 @@ class MainActivity : ComponentActivity() {
                                 entry<Route.AprsSymbolPicker> { WithApplicationViewModelStoreOwner { AprsSymbolPickerScreen(onNavigateBack = { navigator.pop() }) } }
                                 entry<Route.Ft8Main> { WithApplicationViewModelStoreOwner { Ft8MainScreen(onNavigate = { navigator.push(it) }, onNavigateBack = { navigator.pop() }) } }
                                 entry<Route.Ft8Settings> { WithApplicationViewModelStoreOwner { Ft8SettingsScreen(onNavigateBack = { navigator.pop() }) } }
+                                entry<Route.SstvMain> { route -> WithApplicationViewModelStoreOwner { SstvMainScreen(presetModeName = route.presetModeName, onNavigate = { navigator.push(it) }, onNavigateBack = { navigator.pop() }) } }
+                                entry<Route.SstvSettings> { WithApplicationViewModelStoreOwner { SstvSettingsScreen(onNavigateBack = { navigator.pop() }) } }
                             }
                         )
                     }
