@@ -113,6 +113,21 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * 清除卫星预置。
+     *
+     * [SstvViewModel] 是应用级（`appViewModel`）单例，预置若不清理会一直黏住 ——
+     * 用户从 ISS 页面进入过一次之后，再从首页进入也会是手动 PD-120。因此页面销毁时
+     * 必须清掉，让 `manualModeName` 回到用户自己的设置。
+     */
+    fun clearPreset() {
+        if (presetOverride == null) return
+        presetOverride = null
+        _uiState.update {
+            it.copy(presetApplied = false, manualModeName = settingsStore.manualModeName)
+        }
+    }
+
     fun startReceiving() {
         if (_uiState.value.isReceiving) return
         // 预置优先于用户默认设置

@@ -30,6 +30,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -79,10 +80,15 @@ fun SstvMainScreen(
     val context = LocalContext.current
     val scrollBehavior = MiuixScrollBehavior()
 
-    // 由卫星详情页进入时预置模式：ISS 等 SSTV 卫星可直接锁定其常用模式
+    // 由卫星详情页进入时预置模式：ISS 等 SSTV 卫星可直接锁定其常用模式。
+    // 走 applyPreset（不写设置）而非 setManualMode，并在离开页面时清除 ——
+    // ViewModel 是应用级单例，否则预置会一直黏住，让首页进入也变成手动模式。
     LaunchedEffect(presetModeName) {
         val mode = presetModeName?.let { name -> SstvMode.entries.find { it.name == name } }
-        if (mode != null) viewModel.setManualMode(mode)
+        if (mode != null) viewModel.applyPreset(mode)
+    }
+    DisposableEffect(Unit) {
+        onDispose { viewModel.clearPreset() }
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
