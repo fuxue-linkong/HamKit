@@ -177,13 +177,25 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
     fun stopReceiving() {
         recorder?.stop()
         recorder = null
+
+        // 关闭实时预览时，过程中不会建图，这里补一次 —— 让用户能看到已收到的部分，
+        // 而不是面对一块空白却要凭猜测去点保存
+        val snapshot = lastResult
+        val current = _uiState.value.bitmap
+        val bitmap = if (current == null && snapshot != null) {
+            SstvImageStore.toBitmap(snapshot.pixels, snapshot.width, snapshot.height)
+        } else {
+            current
+        }
+
         _uiState.update {
-            val partial = it.bitmap != null && it.decodedLines < it.totalLines
+            val partial = bitmap != null && it.decodedLines < it.totalLines
             it.copy(
                 isReceiving = false,
+                bitmap = bitmap,
                 status = when {
                     partial -> "已停止：收到 ${it.decodedLines}/${it.totalLines} 行，可手动保存"
-                    it.bitmap != null -> "接收已停止"
+                    bitmap != null -> "接收已停止"
                     else -> "已停止"
                 },
             )
@@ -281,15 +293,17 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun onDecoded(result: SstvDecoder.Result) {
         lastResult = result
-        val shouldUpdatePreview = settingsStore.livePreview
-        // 每次重建 Bitmap：内容变化但引用不变时 Compose 不会重绘
-        val bitmap = if (shouldUpdatePreview) {
+        val complete = result.decodedLines >= result.mode.imageLines
+
+        // 「实时预览」只决定**接收过程中**是否逐行重建画面；收满一帧必须出图，
+        // 否则关闭预览的用户连最终结果都看不到（只能盲点保存）。
+        // 每次重建 Bitmap：内容变化但引用不变时 Compose 不会重绘。
+        val needBitmap = settingsStore.livePreview || complete
+        val bitmap = if (needBitmap) {
             SstvImageStore.toBitmap(result.pixels, result.width, result.height)
         } else {
             _uiState.value.bitmap
         }
-
-        val complete = result.decodedLines >= result.mode.imageLines
         var savedName = _uiState.value.savedFileName
         var saveError: String? = null
         // 自动保存：整帧收齐后只尝试一次，失败不重试（否则每轮部分解码都会重写文件）

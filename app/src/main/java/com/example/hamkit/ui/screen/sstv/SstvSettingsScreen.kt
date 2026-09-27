@@ -91,7 +91,7 @@ fun SstvSettingsScreen(
                     Spacer(Modifier.height(8.dp))
                     SwitchRow(
                         title = "实时预览",
-                        summary = "接收过程中逐行显示图像（关闭可省电）",
+                        summary = "接收过程中逐行刷新画面；关闭可省电，收满仍会显示图像",
                         checked = uiState.livePreview,
                         onCheckedChange = { viewModel.setLivePreview(it) },
                     )
