@@ -75,7 +75,7 @@ class SstvDecoder(
         val mode = forcedMode ?: visOutcome?.mode
         ?: return Outcome.Failure("未识别到 VIS 头，请手动选择模式")
         if (!mode.decodable) {
-            return Outcome.Failure("${mode.displayName} 暂不支持解码（行中同步模式，见路线图二期）")
+            return Outcome.Failure("${mode.displayName} 当前版本不支持解码")
         }
         val hedrShiftHz = visOutcome?.hedrShiftHz ?: 0.0
         val searchFrom = visOutcome?.stopEndSample?.toInt()?.coerceAtLeast(0) ?: 0

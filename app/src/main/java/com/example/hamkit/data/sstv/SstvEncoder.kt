@@ -28,8 +28,9 @@ interface SstvImageSource {
  * 唯一能脱离真实电波验证解码器正确性的手段（见 docs/REQUIREMENT_SSTV.md §5.3）。
  * 实际发射（AudioTrack 播放）复用同一份输出。
  *
- * 与解码器共用 [SstvMode.channelTasks] 的同一套通道时序，因此模式参数表是
- * 单点真相：解码端与编码端不可能出现时序漂移。
+ * 与解码器共用 [SstvMode] 的同一套参数表：编码按 [SstvMode.lineEvents] 的**写入
+ * 顺序**生成，解码按 [SstvMode.channelTasks] 的**通道位置**采样，两者由单元测试
+ * 保证时间轴严格等价，因此不可能出现编解码时序漂移。
  *
  * 纯 Kotlin 实现，不依赖 Android API。
  *
@@ -68,9 +69,6 @@ class SstvEncoder(
         freqOffsetHz: Double = 0.0,
         includeVis: Boolean = true,
     ): FloatArray {
-        require(mode.syncPosition == SstvSyncPosition.LINE_START) {
-            "暂不支持行中同步模式（Scottie）的编码：${mode.displayName}"
-        }
         phase = 0.0
         plannedSeconds = 0.0
         writtenSamples = 0
@@ -79,7 +77,7 @@ class SstvEncoder(
         if (includeVis) writeVis(writer, mode.visCode, freqOffsetHz)
 
         val scaled = ScaledSource(source, mode)
-        val tasks = mode.channelTasks()
+        val events = mode.lineEvents()
         val blackHz = SstvMode.BLACK_HZ + freqOffsetHz
         val syncHz = SstvMode.VIS_BREAK_HZ + freqOffsetHz
 
@@ -87,25 +85,29 @@ class SstvEncoder(
         val imageStartSeconds = plannedSeconds
 
         for (radioLine in 0 until mode.radioLines) {
-            // 行首同步 + porch（porch 用黑电平，与主流实现一致）
-            writeTone(writer, syncHz, mode.syncSeconds)
-            writeTone(writer, blackHz, mode.porchSeconds)
+            // 按事件序列写入：同步脉冲的位置随模式而变（Scottie 位于 B 与 R 之间）
+            for (event in events) {
+                when (event) {
+                    is SstvLineEvent.Sync -> writeTone(writer, syncHz, event.seconds)
 
-            for ((index, task) in tasks.withIndex()) {
-                for (x in 0 until task.pixels) {
-                    val level = channelLevel(task.role, radioLine, x, scaled)
-                    val freq = SstvMode.BLACK_HZ +
-                        level / 255.0 * (SstvMode.WHITE_HZ - SstvMode.BLACK_HZ) +
-                        freqOffsetHz
-                    writeTone(writer, freq, task.pixelSeconds)
-                }
-                if (index != tasks.lastIndex) {
-                    writeTone(writer, blackHz, mode.separatorSeconds)
+                    is SstvLineEvent.Gap -> writeTone(writer, blackHz, event.seconds)
+
+                    is SstvLineEvent.Channel -> {
+                        val task = event.task
+                        for (x in 0 until task.pixels) {
+                            val level = channelLevel(task.role, radioLine, x, scaled)
+                            val freq = SstvMode.BLACK_HZ +
+                                level / 255.0 * (SstvMode.WHITE_HZ - SstvMode.BLACK_HZ) +
+                                freqOffsetHz
+                            writeTone(writer, freq, task.pixelSeconds)
+                        }
+                    }
                 }
             }
 
-            // 补齐到该行的理论终点：部分模式（如 Martin）在最后一个通道之后仍有
-            // 分隔脉冲，而 channelTasks 只描述通道起点，不描述尾部。用行号推算目标
+            // 补齐到该行的理论终点：部分模式在最后一个通道之后仍有分隔脉冲，而
+            // lineEvents 只描述到最后一个通道；此外 Scottie 1/DX 的标称像素时长
+            // 略短于行周期（modespec 为 4 位近似值），这里一并补足。用行号推算目标
             // 时间可同时消除累计舍入误差。
             val lineEndSeconds = imageStartSeconds + (radioLine + 1) * mode.lineSeconds
             val remaining = lineEndSeconds - plannedSeconds

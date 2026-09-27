@@ -62,9 +62,11 @@ class SstvCodecTest {
         for (mode in SstvMode.entries) {
             val lastEnd = mode.channelTasks()
                 .maxOf { it.startSeconds + it.pixels * it.pixelSeconds }
+            // 容差 1 µs：参数表的像素时长是 4 位有效近似值（Scottie 1/DX 已按行周期
+            // 反推修正），浮点比较留 1 µs 余量，远小于最短像素时长（137.5 µs）
             assertTrue(
                 "${mode.displayName} 通道结束 ${lastEnd}s 超出 ${mode.lineSeconds}s",
-                lastEnd <= mode.lineSeconds + 1e-9,
+                lastEnd <= mode.lineSeconds + 1e-6,
             )
         }
     }
@@ -91,10 +93,64 @@ class SstvCodecTest {
     }
 
     @Test
-    fun `Scottie 暂不支持解码但参数完整`() {
-        assertTrue(!SstvMode.SCOTTIE_1.decodable)
-        assertTrue(SstvMode.SCOTTIE_1.visCode == 0x3C)
-        assertTrue(SstvMode.ROBOT_36.decodable && SstvMode.PD_120.decodable)
+    fun `全部模式均可解码`() {
+        assertTrue("所有录入的模式都应可解码", SstvMode.entries.all { it.decodable })
+        assertEquals(0x3C, SstvMode.SCOTTIE_1.visCode)
+    }
+
+    @Test
+    fun `Scottie 的同步脉冲位于行中`() {
+        // 依据 slowrx mode_scottie.rs：[sep][G][sep][B][SYNC][porch][R]
+        val mode = SstvMode.SCOTTIE_1
+        val chanLen = mode.linePixels * mode.pixelSeconds
+        assertEquals(
+            "同步起点相对行首 = 2·sep + 2·chanLen",
+            2.0 * mode.separatorSeconds + 2.0 * chanLen,
+            mode.syncOffsetSeconds,
+            1e-12,
+        )
+        // 其余族同步就在行首
+        for (m in listOf(SstvMode.PD_120, SstvMode.ROBOT_36, SstvMode.MARTIN_1)) {
+            assertEquals("${m.displayName} 同步应在行首", 0.0, m.syncOffsetSeconds, 1e-12)
+        }
+    }
+
+    @Test
+    fun `lineEvents 与 channelTasks 的时间轴严格一致`() {
+        // 编码按 lineEvents 写入、解码按 channelTasks 采样，两者必须逐像素等价
+        for (mode in SstvMode.entries) {
+            var elapsed = 0.0
+            val startsFromEvents = ArrayList<Pair<SstvChannelRole, Double>>()
+            for (event in mode.lineEvents()) {
+                when (event) {
+                    is SstvLineEvent.Sync -> elapsed += event.seconds
+                    is SstvLineEvent.Gap -> elapsed += event.seconds
+                    is SstvLineEvent.Channel -> {
+                        startsFromEvents.add(event.task.role to elapsed)
+                        elapsed += event.task.pixels * event.task.pixelSeconds
+                    }
+                }
+            }
+            val tasks = mode.channelTasks()
+            assertEquals("${mode.displayName} 通道数不一致", tasks.size, startsFromEvents.size)
+            for (i in tasks.indices) {
+                assertEquals(
+                    "${mode.displayName} 第 $i 个通道角色不一致",
+                    tasks[i].role,
+                    startsFromEvents[i].first,
+                )
+                assertEquals(
+                    "${mode.displayName} 第 $i 个通道起点不一致",
+                    tasks[i].startSeconds,
+                    startsFromEvents[i].second,
+                    1e-9,
+                )
+            }
+            assertTrue(
+                "${mode.displayName} 行事件总时长 ${elapsed}s 超出 ${mode.lineSeconds}s",
+                elapsed <= mode.lineSeconds + 1e-6,
+            )
+        }
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -279,6 +335,14 @@ class SstvCodecTest {
     }
 
     @Test
+    fun `Scottie 族自环保真`() {
+        // Scottie 的同步脉冲位于行中，行首需由实测同步位置反推
+        assertRoundTrip(SstvMode.SCOTTIE_1, solidImage(0x808080, 320, 256), 36.0)
+        assertRoundTrip(SstvMode.SCOTTIE_2, barsImage(SstvMode.SCOTTIE_2), 24.0)
+        assertRoundTrip(SstvMode.SCOTTIE_DX, sineImage(SstvMode.SCOTTIE_DX, cycles = 1), 28.0)
+    }
+
+    @Test
     fun `时钟漂移百分之一仍能校正`() {
         val mode = SstvMode.ROBOT_36
         val encoder = SstvEncoder(sampleRate)
@@ -331,15 +395,6 @@ class SstvCodecTest {
         val outcome = SstvDecoder(sampleRate).decode(tone(1900.0, 1.0))
         assertTrue(outcome is SstvDecoder.Outcome.Failure)
         assertTrue((outcome as SstvDecoder.Outcome.Failure).reason.contains("VIS"))
-    }
-
-    @Test
-    fun `Scottie 模式明确提示暂不支持`() {
-        val outcome = SstvDecoder(sampleRate).decode(
-            SstvEncoder(sampleRate).encodeVis(SstvMode.SCOTTIE_1.visCode) + FloatArray(sampleRate),
-        )
-        assertTrue(outcome is SstvDecoder.Outcome.Failure)
-        assertTrue((outcome as SstvDecoder.Outcome.Failure).reason.contains("不支持"))
     }
 
     // ══════════════════════════════════════════════════════════════════
