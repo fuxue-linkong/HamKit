@@ -569,6 +569,7 @@ data class SstvUiState(
 | Android | `data/sstv/SstvSettingsStore.kt` | 模式锁定 / 自动保存 / 实时预览 |
 | UI | `ui/screen/sstv/*`、`ui/viewmodel/SstvViewModel.kt` | 主界面（实时预览 + 参数 + 模式兜底）、设置页 |
 | 接入 | `Routes.kt`、`MainActivity.kt`、首页卡片、`strings.xml` | 导航与首页入口 |
+| 联动 | `SatelliteDetailScreen.kt` / `SatelliteDetailMaterial.kt` | 详情页在转发器标注 SSTV 时显示「接收 SSTV 图像」入口；ISS（NORAD 25544）预置 `PD_120`，路由参数 `SstvMain(presetModeName)` 承载 |
 | 测试 | `app/src/test/.../SstvCodecTest.kt` | **25 个用例**，覆盖协议/识别/鉴频/色彩/自环/鲁棒性 |
 
 ### 11.2 实现阶段证伪的四个「想当然」
