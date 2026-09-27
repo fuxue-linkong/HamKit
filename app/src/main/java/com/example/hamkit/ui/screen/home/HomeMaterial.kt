@@ -99,6 +99,8 @@ fun HomePagerMaterial(
                         CwEntryCard(actions.onCWPracticeClick)
                         AprsEntryCard(actions.onAprsClick)
                         Ft8EntryCard(actions.onFt8Click)
+                        // SSTV 慢扫描电视入口
+                        SstvEntryCard(actions.onSstvClick)
                     } else {
                         // 权限卡片：引导用户授权定位（未授权时隐藏其余卡片）
                         PermissionCard(permissionState, actions.onPermissionsClick)
@@ -498,6 +500,27 @@ private fun Ft8EntryCard(onClick: () -> Unit) {
             Spacer(Modifier.height(4.dp))
             Text(
                 text = stringResource(R.string.ft8_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+@Composable
+private fun SstvEntryCard(onClick: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onClick
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = stringResource(R.string.sstv),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = stringResource(R.string.sstv_desc),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

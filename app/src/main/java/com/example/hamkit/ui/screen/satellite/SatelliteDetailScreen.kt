@@ -60,6 +60,9 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import java.util.Locale
 
+/** ISS 的 NORAD 编号：其 ARISS SSTV 活动统一使用 PD-120 模式。 */
+private const val ISS_NORAD = 25544
+
 /**
  * 卫星详情页入口：按当前界面风格分发到 Miuix / Material 实现。
  */
@@ -209,6 +212,37 @@ fun SatelliteDetailMiuix(catalogNumber: Int, onBack: () -> Unit = {}) {
                     )
                     Spacer(Modifier.height(6.dp))
                     DetailRowMiuix(label = "轨道相位", value = "%.0f°".format(info.phaseDeg))
+                }
+            }
+
+            // SSTV 卫星：一键接收入口（ARISS 的 ISS 活动使用 PD-120）
+            if (radios.any { it.mode.contains("SSTV", ignoreCase = true) }) {
+                DetailCardMiuix {
+                    DetailRowMiuix(label = "SSTV 图像传输", value = "该卫星支持")
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = if (catalogNumber == ISS_NORAD) {
+                            "ARISS 活动通常在 145.800 MHz 使用 PD-120，单帧约 126 秒。"
+                        } else {
+                            "该卫星的转发器标注了 SSTV 模式，可进入解码器接收图像。"
+                        },
+                        color = colorScheme.onSurfaceVariantSummary
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = dropUnlessResumed {
+                            navigator.push(
+                                Route.SstvMain(
+                                    // ISS 的 ARISS 活动统一使用 PD-120，直接锁定可省去 VIS 识别的失败风险
+                                    presetModeName = if (catalogNumber == ISS_NORAD) "PD_120" else null
+                                )
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColorsPrimary()
+                    ) {
+                        Text("接收 SSTV 图像")
+                    }
                 }
             }
 

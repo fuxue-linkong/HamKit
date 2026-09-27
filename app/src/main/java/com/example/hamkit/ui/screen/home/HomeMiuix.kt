@@ -127,6 +127,8 @@ fun HomePagerMiuix(
                             // APRS 入口
                             AprsEntryCardMiuix(actions.onAprsClick)
                             Ft8EntryCardMiuix(actions.onFt8Click)
+                            // SSTV 慢扫描电视入口
+                            SstvEntryCardMiuix(actions.onSstvClick)
                         } else {
                             // 权限卡片：引导用户授权定位（未授权时隐藏其余卡片）
                             PermissionCardMiuix(permissionState, actions.onPermissionsClick)
@@ -481,6 +483,17 @@ private fun Ft8EntryCardMiuix(onClick: () -> Unit) {
         BasicComponent(
             title = stringResource(R.string.ft8),
             summary = stringResource(R.string.ft8_desc),
+            onClick = onClick
+        )
+    }
+}
+
+@Composable
+private fun SstvEntryCardMiuix(onClick: () -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        BasicComponent(
+            title = stringResource(R.string.sstv),
+            summary = stringResource(R.string.sstv_desc),
             onClick = onClick
         )
     }

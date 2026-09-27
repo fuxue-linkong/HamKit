@@ -333,6 +333,10 @@
     <string name="aprs" translatable="false">APRS</string>
     <string name="aprs_desc" translatable="false">业余无线电自动位置报告系统</string>
 
+    <!-- SSTV模块 -->
+    <string name="sstv" translatable="false">SSTV</string>
+    <string name="sstv_desc" translatable="false">慢扫描电视：接收并解码业余无线电图像</string>
+
     <!-- FT8模块 -->
     <string name="ft8" translatable="false">FT8</string>
     <string name="ft8_desc" translatable="false">FT8数字模式通联</string>

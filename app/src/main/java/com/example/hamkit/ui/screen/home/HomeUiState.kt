@@ -42,4 +42,7 @@ data class HomeActions(
     val onLocationDetailClick: () -> Unit = {},
     val onAprsClick: () -> Unit = {},
     val onFt8Click: () -> Unit = {},
+
+    /** SSTV 慢扫描电视入口 */
+    val onSstvClick: () -> Unit = {},
 )
