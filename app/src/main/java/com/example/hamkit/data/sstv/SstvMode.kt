@@ -55,6 +55,27 @@ data class SstvChannelTask(
     val pixelSeconds: Double,
 )
 
+/**
+ * 无线行内的一个音频事件（**编码**视角）。
+ *
+ * [SstvMode.channelTasks] 描述「通道位于何处」，本序列描述「按什么顺序写入」，
+ * 因此能表达 Scottie 特有的「同步脉冲夹在 B 与 R 之间」结构 —— 这是编码器唯一
+ * 需要区分的差异。
+ *
+ * **不变量**：按顺序累加 [Channel] 事件得到的起始时刻，必须与
+ * [SstvMode.channelTasks] 中各任务的 `startSeconds` 逐一相等（有单元测试守护）。
+ */
+sealed interface SstvLineEvent {
+    /** 1200 Hz 行同步脉冲。 */
+    data class Sync(val seconds: Double) : SstvLineEvent
+
+    /** 黑电平间隔（porch 或通道分隔脉冲）。 */
+    data class Gap(val seconds: Double) : SstvLineEvent
+
+    /** 一个图像通道。 */
+    data class Channel(val task: SstvChannelTask) : SstvLineEvent
+}
+
 /** 模式族的像素布局，决定解码器如何把通道组装成图像行。 */
 enum class SstvChannelLayout {
     /** PD 族：一个无线行 = Y(奇行) + Cr + Cb + Y(偶行)，色度供相邻两行共用。 */
@@ -164,7 +185,9 @@ enum class SstvMode(
     SCOTTIE_1(
         visCode = 0x3C, displayName = "Scottie 1", linePixels = 320, imageLines = 256,
         lineSeconds = 0.42838, syncSeconds = 0.009, porchSeconds = 0.0015,
-        pixelSeconds = 0.0004320, separatorSeconds = 0.0015,
+        // modespec 的标称值是 0.4320 ms（4 位近似），会让「3 通道 + 2 分隔 + sync + porch」
+        // 比行周期短 0.16 ms。此处按行周期反推精确值：(0.42838 − 0.003 − 0.009 − 0.0015) / 960
+        pixelSeconds = 0.0004321666667, separatorSeconds = 0.0015,
         layout = SstvChannelLayout.RGB_SEQUENTIAL, syncPosition = SstvSyncPosition.SCOTTIE,
     ),
 
@@ -172,7 +195,8 @@ enum class SstvMode(
     SCOTTIE_DX(
         visCode = 0x4C, displayName = "Scottie DX", linePixels = 320, imageLines = 256,
         lineSeconds = 1.0503, syncSeconds = 0.009, porchSeconds = 0.0015,
-        pixelSeconds = 0.00108053, separatorSeconds = 0.0015,
+        // 同理：modespec 标称 1.08053 ms 会使行超长 0.5 ms，按行周期反推为 1.0800 ms
+        pixelSeconds = 0.00108, separatorSeconds = 0.0015,
         layout = SstvChannelLayout.RGB_SEQUENTIAL, syncPosition = SstvSyncPosition.SCOTTIE,
     ),
 
@@ -214,14 +238,28 @@ enum class SstvMode(
         get() = radioLines * lineSeconds
 
     /**
-     * 本期解码器是否支持该模式。
+     * 解码器是否支持该模式。
      *
-     * Scottie 族的同步脉冲位于行中（介于 B 与 R 之间），行首对齐与 slant 校正
-     * 需要独立的处理模型，故与一期解耦（详见 docs/REQUIREMENT_SSTV.md §5.2）。
-     * 其参数仍完整录入，供 VIS 识别与 UI 展示使用。
+     * PD / Robot / Martin / Scottie 四族均已支持。Scottie 的同步脉冲位于行中
+     * （介于 B 与 R 之间），解码器按 [syncOffsetSeconds] 把检测到的同步位置
+     * 反推回行首，其余流程与其他族完全一致。
      */
     val decodable: Boolean
-        get() = syncPosition == SstvSyncPosition.LINE_START
+        get() = true
+
+    /**
+     * 同步脉冲起点相对行首的偏移（秒）。
+     *
+     * 除 Scottie 族外同步脉冲就在行首，偏移为 0；Scottie 的行布局是
+     * `[sep][G][sep][B][SYNC][porch][R]`（依据 slowrx `mode_scottie.rs`），
+     * 行首位于同步脉冲之前 `2·sep + 2·chanLen`。解码器据此把检测到的同步脉冲
+     * 位置换算成行首，编码器则据此把同步脉冲插到正确位置。
+     */
+    val syncOffsetSeconds: Double
+        get() = when (syncPosition) {
+            SstvSyncPosition.LINE_START -> 0.0
+            SstvSyncPosition.SCOTTIE -> 2.0 * separatorSeconds + 2.0 * linePixels * pixelSeconds
+        }
 
     /**
      * 返回该模式一个无线行内的通道解调任务（按发送顺序）。
@@ -269,17 +307,81 @@ enum class SstvMode(
                     SstvChannelTask(SstvChannelRole.RED, uniformStart(2), linePixels, pixelSeconds),
                 )
 
-                // Scottie：G + Sep + B + [Sync + Porch] + R（同步在行中）
+                // Scottie：[sep][G][sep][B][SYNC][porch][R]（同步位于行中）
+                //
+                // 逐项对照 slowrx `mode_scottie.rs` 的 ChanStart：
+                //   G = septr, B = 2·septr + chanLen, R = 2·septr + 2·chanLen + sync + porch
+                // 注意行首本身就是一个分隔脉冲（曾被漏掉，导致整行相位差 1 个 sep）。
                 SstvSyncPosition.SCOTTIE -> {
-                    val gStart = 0.0
-                    val bStart = gStart + chanLen + separatorSeconds
-                    val rStart = bStart + chanLen + syncSeconds + porchSeconds
+                    val gStart = separatorSeconds
+                    val bStart = 2.0 * separatorSeconds + chanLen
+                    val rStart = 2.0 * separatorSeconds + 2.0 * chanLen + syncSeconds + porchSeconds
                     listOf(
                         SstvChannelTask(SstvChannelRole.GREEN, gStart, linePixels, pixelSeconds),
                         SstvChannelTask(SstvChannelRole.BLUE, bStart, linePixels, pixelSeconds),
                         SstvChannelTask(SstvChannelRole.RED, rStart, linePixels, pixelSeconds),
                     )
                 }
+            }
+        }
+    }
+
+    /**
+     * 返回该模式一个无线行的音频事件序列（编码用）。
+     *
+     * 与 [channelTasks] 的时间轴严格等价，但按**写入顺序**表达，因此能容纳
+     * Scottie 的「同步脉冲位于 B 与 R 之间」。
+     */
+    fun lineEvents(): List<SstvLineEvent> {
+        fun sync() = SstvLineEvent.Sync(syncSeconds)
+        fun gap(seconds: Double) = SstvLineEvent.Gap(seconds)
+        fun channel(
+            role: SstvChannelRole,
+            pixels: Int = linePixels,
+            pixelSeconds: Double = this.pixelSeconds,
+        ) = SstvLineEvent.Channel(SstvChannelTask(role, 0.0, pixels, pixelSeconds))
+
+        return when (layout) {
+            // PD：[Sync][Porch][Y₁][Cr][Cb][Y₂]（PD 族分隔为 0）
+            SstvChannelLayout.PD_FRAME -> listOf(
+                sync(), gap(porchSeconds),
+                channel(SstvChannelRole.Y_ODD), channel(SstvChannelRole.CR),
+                channel(SstvChannelRole.CB), channel(SstvChannelRole.Y_EVEN),
+            )
+
+            SstvChannelLayout.ROBOT_YUV -> if (this == ROBOT_72) {
+                listOf(
+                    sync(), gap(porchSeconds),
+                    channel(SstvChannelRole.Y), gap(separatorSeconds),
+                    channel(SstvChannelRole.U), gap(separatorSeconds),
+                    channel(SstvChannelRole.V),
+                )
+            } else {
+                // Robot 24/36：Y 通道占 2× 像素时间
+                listOf(
+                    sync(), gap(porchSeconds),
+                    channel(SstvChannelRole.Y, pixelSeconds = pixelSeconds * 2.0),
+                    gap(separatorSeconds),
+                    channel(SstvChannelRole.CHROMA),
+                )
+            }
+
+            SstvChannelLayout.RGB_SEQUENTIAL -> when (syncPosition) {
+                // Martin：[Sync][Porch][G][sep][B][sep][R]
+                SstvSyncPosition.LINE_START -> listOf(
+                    sync(), gap(porchSeconds),
+                    channel(SstvChannelRole.GREEN), gap(separatorSeconds),
+                    channel(SstvChannelRole.BLUE), gap(separatorSeconds),
+                    channel(SstvChannelRole.RED),
+                )
+
+                // Scottie：[sep][G][sep][B][SYNC][porch][R]
+                SstvSyncPosition.SCOTTIE -> listOf(
+                    gap(separatorSeconds), channel(SstvChannelRole.GREEN),
+                    gap(separatorSeconds), channel(SstvChannelRole.BLUE),
+                    sync(), gap(porchSeconds),
+                    channel(SstvChannelRole.RED),
+                )
             }
         }
     }

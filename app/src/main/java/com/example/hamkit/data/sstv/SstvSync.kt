@@ -46,6 +46,13 @@ object SstvSync {
          * 1–2 样本的偏差在变化剧烈的图像内容上就会显现为可见误差。
          */
         val pulseCenters: List<Double>,
+        /**
+         * 同步脉冲起点相对行首的偏移（样本）。
+         *
+         * 除 Scottie 族外为 0（同步就在行首）；Scottie 为 `2·sep + 2·chanLen`，
+         * 即行首位于同步脉冲之前。所有行首计算都必须扣掉它。
+         */
+        val syncOffsetSamples: Double,
     ) {
         /** 由同步脉冲实测频率反推的失谐量（Hz）。 */
         val measuredShiftHz: Double get() = syncFrequencyHz - SstvMode.VIS_BREAK_HZ
@@ -72,7 +79,7 @@ object SstvSync {
          * 行首，否则退回拟合预测值。这样既保持整体 slant 校正，又吸收单行抖动。
          */
         fun lineStartRefined(line: Int, syncSamples: Double): Double {
-            val predictedCenter = lineStart(line) + syncSamples / 2.0
+            val predictedCenter = lineStart(line) + syncOffsetSamples + syncSamples / 2.0
             val tolerance = lineSamples * 0.2
             var best: Double? = null
             var bestDistance = Double.MAX_VALUE
@@ -85,7 +92,8 @@ object SstvSync {
             }
             val matched = best
             return if (matched != null && bestDistance <= tolerance) {
-                matched - syncSamples / 2.0
+                // 由实测脉冲中心反推行首：扣掉「同步脉冲中心相对行首」的总偏移
+                matched - syncSamples / 2.0 - syncOffsetSamples
             } else {
                 lineStart(line)
             }
@@ -196,8 +204,11 @@ object SstvSync {
             return null
         }
 
-        // 截距是「同步脉冲中心」，换算到行首（同步脉冲起点）
-        val firstLineStart = intercept - syncSamples / 2.0
+        // 截距是「同步脉冲中心」。换算到行首要扣掉两段：
+        //   1) 半个同步脉冲（中心 → 起点）
+        //   2) 同步起点相对行首的偏移（Scottie 的同步位于行中，行首在其之前）
+        val syncOffsetSamples = mode.syncOffsetSeconds * sampleRate
+        val firstLineStart = intercept - syncSamples / 2.0 - syncOffsetSamples
 
         // 统计同步脉冲内的平均频率（只取段中部，避开两侧的频率过渡带），
         // 用于得到比 VIS leader 更精确的失谐量
@@ -224,6 +235,7 @@ object SstvSync {
             nominalLineSamples = nominalLineSamples,
             syncFrequencyHz = syncFrequencyHz,
             pulseCenters = chain.map { it.center },
+            syncOffsetSamples = syncOffsetSamples,
         )
     }
 

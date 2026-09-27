@@ -180,7 +180,7 @@ fun SstvSettingsScreen(
                             "• ISS 的 ARISS 活动使用 PD-120，频率 145.800 MHz，单帧约 126 秒\n" +
                             "• 手机麦克风对准电台扬声器，音量以不失真为准\n" +
                             "• 若 VIS 识别失败，请手动锁定模式后重试\n" +
-                            "• Scottie 族（行中同步）暂不支持解码，二期加入",
+                            "• 支持 PD / Robot / Martin / Scottie 四族共 11 种模式；Scottie 的同步脉冲位于行中，已按行首反推处理",
                         style = MiuixTheme.textStyles.body2,
                         color = colorScheme.onBackground,
                     )

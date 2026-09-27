@@ -11,7 +11,7 @@ Official website: https://hamkit.click
 ### Completed
 
 - **CW Trainer** (Morse code learning)
-- **SSTV (Slow-Scan Television)** (in-house pure-Kotlin DSP; PD / Robot / Martin families, 8 modes)
+- **SSTV (Slow-Scan Television)** (in-house pure-Kotlin DSP; PD / Robot / Martin / Scottie families, 11 modes)
 - **Satellite Positioning & Tracking** (in-house SGP4/SDP4 engine, Look4Sat-style radar view, SatNOGS transponder frequency database)
 - **AMSAT Satellite Status**
 - **Calendar Transit Alerts**
@@ -55,10 +55,11 @@ Official website: https://hamkit.click
 ### SSTV (Slow-Scan Television)
 - **In-house pure-Kotlin DSP**: quadrature FM demodulation (8th-order Butterworth low-pass + multi-sample phase differencing), no third-party dependencies
 - **Automatic VIS header detection**; verified to lock correctly even with a ±120 Hz frequency offset, with manual mode override as fallback
-- Supports **PD-120 / 180 / 240, Robot 24 / 36 / 72, Martin 1 / 2** (8 modes)
+- Supports **PD-120 / 180 / 240, Robot 24 / 36 / 72, Martin 1 / 2, Scottie 1 / 2 / DX** (11 modes)
 - **Line sync detection + least-squares slant correction**: automatically compensates for clock mismatch (±1% drift verified)
 - **Mistuning compensation** from the average frequency of all sync pulses, preserving correct levels under Doppler
 - Live line-by-line preview, with automatic saving once a frame completes
+- Scottie's mid-line sync is handled by inferring line start from the measured sync position (`2·sep + 2·chanLen` offset)
 - Pairs with satellite tracking: ARISS ISS SSTV events use **PD-120** at 145.800 MHz
 
 ### Transit Alerts
