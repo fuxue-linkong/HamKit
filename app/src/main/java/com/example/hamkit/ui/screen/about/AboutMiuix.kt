@@ -44,6 +44,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInWindow
@@ -313,6 +314,8 @@ private fun AboutContent(
                         ),
                     painter = rememberAppIconPainter(),
                     contentDescription = null,
+                    // 显式声明等比完整显示：禁止任何隐式缩放策略把图标裁成局部特写
+                    contentScale = ContentScale.Fit,
                 )
             }
             Text(
