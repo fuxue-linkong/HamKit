@@ -32,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -87,6 +88,8 @@ fun AboutScreenMaterial(
                     Image(
                         painter = rememberAppIconPainter(),
                         contentDescription = null,
+                        // 显式声明等比完整显示：禁止任何隐式缩放策略把图标裁成局部特写
+                        contentScale = ContentScale.Fit,
                         modifier = Modifier
                             .size(80.dp)
                     )
