@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
@@ -298,8 +297,10 @@ private fun AboutContent(
                     },
             ) {
                 Image(
+                    // 尺寸必须与外层 100dp 的裁切容器一致：此处历史值为 245dp，
+                    // 配合外层的 clipToBounds() 会把整幅 Logo 裁成中心一小块（表现为「人物面部特写」）
                     modifier = Modifier
-                        .requiredSize(245.dp)
+                        .fillMaxSize()
                         .then(
                             if (enableBlur) {
                                 Modifier.textureBlur(
