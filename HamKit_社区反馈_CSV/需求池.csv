@@ -1,0 +1,5 @@
+﻿编号,需求,类型,提出人,来源,提出时间,优先级,状态
+HK-REQ-001,支持通联记录（QSO 日志），出门只带手机即可完成记录,功能新增,BH9BZB (HamCQ uid 2197),HamCQ 帖子 https://forum.hamcq.cn/d/8940/15,2026-09-28,中,已列入开发清单
+HK-REQ-002,提供 iOS 客户端,平台扩展,BH6BXM (HamCQ uid 11580),HamCQ 帖子 https://forum.hamcq.cn/d/8940/17,2026-10-02,低,暂不排期
+HK-REQ-003,APRS-IS 只读模式（passcode 留空时以 pass -1 连接，可收不可发）,合规改造衍生,开发团队 (2048lr),GitHub https://github.com/fuxue-linkong/HamKit/issues/93,2026-10-10,高,已实现（AVD 验证）
+HK-REQ-004,首次使用 APRS-IS 前增加持照声明确认,合规改造衍生,开发团队 (2048lr),GitHub https://github.com/fuxue-linkong/HamKit/issues/93,2026-10-10,高,已实现（AVD 验证）

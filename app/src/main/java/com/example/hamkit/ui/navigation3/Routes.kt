@@ -152,4 +152,9 @@ sealed interface Route : NavKey, Parcelable {
     @Parcelize
     @Serializable
     data object HfFax : Route
+
+    /** QSO 通联日志：FT8 通联记录列表 / 增删改 / ADIF/XML 导出 */
+    @Parcelize
+    @Serializable
+    data object QsoLogList : Route
 }

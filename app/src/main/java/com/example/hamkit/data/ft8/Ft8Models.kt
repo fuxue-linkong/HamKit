@@ -59,4 +59,7 @@ data class Ft8QsoRecord(
     val mode: String = "FT8",
     val qsoTime: Long = System.currentTimeMillis(),
     val isComplete: Boolean = false,
+    val operator: String? = null, // 本台呼号（操作员）
+    val myGrid: String? = null, // 本台网格
+    val comment: String? = null, // 备注（导出 ADIF 时仅保留 ASCII）
 ) : Parcelable

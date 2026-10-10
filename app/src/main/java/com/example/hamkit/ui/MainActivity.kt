@@ -96,6 +96,7 @@ import com.example.hamkit.ui.screen.aprs.AprsMessageScreen
 import com.example.hamkit.ui.screen.aprs.AprsSymbolPickerScreen
 import com.example.hamkit.ui.screen.ft8.Ft8MainScreen
 import com.example.hamkit.ui.screen.ft8.Ft8SettingsScreen
+import com.example.hamkit.ui.screen.ft8.QsoLogScreen
 import com.example.hamkit.ui.screen.sstv.HfFaxScreen
 import com.example.hamkit.ui.screen.sstv.SstvGalleryScreen
 import com.example.hamkit.ui.screen.sstv.SstvMainScreen
@@ -252,6 +253,7 @@ class MainActivity : ComponentActivity() {
                                 entry<Route.SstvGallery> { route -> WithApplicationViewModelStoreOwner { SstvGalleryScreen(pickForTx = route.pickForTx, onPicked = { navigator.pop() }, onNavigateBack = { navigator.pop() }) } }
                                 entry<Route.SstvTx> { WithApplicationViewModelStoreOwner { SstvTxScreen(onNavigate = { navigator.push(it) }, onNavigateBack = { navigator.pop() }) } }
                                 entry<Route.HfFax> { WithApplicationViewModelStoreOwner { HfFaxScreen(onNavigateBack = { navigator.pop() }) } }
+                                entry<Route.QsoLogList> { WithApplicationViewModelStoreOwner { QsoLogScreen(onNavigateBack = { navigator.pop() }) } }
                             }
                         )
                     }

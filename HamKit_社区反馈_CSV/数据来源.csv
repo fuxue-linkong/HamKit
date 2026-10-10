@@ -1,0 +1,8 @@
+﻿来源名称,类型,链接,说明
+HamCQ 论坛 HamKit 发布帖,社区论坛,https://forum.hamcq.cn/d/8940,21 楼，2026-08-09 起，2026-10-06 止；BUG 与需求的一手来源
+GitHub HamKit 仓库,代码仓库,https://github.com/fuxue-linkong/HamKit,MIT 开源，主分支 miuix；issue/PR 为官方跟踪渠道
+GitHub Issue #93,问题跟踪,https://github.com/fuxue-linkong/HamKit/issues/93,APRS-IS passcode 合规整改，open，label: bug，2026-10-10 建立
+APRS-IS 官方文档,规范依据,https://www.aprs-is.net/Connecting.aspx,Passcode 发放政策的官方原文出处
+仓库内缺陷分析文档,代码仓库,https://github.com/fuxue-linkong/HamKit/blob/miuix/docs/COMPETITIVE_DEFECT_ANALYSIS_AND_FIX_PLAN.md,P0-3（返回键失效）与 P0-4（输入法遮挡）的既有跟踪记录，与本次代码定位结论一致
+本地仓库代码定位,代码证据,Dual-zone_network_positioning,分支 miuix，commit e96452e；AprsPacket/AprsModels/AprsSettingsScreen/AprsConnection 行号均实测
+本次整改合规文档,代码仓库,docs/APRS_IS_COMPLIANCE.md,HK-BUG-003 合规整改说明（官方原文、整改前后对照、对外答复口径、发布前复查清单）

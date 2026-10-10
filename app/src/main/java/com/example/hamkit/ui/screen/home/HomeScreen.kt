@@ -86,6 +86,7 @@ fun HomePager(
         onAprsClick = { navigator.push(Route.AprsMain) },
         onFt8Click = { navigator.push(Route.Ft8Main) },
         onSstvClick = { navigator.push(Route.SstvMain()) },
+        onQsoLogClick = { navigator.push(Route.QsoLogList) },
     )
 
     val businessState = HomeBusinessState(

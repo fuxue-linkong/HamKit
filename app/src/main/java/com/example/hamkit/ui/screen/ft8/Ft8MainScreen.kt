@@ -94,6 +94,14 @@ fun Ft8MainScreen(
                 },
                 actions = {
                     Text(
+                        "日志",
+                        style = MiuixTheme.textStyles.body1,
+                        color = colorScheme.primary,
+                        modifier = Modifier
+                            .clickable { onNavigate(Route.QsoLogList) }
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    )
+                    Text(
                         "设置",
                         style = MiuixTheme.textStyles.body1,
                         color = colorScheme.primary,
