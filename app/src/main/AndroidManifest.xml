@@ -17,6 +17,13 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
 
+    <!--
+      SSTV 播放捕获（Android 10+）：解码其它应用正在播放的音频需要 MediaProjection，
+      而 Android 14 起要求调用 getMediaProjection() 之前已有一个
+      foregroundServiceType="mediaProjection" 的前台服务在运行。
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+
     <!-- 应用内更新：安装 APK（Android 8+ 需显式声明） -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
@@ -28,6 +35,16 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <!--
+      SSTV 图库导出到系统相册：
+      Android 10（API 29）起 MediaStore 分区存储不需要权限；仅 9 及以下需要，
+      故用 maxSdkVersion 限死，避免在新系统上多要一个无用的敏感权限。
+    -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
 
     <uses-sdk tools:overrideLibrary="top.yukonga.miuix.kmp.blur" />
 
@@ -78,6 +95,15 @@
             android:name=".data.aprs.AprsService"
             android:exported="false"
             android:foregroundServiceType="location" />
+
+        <!--
+          SSTV 播放捕获的前台服务：只为满足「先有 mediaProjection 前台服务、再取投影」
+          的平台要求（Android 14+），本身不做采集。
+        -->
+        <service
+            android:name=".data.sstv.SstvCaptureService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
 
         <!-- 接收 AlarmManager 触发的过境提醒广播 -->
         <receiver

@@ -130,3 +130,31 @@ jobs:
           echo "| Branch | \`${{ github.ref_name }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Commit | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Coverage enforcement | ${{ inputs.fail-on-coverage }} |" >> "$GITHUB_STEP_SUMMARY"
+
+      # ── 测试门禁不得空跑 ──
+      #
+      # 背景：曾观察到 `:app:testDebugUnitTest` 以「BUILD SUCCESSFUL in 0.1s」结束，
+      # 同时摘要里写着「Test result files not generated」—— 也就是**一个用例都没跑
+      # 却依然是绿灯**。那种情况下所有「CI 通过」的结论都没有回归保护意义。
+      # 因此在摘要之外补一道硬断言：没有任何 TEST-*.xml、或用例总数为 0，直接失败。
+      - name: Assert tests actually ran
+        if: always()
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(app/build/test-results/testDebugUnitTest/TEST-*.xml)
+
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::未生成任何 TEST-*.xml —— 单元测试门禁空跑"
+            exit 1
+          fi
+
+          total=$(grep -hoP 'tests="\K[^"]+' "${files[@]}" | awk '{s+=$1} END {print s+0}')
+          failures=$(grep -hoP 'failures="\K[^"]+' "${files[@]}" | awk '{s+=$1} END {print s+0}')
+          echo "测试类 ${#files[@]} 个，用例 $total 个，失败 $failures 个"
+
+          if [ "$total" -le 0 ]; then
+            echo "::error::用例总数为 0 —— 单元测试门禁空跑"
+            exit 1
+          fi
+

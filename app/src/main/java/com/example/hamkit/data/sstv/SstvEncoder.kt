@@ -85,37 +85,124 @@ class SstvEncoder(
         val imageStartSeconds = plannedSeconds
 
         for (radioLine in 0 until mode.radioLines) {
-            // 按事件序列写入：同步脉冲的位置随模式而变（Scottie 位于 B 与 R 之间）
-            for (event in events) {
-                when (event) {
-                    is SstvLineEvent.Sync -> writeTone(writer, syncHz, event.seconds)
+            writeRadioLine(writer, events, mode, radioLine, scaled, blackHz, syncHz, freqOffsetHz)
+            closeLine(writer, mode, radioLine, imageStartSeconds, blackHz)
+        }
+        return writer.toArray()
+    }
 
-                    is SstvLineEvent.Gap -> writeTone(writer, blackHz, event.seconds)
+    /**
+     * **流式**编码一帧：每收集一个元素就产出一段 PCM，而不是整帧驻留内存。
+     *
+     * 为什么必须有这个接口：最长的 PD-290 单帧 289 秒，@48 kHz 是 **13.9 M 样本**
+     * （FloatArray 约 55 MB，再转 ShortArray 播放还要翻倍）。发射链路若沿用
+     * [encode] 的整段生成，内存峰值会直接顶到百 MB 量级。这里按**无线行**切块
+     * （PD-120 每块约 24.4 k 样本 ≈ 95 KB），配合 [SstvAudioPlayer] 的
+     * `MODE_STREAM` 写盘式播放，全程只在内存里保留一块。
+     *
+     * 输出的样本序列与 [encode] **逐样本一致**（有单元测试守护），区别仅在切块方式。
+     *
+     * 注意：编码器实例持有相位与时间累加器状态，因此返回的序列**只能被收集一次**；
+     * 需要重新编码请新建实例（与 [encode] 的约束相同）。
+     *
+     * @param source 图像源；尺寸与模式不一致时按最近邻缩放
+     * @param mode 目标模式
+     * @param freqOffsetHz 整体频率偏移（模拟失谐 / 多普勒）
+     * @param includeVis 是否输出 VIS 头
+     */
+    fun encodeChunks(
+        source: SstvImageSource,
+        mode: SstvMode,
+        freqOffsetHz: Double = 0.0,
+        includeVis: Boolean = true,
+    ): Sequence<FloatArray> = sequence {
+        phase = 0.0
+        plannedSeconds = 0.0
+        writtenSamples = 0
 
-                    is SstvLineEvent.Channel -> {
-                        val task = event.task
-                        for (x in 0 until task.pixels) {
-                            val level = channelLevel(task.role, radioLine, x, scaled)
-                            val freq = SstvMode.BLACK_HZ +
-                                level / 255.0 * (SstvMode.WHITE_HZ - SstvMode.BLACK_HZ) +
-                                freqOffsetHz
-                            writeTone(writer, freq, task.pixelSeconds)
-                        }
+        // 初值按一行的大小预留；drain() 复位长度但保留容量，因此不会反复扩容
+        val writer = FloatWriter((mode.lineSeconds * sampleRate).toInt() + 4096)
+        if (includeVis) {
+            writeVis(writer, mode.visCode, freqOffsetHz)
+            yield(writer.drain())
+        }
+
+        val scaled = ScaledSource(source, mode)
+        val events = mode.lineEvents()
+        val blackHz = SstvMode.BLACK_HZ + freqOffsetHz
+        val syncHz = SstvMode.VIS_BREAK_HZ + freqOffsetHz
+        val imageStartSeconds = plannedSeconds
+
+        for (radioLine in 0 until mode.radioLines) {
+            writeRadioLine(writer, events, mode, radioLine, scaled, blackHz, syncHz, freqOffsetHz)
+            closeLine(writer, mode, radioLine, imageStartSeconds, blackHz)
+            yield(writer.drain())
+        }
+    }
+
+    /**
+     * 把一个无线行的全部事件写入 [writer]。
+     *
+     * [encode] 与 [encodeChunks] 共用本方法 —— 每行的事件顺序（含 Scottie 把同步
+     * 脉冲夹在 B 与 R 之间）与时间累加逻辑因此只有一份实现，两条路径不可能走偏。
+     */
+    private fun writeRadioLine(
+        writer: FloatWriter,
+        events: List<SstvLineEvent>,
+        mode: SstvMode,
+        radioLine: Int,
+        scaled: ScaledSource,
+        blackHz: Double,
+        syncHz: Double,
+        freqOffsetHz: Double,
+    ) {
+        // 按事件序列写入：同步脉冲的位置随模式而变（Scottie 位于 B 与 R 之间）
+        for (event in events) {
+            when (event) {
+                is SstvLineEvent.Sync -> writeTone(writer, syncHz, event.seconds)
+
+                is SstvLineEvent.Gap -> writeTone(writer, blackHz, event.seconds)
+
+                is SstvLineEvent.ParityMarker -> {
+                    // Robot 24/36 的分隔脉冲携带行奇偶：偶行 1500 Hz（黑）、奇行 2300 Hz（白）。
+                    // 频率直接取事件自带的两个值（而非 blackHz），以便失谐偏移统一在这里加
+                    val hz = if (radioLine % 2 == 0) event.evenHz else event.oddHz
+                    writeTone(writer, hz + freqOffsetHz, event.seconds)
+                }
+
+                is SstvLineEvent.Channel -> {
+                    val task = event.task
+                    for (x in 0 until task.pixels) {
+                        val level = channelLevel(task.role, radioLine, x, scaled)
+                        val freq = SstvMode.BLACK_HZ +
+                            level / 255.0 * (SstvMode.WHITE_HZ - SstvMode.BLACK_HZ) +
+                            freqOffsetHz
+                        writeTone(writer, freq, task.pixelSeconds)
                     }
                 }
             }
-
-            // 补齐到该行的理论终点：部分模式在最后一个通道之后仍有分隔脉冲，而
-            // lineEvents 只描述到最后一个通道；此外 Scottie 1/DX 的标称像素时长
-            // 略短于行周期（modespec 为 4 位近似值），这里一并补足。用行号推算目标
-            // 时间可同时消除累计舍入误差。
-            val lineEndSeconds = imageStartSeconds + (radioLine + 1) * mode.lineSeconds
-            val remaining = lineEndSeconds - plannedSeconds
-            if (remaining > 1e-9) {
-                writeTone(writer, blackHz, remaining)
-            }
         }
-        return writer.toArray()
+    }
+
+    /**
+     * 补齐到该行的理论终点。
+     *
+     * 部分模式在最后一个通道之后仍有分隔脉冲，而 `lineEvents` 只描述到最后一个通道；
+     * 此外 Scottie 1/DX 的标称像素时长略短于行周期（modespec 为 4 位近似值），
+     * 这里一并补足。用行号推算目标时间可同时消除累计舍入误差。
+     */
+    private fun closeLine(
+        writer: FloatWriter,
+        mode: SstvMode,
+        radioLine: Int,
+        imageStartSeconds: Double,
+        blackHz: Double,
+    ) {
+        val lineEndSeconds = imageStartSeconds + (radioLine + 1) * mode.lineSeconds
+        val remaining = lineEndSeconds - plannedSeconds
+        if (remaining > 1e-9) {
+            writeTone(writer, blackHz, remaining)
+        }
     }
 
     /** 仅生成 VIS 头（约 910 ms），供 VIS 检测的单元测试使用。 */
@@ -212,6 +299,12 @@ class SstvEncoder(
         SstvChannelRole.GREEN -> SstvColor.greenOf(source.rgbAt(x, radioLine))
         SstvChannelRole.BLUE -> SstvColor.blueOf(source.rgbAt(x, radioLine))
         SstvChannelRole.RED -> SstvColor.redOf(source.rgbAt(x, radioLine))
+
+        // Robot B/W：单一灰度通道，直接取亮度（解码端把该值写回 R=G=B）
+        SstvChannelRole.MONO -> {
+            val rgb = source.rgbAt(x, radioLine)
+            SstvColor.rgbToY(SstvColor.redOf(rgb), SstvColor.greenOf(rgb), SstvColor.blueOf(rgb))
+        }
     }
 
     /** 写入 VIS 头：leader / break / leader + 起始位 + 7 数据位 + 偶校验 + 停止位。 */
@@ -291,6 +384,18 @@ class SstvEncoder(
 
         fun writeUnchecked(value: Float) {
             data[size++] = value
+        }
+
+        /**
+         * 取走当前已写入的内容并复位长度，但**保留已分配的容量**。
+         *
+         * 流式编码按行反复写入同一个 writer，靠它避免每行都新建数组（否则 PD-290
+         * 的 308 行会产生大量短命的中等数组，GC 压力显著）。
+         */
+        fun drain(): FloatArray {
+            val out = data.copyOf(size)
+            size = 0
+            return out
         }
 
         fun toArray(): FloatArray = data.copyOf(size)

@@ -30,6 +30,14 @@ enum class SstvChannelRole {
     /** Robot 72 的 V 分量（等价 Cb） */
     V,
 
+    /**
+     * 黑白（灰度）模式的唯一通道。
+     *
+     * Robot B/W 系列每行只发一个亮度通道，既无色彩空间转换也无通道配对，
+     * 因此单独一个角色比复用 [Y] 更明确 —— 解码器据此走「单通道 → 灰度」分支。
+     */
+    MONO,
+
     /** RGB 顺序模式的绿通道 */
     GREEN,
 
@@ -72,6 +80,18 @@ sealed interface SstvLineEvent {
     /** 黑电平间隔（porch 或通道分隔脉冲）。 */
     data class Gap(val seconds: Double) : SstvLineEvent
 
+    /**
+     * 携带**行奇偶**的分隔脉冲（Robot 24/36 专有）。
+     *
+     * 时间轴上与 [Gap] 等价（同样占用 [seconds]），区别只在频率：偶行发 [evenHz]、
+     * 奇行发 [oddHz]。解码端据此判定当前行的色度分量是 Cr 还是 Cb，而不是靠行序号猜。
+     */
+    data class ParityMarker(
+        val seconds: Double,
+        val evenHz: Double,
+        val oddHz: Double,
+    ) : SstvLineEvent
+
     /** 一个图像通道。 */
     data class Channel(val task: SstvChannelTask) : SstvLineEvent
 }
@@ -86,11 +106,19 @@ enum class SstvChannelLayout {
 
     /** RGB 顺序族：Martin 与 Scottie，三通道逐行顺序发送。 */
     RGB_SEQUENTIAL,
+
+    /**
+     * 单通道灰阶族：Robot B/W 系列。
+     *
+     * 行结构为 `Sync + Porch + 单通道`，解码时把唯一通道的值同时写入 R/G/B
+     * 三分量（即直接输出灰度），不做任何色彩空间转换。
+     */
+    MONO,
 }
 
 /** 行内同步脉冲的位置，决定行首对齐模型。 */
 enum class SstvSyncPosition {
-    /** 同步脉冲位于行的最前端（PD / Robot / Martin）。 */
+    /** 同步脉冲位于行的最前端（PD / Robot / Martin / Wraase）。 */
     LINE_START,
 
     /** 同步脉冲位于行中（Scottie：介于 B 与 R 之间）。 */
@@ -98,10 +126,71 @@ enum class SstvSyncPosition {
 }
 
 /**
- * SSTV 模式参数表（权威来源：slowrx `modespec.c`）。
+ * RGB 顺序族里三个通道的**发送顺序**。
  *
- * 参数逐项核对自 slowrx 的 modespec.rs（Oona Räisänen，ISC License），
+ * 这不是可有可无的细节：Martin 与 Scottie 发的是 **G→B→R**，而 Wraase SC2-180 发的是
+ * **R→G→B**（依据 [sstv crate `wrasse.rs`](https://docs.rs/crate/sstv/0.1.1/source/src/modes/wrasse.rs)
+ * 的 `Step::scan(Channel::Red/Green/Blue)` 顺序，与 robot36 的 `RGBModes.Wraase_SC2_180`
+ * 一致）。若把 Wraase 按 G→B→R 解，整幅图会红绿蓝互换。
+ */
+enum class SstvRgbOrder(val roles: List<SstvChannelRole>) {
+    /** Martin / Scottie：G → B → R。 */
+    GBR(listOf(SstvChannelRole.GREEN, SstvChannelRole.BLUE, SstvChannelRole.RED)),
+
+    /** Wraase SC2-180：R → G → B。 */
+    RGB(listOf(SstvChannelRole.RED, SstvChannelRole.GREEN, SstvChannelRole.BLUE)),
+}
+
+/**
+ * Robot 24/36 的**行奇偶标记**（分隔脉冲）。
+ *
+ * **为什么必须有它**：Robot 24/36 每行只发一个色度分量（偶行 Cr、奇行 Cb），解码端
+ * 必须知道当前行是偶行还是奇行，否则 Cr/Cb 互换、整幅图红蓝颠倒。而「第几行」这件事
+ * **不能靠行序号推断** —— 录音完全可能从奇数行开始（ISS 过境时手动按录音键就必然如此），
+ * 那样行序号 0 实际是奇数行。
+ *
+ * 标准做法是让标记本身携带奇偶信息：**偶行的分隔脉冲发 1500 Hz（黑）、奇行发 2300 Hz（白）**。
+ * 这一点由 robot36 的 `Robot_36_Color`（`even-line separator pulse` / `odd-line separator pulse`）
+ * 与 `sstv` crate 的 `robot.rs`（`ROBOT_36_EVEN_SEQUENCE` 用 1500 Hz、`ROBOT_36_ODD_SEQUENCE`
+ * 用 2300 Hz）**两处独立实现一致确认**。
+ *
+ * @param startSeconds 标记起点，相对行首（秒）
+ * @param seconds 标记时长（秒）
+ * @param evenHz 偶行的标记频率（Hz）
+ * @param oddHz 奇行的标记频率（Hz）
+ */
+data class SstvParityMarker(
+    val startSeconds: Double,
+    val seconds: Double,
+    val evenHz: Double,
+    val oddHz: Double,
+)
+
+/**
+ * Robot 24/36 的行奇偶标记：位于 Y 与色度通道之间，起点 = `sync + porch + 2·chanLen`
+ * = 9 + 3 + 88 = **100 ms**，时长即分隔脉冲长度 6 ms。
+ *
+ * 频率取值来自两处独立实现（robot36 `Robot_36_Color`、`sstv` crate `robot.rs`）：
+ * **偶行 1500 Hz（黑）、奇行 2300 Hz（白）**。
+ *
+ * 刻意放在**文件顶层**而不是 [SstvMode] 的伴生对象里：枚举项在伴生对象之前初始化，
+ * 在条目里引用伴生对象成员会编译失败（"Companion object ... is uninitialized here"）。
+ */
+private val ROBOT_PARITY_MARKER = SstvParityMarker(
+    startSeconds = 0.009 + 0.003 + 2 * 320 * 0.0001375,
+    seconds = 0.006,
+    evenHz = 1500.0,
+    oddHz = 2300.0,
+)
+
+/**
+ * SSTV 模式参数表（权威来源：slowrx `modespec.c` + Dayton 论文模式表）。
+ *
+ * 参数逐项核对自 slowrx 的 modespec.rs（Oona Räisänen，ISC License）与
+ * [sstv crate](https://docs.rs/sstv/latest/sstv/)（Rust，Dayton 论文逐行转写），
  * VIS 码源自 Dave Jones (KB4YZ) 1998 年《List of SSTV Modes with VIS Codes》。
+ * 三处来源在 VIS 码上完全一致（PD-50=93 / PD-90=99 / PD-120=95 / PD-160=98 /
+ * PD-180=96 / PD-240=97 / PD-290=94 / Wraase SC2-180=55）。
  *
  * **时间轴模型**（与 slowrx `video.c` 的通道公式一致）：
  * ```
@@ -119,6 +208,8 @@ enum class SstvSyncPosition {
  * @param porchSeconds 同步后稳定间隔（秒）
  * @param pixelSeconds 基准像素时长（秒）
  * @param separatorSeconds 通道间分隔脉冲时长（秒）
+ * @param rgbOrder RGB 顺序族的通道发送顺序（仅 [SstvChannelLayout.RGB_SEQUENTIAL] 有效）
+ * @param parityMarker 行奇偶标记（仅 Robot 24/36 有；其余模式为 null）
  */
 enum class SstvMode(
     val visCode: Int,
@@ -132,13 +223,67 @@ enum class SstvMode(
     val separatorSeconds: Double,
     val layout: SstvChannelLayout,
     val syncPosition: SstvSyncPosition,
+    val rgbOrder: SstvRgbOrder = SstvRgbOrder.GBR,
+    val parityMarker: SstvParityMarker? = null,
 ) {
-    /** Robot 24（黑白兼容的快速彩色模式）。 */
+    /**
+     * Robot 8 B/W：最快的黑白模式，弱信号下比彩色模式稳得多。
+     *
+     * 参数取自 pySSTV `grayscale.py`（`Robot8BW`：WIDTH=160 / HEIGHT=120 /
+     * SYNC=7 ms / SCAN=60 ms，无 porch），并用「行周期 × 行数 = 8.04 s ≈ 标称 8 s」
+     * 反验通过。VIS 码 `0x02`。
+     */
+    ROBOT_8_BW(
+        visCode = 0x02, displayName = "Robot 8 B/W", linePixels = 160, imageLines = 120,
+        lineSeconds = 0.067, syncSeconds = 0.007, porchSeconds = 0.0,
+        pixelSeconds = 0.000375, separatorSeconds = 0.0,
+        layout = SstvChannelLayout.MONO, syncPosition = SstvSyncPosition.LINE_START,
+    ),
+
+    /**
+     * Robot 24 B/W：320 宽的黑白模式，总时长 24 s。
+     *
+     * 参数取自 pySSTV `grayscale.py`（`Robot24BW`：320×240 / SYNC=7 ms /
+     * SCAN=93 ms）。`(0.007 + 0.093) × 240 = 24.000 s` 精确等于标称时长，是该组
+     * 参数自洽的有力佐证。VIS 码 `0x0A`。
+     */
+    ROBOT_24_BW(
+        visCode = 0x0A, displayName = "Robot 24 B/W", linePixels = 320, imageLines = 240,
+        lineSeconds = 0.100, syncSeconds = 0.007, porchSeconds = 0.0,
+        pixelSeconds = 0.000290625, separatorSeconds = 0.0,
+        layout = SstvChannelLayout.MONO, syncPosition = SstvSyncPosition.LINE_START,
+    ),
+
+    /**
+     * Robot 12 B/W：320×120 的黑白模式，总时长 12 s。
+     *
+     * **参数推断说明（与其余模式不同，此条为推导值）**：Robot B/W 族的 VIS 码按
+     * `0x02 / 0x06 / 0x0A` 交错排布（对应 8 s / 12 s / 24 s，与彩色族的
+     * `0x04 / 0x08 / 0x0C` 交错），故 `0x06` 即 12 秒档；该族 320 宽模式的扫描时长
+     * 固定为 93 ms、同步 7 ms（同 [ROBOT_24_BW]），因此 12 秒档取 120 行：
+     * `(0.007 + 0.093) × 120 = 12.000 s`。此模式同时是**奇校验 VIS 的唯一使用者**
+     * （slowrx `vis.c:116` 对 `0x06` 翻转校验位，解码端 [SstvVisDetector] 已实现），
+     * 属于既有代码中一直未被触发的分支。
+     */
+    ROBOT_12_BW(
+        visCode = 0x06, displayName = "Robot 12 B/W", linePixels = 320, imageLines = 120,
+        lineSeconds = 0.100, syncSeconds = 0.007, porchSeconds = 0.0,
+        pixelSeconds = 0.000290625, separatorSeconds = 0.0,
+        layout = SstvChannelLayout.MONO, syncPosition = SstvSyncPosition.LINE_START,
+    ),
+
+    /**
+     * Robot 24（黑白兼容的快速彩色模式）。
+     *
+     * 分隔脉冲携带**行奇偶**（偶行 1500 Hz / 奇行 2300 Hz），见 [SstvParityMarker]。
+     * 分隔起点 = `sync + porch + 2·chanLen` = 9 + 3 + 88 = 100 ms。
+     */
     ROBOT_24(
         visCode = 0x04, displayName = "Robot 24", linePixels = 320, imageLines = 240,
         lineSeconds = 0.150, syncSeconds = 0.009, porchSeconds = 0.003,
         pixelSeconds = 0.0001375, separatorSeconds = 0.006,
         layout = SstvChannelLayout.ROBOT_YUV, syncPosition = SstvSyncPosition.LINE_START,
+        parityMarker = ROBOT_PARITY_MARKER,
     ),
 
     /** Robot 36：UV 段与卫星最常用的快速模式（36 秒/帧）。 */
@@ -147,6 +292,7 @@ enum class SstvMode(
         lineSeconds = 0.150, syncSeconds = 0.009, porchSeconds = 0.003,
         pixelSeconds = 0.0001375, separatorSeconds = 0.006,
         layout = SstvChannelLayout.ROBOT_YUV, syncPosition = SstvSyncPosition.LINE_START,
+        parityMarker = ROBOT_PARITY_MARKER,
     ),
 
     /** Robot 72：三通道等宽，色度无行复制。 */
@@ -200,6 +346,83 @@ enum class SstvMode(
         layout = SstvChannelLayout.RGB_SEQUENTIAL, syncPosition = SstvSyncPosition.SCOTTIE,
     ),
 
+    /**
+     * Wraase SC2-180：结构最简单的彩色模式 —— 同步 + porch 之后直接跟 R、G、B 三段，
+     * **没有任何通道分隔脉冲**。
+     *
+     * 参数由两处独立来源核对一致：
+     *  - `sstv` crate `modes/wrasse.rs`：`sync 5.5225 ms(1200 Hz) + porch 500 µs(1500 Hz)
+     *    + Red 235 ms + Green 235 ms + Blue 235 ms`，256 行 × 711.0225 ms = 182 s；
+     *  - robot36 `RGBModes.Wraase_SC2_180`：同样的 5.5225 / 0.0005 / 0.235 与 **R→G→B** 顺序。
+     *
+     * 与 Martin/Scottie 的两处关键差异（写错就会整幅偏色或错位）：
+     *  1. **通道顺序是 R→G→B**（Martin/Scottie 是 G→B→R），故需 [SstvRgbOrder.RGB]；
+     *  2. **分隔脉冲为 0**，三段首尾相接。
+     *
+     * VIS 码 `0x37`（=55，由上述两处来源一致给出）。
+     */
+    WRASSE_SC2_180(
+        visCode = 0x37, displayName = "Wraase SC2-180", linePixels = 320, imageLines = 256,
+        lineSeconds = 0.7110225, syncSeconds = 0.0055225, porchSeconds = 0.0005,
+        pixelSeconds = 0.000734375, separatorSeconds = 0.0,
+        layout = SstvChannelLayout.RGB_SEQUENTIAL, syncPosition = SstvSyncPosition.LINE_START,
+        rgbOrder = SstvRgbOrder.RGB,
+    ),
+
+    /**
+     * PD-50：PD 族最快的模式，早期卫星与部分短通联使用。
+     *
+     * 参数取自 `sstv` crate `modes/pd.rs`（PD_50 的每通道扫描时长 91.52 ms、
+     * 320×256），并用「4 通道 + sync 20 ms + porch 2.08 ms = 388.16 ms/行，
+     * 128 行 = 49.7 s」双向反验（crate 注释亦写明 "128 line pairs of 388.16ms
+     * each: a 50 second transmission"）。VIS 码 `0x5D`。
+     */
+    PD_50(
+        visCode = 0x5D, displayName = "PD-50", linePixels = 320, imageLines = 256,
+        lineSeconds = 0.38816, syncSeconds = 0.020, porchSeconds = 0.00208,
+        pixelSeconds = 0.000286, separatorSeconds = 0.0,
+        layout = SstvChannelLayout.PD_FRAME, syncPosition = SstvSyncPosition.LINE_START,
+    ),
+
+    /**
+     * PD-90：320×256 的低速 PD 模式（每通道扫描 170.24 ms，总长 90 s）。
+     *
+     * 参数同上取自 `sstv` crate `modes/pd.rs`；`128 × 703.04 ms = 89.99 s`
+     * 与标称 90 s 吻合。VIS 码 `0x63`。
+     */
+    PD_90(
+        visCode = 0x63, displayName = "PD-90", linePixels = 320, imageLines = 256,
+        lineSeconds = 0.70304, syncSeconds = 0.020, porchSeconds = 0.00208,
+        pixelSeconds = 0.000532, separatorSeconds = 0.0,
+        layout = SstvChannelLayout.PD_FRAME, syncPosition = SstvSyncPosition.LINE_START,
+    ),
+
+    /**
+     * PD-160：512×400 的中速 PD 模式（每通道扫描 195.584 ms，总长 161 s）。
+     *
+     * 像素时长 382 µs 与 PD-240 相同 —— 两者是同一采样率下的不同分辨率档位。
+     * VIS 码 `0x62`。
+     */
+    PD_160(
+        visCode = 0x62, displayName = "PD-160", linePixels = 512, imageLines = 400,
+        lineSeconds = 0.804416, syncSeconds = 0.020, porchSeconds = 0.00208,
+        pixelSeconds = 0.000382, separatorSeconds = 0.0,
+        layout = SstvChannelLayout.PD_FRAME, syncPosition = SstvSyncPosition.LINE_START,
+    ),
+
+    /**
+     * PD-290：PD 族分辨率最高的模式（800×616，总长 289 s）。
+     *
+     * 单帧接近 5 分钟，只适合固定台长时间守听；收录它是为了让「模式表完整」，
+     * UI 侧按帧时长排序后它自然排在最末。VIS 码 `0x64`。
+     */
+    PD_290(
+        visCode = 0x64, displayName = "PD-290", linePixels = 800, imageLines = 616,
+        lineSeconds = 0.93728, syncSeconds = 0.020, porchSeconds = 0.00208,
+        pixelSeconds = 0.000286, separatorSeconds = 0.0,
+        layout = SstvChannelLayout.PD_FRAME, syncPosition = SstvSyncPosition.LINE_START,
+    ),
+
     /** PD-120：ARISS 现行 ISS SSTV 模式（145.800 MHz）。 */
     PD_120(
         visCode = 0x5F, displayName = "PD-120", linePixels = 640, imageLines = 496,
@@ -246,6 +469,21 @@ enum class SstvMode(
      */
     val decodable: Boolean
         get() = true
+
+    /** 是否为单通道灰度模式（Robot B/W 族）。 */
+    val isMonochrome: Boolean
+        get() = layout == SstvChannelLayout.MONO
+
+    /**
+     * 一个无线行内「同步 + porch + 全部通道」实际占用的时长（秒）。
+     *
+     * 取各通道终点的最大值。作用是让「通道之和不得超过行周期」成为可断言的
+     * 不变量：若参数表录入有误（例如把某通道的像素时长写大），逐行相位会不断
+     * 漂移，而单看参数很难发现。单元测试对**所有**模式断言
+     * `lineOccupiedSeconds <= lineSeconds`。
+     */
+    val lineOccupiedSeconds: Double
+        get() = channelTasks().maxOf { it.startSeconds + it.pixels * it.pixelSeconds }
 
     /**
      * 同步脉冲起点相对行首的偏移（秒）。
@@ -300,18 +538,18 @@ enum class SstvMode(
             }
 
             SstvChannelLayout.RGB_SEQUENTIAL -> when (syncPosition) {
-                // Martin：Sync + Porch + G + Sep + B + Sep + R
-                SstvSyncPosition.LINE_START -> listOf(
-                    SstvChannelTask(SstvChannelRole.GREEN, uniformStart(0), linePixels, pixelSeconds),
-                    SstvChannelTask(SstvChannelRole.BLUE, uniformStart(1), linePixels, pixelSeconds),
-                    SstvChannelTask(SstvChannelRole.RED, uniformStart(2), linePixels, pixelSeconds),
-                )
+                // Martin / Wraase：Sync + Porch + 三段通道（顺序由 rgbOrder 决定，
+                // Martin 是 G→B→R，Wraase 是 R→G→B；Wraase 的分隔为 0）
+                SstvSyncPosition.LINE_START -> rgbOrder.roles.mapIndexed { index, role ->
+                    SstvChannelTask(role, uniformStart(index), linePixels, pixelSeconds)
+                }
 
                 // Scottie：[sep][G][sep][B][SYNC][porch][R]（同步位于行中）
                 //
                 // 逐项对照 slowrx `mode_scottie.rs` 的 ChanStart：
                 //   G = septr, B = 2·septr + chanLen, R = 2·septr + 2·chanLen + sync + porch
                 // 注意行首本身就是一个分隔脉冲（曾被漏掉，导致整行相位差 1 个 sep）。
+                // Scottie 只有 G→B→R 一种顺序，故此处不参与 rgbOrder 泛化。
                 SstvSyncPosition.SCOTTIE -> {
                     val gStart = separatorSeconds
                     val bStart = 2.0 * separatorSeconds + chanLen
@@ -323,6 +561,11 @@ enum class SstvMode(
                     )
                 }
             }
+
+            // Robot B/W：Sync + Porch + 单个亮度通道（无分隔、无色度）
+            SstvChannelLayout.MONO -> listOf(
+                SstvChannelTask(SstvChannelRole.MONO, uniformStart(0), linePixels, pixelSeconds),
+            )
         }
     }
 
@@ -357,23 +600,34 @@ enum class SstvMode(
                     channel(SstvChannelRole.V),
                 )
             } else {
-                // Robot 24/36：Y 通道占 2× 像素时间
-                listOf(
-                    sync(), gap(porchSeconds),
-                    channel(SstvChannelRole.Y, pixelSeconds = pixelSeconds * 2.0),
-                    gap(separatorSeconds),
-                    channel(SstvChannelRole.CHROMA),
-                )
+                // Robot 24/36：Y 通道占 2× 像素时间；中间的分隔脉冲**携带行奇偶**
+                // （偶行黑 1500 Hz / 奇行白 2300 Hz），因此发的是 ParityMarker
+                // 而不是普通黑电平间隔 —— 这是「录音从奇数行开始时红蓝互换」的根治手段
+                val marker = parityMarker
+                buildList {
+                    add(sync())
+                    add(gap(porchSeconds))
+                    add(channel(SstvChannelRole.Y, pixelSeconds = pixelSeconds * 2.0))
+                    if (marker != null) {
+                        add(SstvLineEvent.ParityMarker(marker.seconds, marker.evenHz, marker.oddHz))
+                    } else {
+                        add(gap(separatorSeconds))
+                    }
+                    add(channel(SstvChannelRole.CHROMA))
+                }
             }
 
             SstvChannelLayout.RGB_SEQUENTIAL -> when (syncPosition) {
-                // Martin：[Sync][Porch][G][sep][B][sep][R]
-                SstvSyncPosition.LINE_START -> listOf(
-                    sync(), gap(porchSeconds),
-                    channel(SstvChannelRole.GREEN), gap(separatorSeconds),
-                    channel(SstvChannelRole.BLUE), gap(separatorSeconds),
-                    channel(SstvChannelRole.RED),
-                )
+                // Martin / Wraase：[Sync][Porch][通道1][sep][通道2][sep][通道3]
+                // 顺序由 rgbOrder 决定（Martin = G→B→R，Wraase = R→G→B，后者分隔为 0）
+                SstvSyncPosition.LINE_START -> buildList {
+                    add(sync())
+                    add(gap(porchSeconds))
+                    rgbOrder.roles.forEachIndexed { index, role ->
+                        if (index > 0) add(gap(separatorSeconds))
+                        add(channel(role))
+                    }
+                }
 
                 // Scottie：[sep][G][sep][B][SYNC][porch][R]
                 SstvSyncPosition.SCOTTIE -> listOf(
@@ -383,6 +637,12 @@ enum class SstvMode(
                     channel(SstvChannelRole.RED),
                 )
             }
+
+            // Robot B/W：[Sync][Porch][灰度行]
+            SstvChannelLayout.MONO -> listOf(
+                sync(), gap(porchSeconds),
+                channel(SstvChannelRole.MONO),
+            )
         }
     }
 
@@ -398,6 +658,11 @@ enum class SstvMode(
         const val VIS_BREAK_HZ: Double = 1200.0
         const val VIS_BIT_ONE_HZ: Double = 1100.0
         const val VIS_BIT_ZERO_HZ: Double = 1300.0
+
+        /**
+         * Robot 24/36 的行奇偶标记定义在文件顶层（见 [ROBOT_PARITY_MARKER]）：
+         * 枚举项初始化早于伴生对象，在条目里引用伴生对象成员会编译失败。
+         */
 
         /** 本期可用于解码的模式（按推荐优先级排序，UI 直接复用）。 */
         val DECODABLE_MODES: List<SstvMode> =

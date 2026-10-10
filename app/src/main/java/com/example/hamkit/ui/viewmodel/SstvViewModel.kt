@@ -2,30 +2,60 @@ package com.example.hamkit.ui.viewmodel
 
 import android.app.Application
 import android.graphics.Bitmap
+import android.media.projection.MediaProjection
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.hamkit.data.sstv.MicrophoneAudioSource
+import com.example.hamkit.data.sstv.PlaybackCaptureAudioSource
+import com.example.hamkit.data.sstv.SstvAudioSource
+import com.example.hamkit.data.sstv.SstvBitmapSource
+import com.example.hamkit.data.sstv.SstvBlindScan
+import com.example.hamkit.data.sstv.SstvCaptureService
 import com.example.hamkit.data.sstv.SstvDecoder
+import com.example.hamkit.data.sstv.SstvEncoder
+import com.example.hamkit.data.sstv.SstvImageSource
 import com.example.hamkit.data.sstv.SstvImageStore
+import com.example.hamkit.data.sstv.SstvMediaAudioReader
 import com.example.hamkit.data.sstv.SstvMode
+import com.example.hamkit.data.sstv.SstvPostProcess
 import com.example.hamkit.data.sstv.SstvRecorder
+import com.example.hamkit.data.sstv.SstvRecordingStore
 import com.example.hamkit.data.sstv.SstvSettingsStore
+import com.example.hamkit.data.sstv.SstvWaterfall
+import com.example.hamkit.data.sstv.SstvWavReader
+import com.example.hamkit.data.sstv.SstvWavWriter
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 /**
  * SSTV 接收界面的状态。
  *
+ * 一期只有接收相关的字段，二期把**图库、离线导入、发射、后处理、盲扫**的状态也
+ * 收进同一个 StateFlow：这几条链路共享「当前模式」「当前图像」「图库」这些概念，
+ * 拆成多个 ViewModel 反而要来回同步（SSTV 是应用级单例 ViewModel，见
+ * `WithApplicationViewModelStoreOwner`）。
+ *
  * @param decodedLines 已解码的图像行数（图像自上而下逐步显现）
  * @param totalLines 当前模式的总行数
- * @param bitmap 解码预览图（每次部分解码后重建，靠引用变化触发 Compose 重绘）
- * @param galleryCount 图库中的图像数量（在协程中刷新，避免主线程做文件 IO）
+ * @param bitmap 当前预览图（每次部分解码后重建，靠引用变化触发 Compose 重绘）
+ * @param enhancedPreview 是否正在预览后处理结果（原图始终保留在 [SstvViewModel] 内）
+ * @param qualityDb 等效信噪比（dB），见 [com.example.hamkit.data.sstv.SstvDemodulator.estimatedQualityDb]
+ * @param phaseSpan 本帧选定的相位差分间隔（样本）
+ * @param blindCandidates 盲扫候选（按得分降序）；空表示未做盲扫或全部落选
+ * @param thumbnails 图库缩略图缓存（文件名 → 位图），在协程中解码
  */
 data class SstvUiState(
+    // ── 接收 ──
     val isReceiving: Boolean = false,
     val status: String = "点击「开始接收」，把手机靠近电台扬声器",
     val visCode: Int? = null,
@@ -42,24 +72,129 @@ data class SstvUiState(
     val presetApplied: Boolean = false,
     val autoSave: Boolean = true,
     val livePreview: Boolean = true,
+    val continuous: Boolean = false,
+    val maxFrames: Int = SstvRecorder.DEFAULT_MAX_FRAMES,
+    /** 连续模式下已完成的帧数。 */
+    val completedFrames: Int = 0,
     val galleryCount: Int = 0,
     val error: String? = null,
+
+    // ── 信号质量 ──
+    val qualityDb: Double = 0.0,
+    val qualityTier: Int = 3,
+    val phaseSpan: Int = 0,
+    val noiseHz: Double = 0.0,
+    val adaptiveSpan: Boolean = true,
+
+    // ── 后处理 ──
+    val postProcess: SstvPostProcess.Options = SstvPostProcess.Options.NONE,
+    val enhancedPreview: Boolean = false,
+
+    // ── 盲扫 ──
+    val blindScanOnFailure: Boolean = true,
+    val blindScanning: Boolean = false,
+    val blindCandidates: List<SstvBlindScan.Candidate> = emptyList(),
+    val blindConfidence: Double = 0.0,
+
+    // ── 离线导入 ──
+    val importing: Boolean = false,
+    val importStatus: String? = null,
+
+    // ── 图库 ──
+    val gallery: List<SstvImageStore.Entry> = emptyList(),
+    val galleryBytes: Long = 0L,
+    val thumbnails: Map<String, Bitmap> = emptyMap(),
+    val galleryBusy: String? = null,
+    /** 图库查看器当前选中的文件（null 表示未打开）。 */
+    val viewing: SstvImageStore.Entry? = null,
+    val viewingBitmap: Bitmap? = null,
+
+    // ── 发射 ──
+    val txModeName: String = SstvMode.PD_120.name,
+    val txSourceLabel: String? = null,
+    val txPreview: Bitmap? = null,
+    val txPlaying: Boolean = false,
+    val txProgress: Float = 0f,
+    val txStatus: String = "选择一张图片，编码成 SSTV 音频后播出",
+    val txIncludeVis: Boolean = true,
+    val txOverlayCallsign: Boolean = true,
+    val callsign: String = "",
+
+    // ── 音源 / 录音 / 瀑布图（参照 robot36 补齐） ──
+    /** 当前音源：`MIC` 或 `PLAYBACK`（见 [SstvSettingsStore.audioSourceKind]）。 */
+    val audioSourceKind: String = SstvSettingsStore.AUDIO_SOURCE_MIC,
+    /** 播放捕获是否已拿到授权（没有授权时不能选它）。 */
+    val playbackAuthorized: Boolean = false,
+    /** 接收时是否录制原始音频。 */
+    val recordAudio: Boolean = true,
+    /** 最近一次录音的文件名（可一键重解）。 */
+    val lastRecordingName: String? = null,
+    val recordings: List<SstvRecordingStore.Entry> = emptyList(),
+    val recordingsBytes: Long = 0L,
+    /** 是否显示瀑布图。 */
+    val waterfallEnabled: Boolean = true,
+    /** 瀑布图位图（每次快照重建，靠引用变化触发 Compose 重绘）。 */
+    val waterfall: Bitmap? = null,
+    /** 像素级零相位低通开关（见 [SstvDecoder]）。 */
+    val pixelNyquistFilter: Boolean = true,
 ) {
     /** 接收进度（0–1）。 */
     val progress: Float
         get() = if (totalLines > 0) decodedLines.toFloat() / totalLines else 0f
+
+    /** 发射模式对象。 */
+    val txMode: SstvMode
+        get() = SstvMode.entries.find { it.name == txModeName } ?: SstvMode.PD_120
+
+    /** 是否开启了任一项后处理。 */
+    val postProcessEnabled: Boolean get() = postProcess.anyEnabled
+
+    /** 信号质量文案（供 UI 直接显示）。 */
+    val qualityLabel: String
+        get() = when (qualityTier) {
+            0 -> "强"
+            1 -> "正常"
+            2 -> "弱"
+            else -> "极弱"
+        }
+
+    /** 是否使用「播放捕获」音源（Android 10+）。 */
+    val usesPlaybackCapture: Boolean get() = audioSourceKind == SstvSettingsStore.AUDIO_SOURCE_PLAYBACK
+
+    /** 录音总占用文案。 */
+    val recordingsLabel: String
+        get() = if (recordings.isEmpty()) {
+            "暂无录音"
+        } else {
+            "共 ${recordings.size} 段 · ${formatBytes(recordingsBytes)}"
+        }
 }
 
 /**
  * SSTV 功能的状态持有者。
  *
- * 采集与解码由 [SstvRecorder] 在后台完成，这里只负责把回调结果转换为 UI 状态。
+ * 采集与解码由 [SstvRecorder] 在后台完成；离线解码、图库文件 IO、图像编解码
+ * 全部在 `Dispatchers.IO` / `Dispatchers.Default` 上执行 —— 一期曾因把文件 IO
+ * 放主线程踩过一次（见 REQUIREMENT_SSTV.md §11.7）。
  */
 class SstvViewModel(application: Application) : AndroidViewModel(application) {
 
     private val settingsStore = SstvSettingsStore(application)
     private val imageStore = SstvImageStore(application)
+    private val recordingStore = SstvRecordingStore(application)
     private var recorder: SstvRecorder? = null
+    private var player: com.example.hamkit.data.sstv.SstvAudioPlayer? = null
+
+    /** 瀑布图缓冲：由 [SstvRecorder] 的采集线程填充，UI 侧周期性快照成位图。 */
+    @Volatile
+    private var waterfall: SstvWaterfall? = null
+
+    /** 瀑布图快照刷新任务（仅在接收期间运行）。 */
+    private var waterfallJob: Job? = null
+
+    /** 播放捕获的投影（Android 10+）；由 UI 授权后交进来。 */
+    @Volatile
+    private var mediaProjection: MediaProjection? = null
 
     /**
      * 由卫星详情页带入的**临时**模式覆盖。
@@ -70,7 +205,7 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
     private var presetOverride: SstvMode? = null
 
     /**
-     * 最近一次解码结果，用于保存。
+     * 最近一次**原始**解码结果（未经后处理），用于保存原图与二次处理。
      *
      * 由采集协程（IO 线程）写入、UI 线程读取，故标记 `@Volatile` 保证可见性。
      */
@@ -80,24 +215,257 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
     /** 本次接收是否已尝试过自动保存（避免保存失败后每轮部分解码都重写文件）。 */
     private var autoSaveAttempted = false
 
+    /** 发射用的图像源（在协程中装配，UI 只持有预览位图）。 */
+    @Volatile
+    private var txSource: SstvImageSource? = null
+
+    /**
+     * 最近一次导入的音频样本。
+     *
+     * 保留它是为了让「盲扫候选一键切换」无需重新导入 —— 盲扫常有 2–3 个难以区分的
+     * 候选（行周期相同的模式本质不可分），不能指望用户为每个候选重新选一次文件。
+     * 长度受 [SstvWavReader.MAX_SECONDS] 限制（300 秒 ≈ 57 MB），且在
+     * [clearImage] 与新导入时释放。
+     */
+    @Volatile
+    private var importedAudio: FloatArray? = null
+
+    /** 图库查看器当前展示的文件，离开时用于释放位图引用。 */
+    private var viewingFile: File? = null
+
     private val _uiState = MutableStateFlow(
         SstvUiState(
             manualModeName = settingsStore.manualModeName,
             autoSave = settingsStore.autoSave,
             livePreview = settingsStore.livePreview,
+            continuous = settingsStore.continuous,
+            maxFrames = settingsStore.maxFrames,
+            adaptiveSpan = settingsStore.adaptiveSpan,
+            blindScanOnFailure = settingsStore.blindScanOnFailure,
+            postProcess = settingsStore.postProcess,
+            txModeName = settingsStore.txMode.name,
+            txOverlayCallsign = settingsStore.txOverlayCallsign,
+            callsign = settingsStore.callsign,
+            audioSourceKind = settingsStore.audioSourceKind,
+            recordAudio = settingsStore.recordAudio,
+            waterfallEnabled = settingsStore.waterfall,
+            pixelNyquistFilter = settingsStore.pixelNyquistFilter,
         ),
     )
     val uiState: StateFlow<SstvUiState> = _uiState.asStateFlow()
 
     init {
-        refreshGalleryCount()
+        refreshGallery()
+        refreshRecordings()
     }
 
-    /** 在协程中刷新图库数量（文件 IO 不落在主线程）。 */
-    private fun refreshGalleryCount() {
+    // ══════════════════════════════════════════════════════════════════
+    // 音源 / 录音 / 瀑布图（参照 robot36 补齐）
+    // ══════════════════════════════════════════════════════════════════
+
+    /**
+     * 授权结果交进来（Android 10+ 播放捕获）。
+     *
+     * 调用方必须**先**启动 `SstvCaptureService`（前台服务类型 mediaProjection），
+     * 再取投影 —— 这是 Android 14 起的硬性顺序，否则 `getMediaProjection()` 抛
+     * `SecurityException`。本方法只负责保存投影并切到播放捕获音源。
+     */
+    fun usePlaybackCapture(projection: MediaProjection?) {
+        if (projection == null) {
+            _uiState.update { it.copy(status = "播放捕获授权失败或已取消") }
+            return
+        }
+        mediaProjection?.let { runCatching { it.stop() } }
+        mediaProjection = projection
+        settingsStore.audioSourceKind = SstvSettingsStore.AUDIO_SOURCE_PLAYBACK
+        _uiState.update {
+            it.copy(
+                audioSourceKind = SstvSettingsStore.AUDIO_SOURCE_PLAYBACK,
+                playbackAuthorized = true,
+                status = "音源已切换为「播放捕获」：在其它应用里播放 SSTV 录音，然后点开始接收",
+            )
+        }
+    }
+
+    /** 切回麦克风音源，并释放播放捕获的投影。 */
+    fun useMicrophone() {
+        mediaProjection?.let { runCatching { it.stop() } }
+        mediaProjection = null
+        SstvCaptureService.stop(getApplication())
+        settingsStore.audioSourceKind = SstvSettingsStore.AUDIO_SOURCE_MIC
+        _uiState.update {
+            it.copy(
+                audioSourceKind = SstvSettingsStore.AUDIO_SOURCE_MIC,
+                status = "音源已切换为麦克风",
+            )
+        }
+    }
+
+    /** 构造本次接收使用的音源（见 [SstvAudioSource]）。 */
+    private fun buildAudioSource(): SstvAudioSource {
+        val context = getApplication<Application>()
+        val playback = mediaProjection
+        return if (_uiState.value.usesPlaybackCapture && playback != null &&
+            android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q
+        ) {
+            PlaybackCaptureAudioSource(playback)
+        } else {
+            MicrophoneAudioSource(context)
+        }
+    }
+
+    fun setRecordAudio(enabled: Boolean) {
+        settingsStore.recordAudio = enabled
+        _uiState.update {
+            it.copy(
+                recordAudio = enabled,
+                status = if (enabled) "接收时将录制原始音频（可用「导入录音」重解）" else "已关闭接收录音",
+            )
+        }
+    }
+
+    fun setWaterfallEnabled(enabled: Boolean) {
+        settingsStore.waterfall = enabled
+        if (!enabled) {
+            waterfall = null
+            _uiState.update { it.copy(waterfallEnabled = false, waterfall = null) }
+        } else {
+            _uiState.update { it.copy(waterfallEnabled = true) }
+        }
+    }
+
+    fun setPixelNyquistFilter(enabled: Boolean) {
+        settingsStore.pixelNyquistFilter = enabled
+        _uiState.update {
+            it.copy(
+                pixelNyquistFilter = enabled,
+                status = if (enabled) "已开启像素级低通（弱信号更干净）" else "已关闭像素级低通",
+            )
+        }
+    }
+
+    /** 在协程中刷新录音列表（文件 IO 不落在主线程）。 */
+    fun refreshRecordings() {
         viewModelScope.launch {
-            val count = withContext(Dispatchers.IO) { imageStore.list().size }
-            _uiState.update { it.copy(galleryCount = count) }
+            val entries = withContext(Dispatchers.IO) { recordingStore.list() }
+            _uiState.update {
+                it.copy(
+                    recordings = entries,
+                    recordingsBytes = entries.sumOf { entry -> entry.sizeBytes },
+                )
+            }
+        }
+    }
+
+    fun deleteRecording(entry: SstvRecordingStore.Entry) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { recordingStore.delete(entry.file) }
+            _uiState.update { it.copy(status = "已删除录音 ${entry.file.name}") }
+            refreshRecordings()
+        }
+    }
+
+    fun clearRecordings() {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { recordingStore.clear() }
+            _uiState.update { it.copy(status = "录音已全部删除") }
+            refreshRecordings()
+        }
+    }
+
+    /**
+     * 把一段已录下的接收音频重新解码。
+     *
+     * 这是「录下过境 → 事后重解」的闭环入口：走与「导入录音」完全相同的解码与盲扫逻辑，
+     * 只是文件来自应用私有的录音目录（因此不需要文件选择器，也不需要任何权限）。
+     */
+    fun decodeRecording(entry: SstvRecordingStore.Entry) {
+        if (_uiState.value.importing) return
+        _uiState.update {
+            it.copy(importing = true, importStatus = "正在读取录音 ${entry.file.name}…", error = null)
+        }
+        viewModelScope.launch {
+            val outcome = withContext(Dispatchers.Default) { readAudioFile(entry.file) }
+            when (outcome) {
+                is SstvWavReader.Outcome.Failure -> _uiState.update {
+                    it.copy(importing = false, importStatus = null, error = outcome.reason)
+                }
+
+                is SstvWavReader.Outcome.Success -> decodeImported(outcome)
+            }
+        }
+    }
+
+    /** 启动瀑布图快照循环（仅接收期间）。 */
+    private fun startWaterfallUpdates() {
+        waterfallJob?.cancel()
+        if (!settingsStore.waterfall) {
+            waterfall = null
+            _uiState.update { it.copy(waterfall = null) }
+            return
+        }
+        val buffer = SstvWaterfall()
+        waterfall = buffer
+        waterfallJob = viewModelScope.launch {
+            while (isActive) {
+                delay(WATERFALL_REFRESH_MS)
+                val snapshot = withContext(Dispatchers.Default) { buffer.snapshot() }
+                // 只有真正有新内容时才重建位图（空快照 → 不画）
+                val pixels = withContext(Dispatchers.Default) { waterfallPixels(snapshot, buffer) }
+                _uiState.update { it.copy(waterfall = pixels) }
+            }
+        }
+    }
+
+    private fun stopWaterfallUpdates() {
+        waterfallJob?.cancel()
+        waterfallJob = null
+    }
+
+    /**
+     * 把瀑布图的强度快照转成位图。
+     *
+     * 配色刻意是「频率 → 色相」的彩虹映射而不是灰度：灰度下无法一眼分清
+     * 「1200 Hz 同步线」与「1500 Hz 黑电平」，而那恰恰是判断失谐与信号质量的关键。
+     */
+    private fun waterfallPixels(snapshot: IntArray, buffer: SstvWaterfall): Bitmap {
+        val bins = buffer.bins
+        val rows = buffer.rows
+        val pixels = IntArray(bins * rows)
+        for (row in 0 until rows) {
+            for (bin in 0 until bins) {
+                val intensity = snapshot[row * bins + bin]
+                if (intensity == 0) {
+                    pixels[row * bins + bin] = WATERFALL_EMPTY
+                } else {
+                    val hue = 240f * bin / (bins - 1).coerceAtLeast(1)
+                    val color = android.graphics.Color.HSVToColor(
+                        floatArrayOf(hue, 0.85f, 0.25f + 0.75f * intensity / 255f),
+                    )
+                    pixels[row * bins + bin] = color
+                }
+            }
+        }
+        return Bitmap.createBitmap(bins, rows, Bitmap.Config.ARGB_8888).also {
+            it.setPixels(pixels, 0, bins, 0, 0, bins, rows)
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // 接收
+    // ══════════════════════════════════════════════════════════════════
+
+    /** 在协程中刷新图库（文件 IO 不落在主线程）。 */
+    fun refreshGallery() {
+        viewModelScope.launch {
+            val entries = withContext(Dispatchers.IO) { imageStore.list() }
+            _uiState.update {
+                it.copy(
+                    gallery = entries,
+                    galleryCount = entries.size,
+                    galleryBytes = entries.sumOf { entry -> entry.sizeBytes },
+                )
+            }
         }
     }
 
@@ -133,6 +501,7 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
         // 预置优先于用户默认设置
         val manualMode = presetOverride ?: settingsStore.manualMode
         autoSaveAttempted = false
+        val recordName = if (settingsStore.recordAudio) recordingStore.newFile() else null
         _uiState.update {
             it.copy(
                 isReceiving = true,
@@ -149,12 +518,26 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
                 bitmap = null,
                 savedFileName = null,
                 error = null,
+                completedFrames = 0,
+                blindCandidates = emptyList(),
+                blindConfidence = 0.0,
+                noiseHz = 0.0,
+                phaseSpan = 0,
+                lastRecordingName = null,
             )
         }
+        startWaterfallUpdates()
 
         recorder = SstvRecorder(
             context = getApplication(),
+            audioSource = buildAudioSource(),
             forcedMode = manualMode,
+            continuous = settingsStore.continuous,
+            maxFrames = settingsStore.maxFrames,
+            adaptiveSpan = settingsStore.adaptiveSpan,
+            pixelNyquistFilter = settingsStore.pixelNyquistFilter,
+            recordingFile = recordName,
+            waterfall = if (settingsStore.waterfall) waterfall else null,
             onVisDetected = { detected ->
                 _uiState.update {
                     it.copy(
@@ -169,32 +552,79 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
             },
-            onProgress = { result -> onDecoded(result) },
+            onProgress = { frame -> onDecoded(frame) },
             onStatus = { text -> _uiState.update { it.copy(status = text) } },
+            onQuality = { quality ->
+                _uiState.update {
+                    it.copy(
+                        qualityDb = quality.qualityDb,
+                        qualityTier = quality.tier,
+                        phaseSpan = quality.phaseSpan,
+                    )
+                }
+            },
+            onFinished = { onRecorderFinished() },
+            onRecordingFinished = { file, samples ->
+                // **在文件关闭之后**再补模式名：改名发生在写入期间虽然合法（fd 仍然有效），
+                // 但会让回调里的路径与实际文件不一致；放到最后一步最干净
+                viewModelScope.launch {
+                    val modeName = _uiState.value.mode?.displayName
+                    val renamed = withContext(Dispatchers.IO) {
+                        recordingStore.renameWithMode(file, modeName)
+                    }
+                    _uiState.update {
+                        it.copy(
+                            lastRecordingName = renamed.name,
+                            status = it.status +
+                                "（已录音 ${"%.0f".format(samples.toDouble() / 48000)} 秒）",
+                        )
+                    }
+                    refreshRecordings()
+                }
+            },
         ).also { it.start() }
+    }
+
+    /**
+     * 采集循环结束（正常收完一帧 / 连续模式跑满 / 出错）。
+     *
+     * 单帧收满后是 [SstvRecorder] **自己**决定停止的，UI 侧无从推断这一时刻，
+     * 因此必须由采集器回调 —— 否则「开始接收」会一直显示为「停止接收」。
+     * 用户主动 [stopReceiving] 时 `isReceiving` 已先被置为 false，这里直接返回，
+     * 不会覆盖停止时给出的文案。
+     */
+    private fun onRecorderFinished() {
+        stopWaterfallUpdates()
+        // 采集结束就撤掉 mediaProjection 前台服务：它只为满足平台顺序要求而存在，
+        // 多留一刻都是无谓的常驻通知
+        SstvCaptureService.stop(getApplication())
+        if (!_uiState.value.isReceiving) return
+        _uiState.update { it.copy(isReceiving = false) }
     }
 
     fun stopReceiving() {
         recorder?.stop()
         recorder = null
+        stopWaterfallUpdates()
 
         // 关闭实时预览时，过程中不会建图，这里补一次 —— 让用户能看到已收到的部分，
         // 而不是面对一块空白却要凭猜测去点保存
         val snapshot = lastResult
         val current = _uiState.value.bitmap
         val bitmap = if (current == null && snapshot != null) {
-            SstvImageStore.toBitmap(snapshot.pixels, snapshot.width, snapshot.height)
+            toDisplayBitmap(snapshot)
         } else {
             current
         }
 
         _uiState.update {
-            val partial = bitmap != null && it.decodedLines < it.totalLines
+            val partial = bitmap != null && snapshot != null &&
+                snapshot.decodedLines < snapshot.mode.imageLines
             it.copy(
                 isReceiving = false,
                 bitmap = bitmap,
                 status = when {
-                    partial -> "已停止：收到 ${it.decodedLines}/${it.totalLines} 行，可手动保存"
+                    partial -> "已停止：收到 ${snapshot.decodedLines}/${snapshot.mode.imageLines} 行，可手动保存"
                     bitmap != null -> "接收已停止"
                     else -> "已停止"
                 },
@@ -215,14 +645,47 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { it.copy(error = "当前没有可保存的图像") }
             return
         }
+        val options = settingsStore.postProcess
         viewModelScope.launch {
-            val file = withContext(Dispatchers.IO) { imageStore.save(snapshot) }
-            if (file != null) refreshGalleryCount()
+            val file = withContext(Dispatchers.IO) {
+                if (options.anyEnabled) {
+                    val processed = SstvPostProcess.process(
+                        snapshot.pixels, snapshot.width, snapshot.height, options,
+                    )
+                    imageStore.savePixels(
+                        processed, snapshot.width, snapshot.height,
+                        snapshot.mode.displayName, enhanced = true,
+                    )
+                } else {
+                    imageStore.save(snapshot)
+                }
+            }
+            if (file != null) refreshGallery()
             _uiState.update {
                 it.copy(
                     savedFileName = file?.name,
                     error = if (file == null) "保存失败" else null,
                     status = if (file != null) "已保存到图库：${file.name}" else it.status,
+                )
+            }
+        }
+    }
+
+    /** 保存**未经后处理**的原始解码结果（后处理开启时的对照）。 */
+    fun saveRaw() {
+        val snapshot = lastResult
+        if (snapshot == null) {
+            _uiState.update { it.copy(error = "当前没有可保存的图像") }
+            return
+        }
+        viewModelScope.launch {
+            val file = withContext(Dispatchers.IO) { imageStore.save(snapshot) }
+            if (file != null) refreshGallery()
+            _uiState.update {
+                it.copy(
+                    savedFileName = file?.name,
+                    status = if (file != null) "已保存原图：${file.name}" else it.status,
+                    error = if (file == null) "保存失败" else null,
                 )
             }
         }
@@ -263,8 +726,34 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(livePreview = enabled) }
     }
 
+    fun setContinuous(enabled: Boolean) {
+        settingsStore.continuous = enabled
+        _uiState.update {
+            it.copy(
+                continuous = enabled,
+                status = if (enabled) "连续接收已开启：收满一帧后自动接续" else "连续接收已关闭",
+            )
+        }
+    }
+
+    fun setMaxFrames(frames: Int) {
+        settingsStore.maxFrames = frames
+        _uiState.update { it.copy(maxFrames = settingsStore.maxFrames) }
+    }
+
+    fun setAdaptiveSpan(enabled: Boolean) {
+        settingsStore.adaptiveSpan = enabled
+        _uiState.update { it.copy(adaptiveSpan = enabled) }
+    }
+
+    fun setBlindScanOnFailure(enabled: Boolean) {
+        settingsStore.blindScanOnFailure = enabled
+        _uiState.update { it.copy(blindScanOnFailure = enabled) }
+    }
+
     fun clearImage() {
         lastResult = null
+        importedAudio = null
         autoSaveAttempted = false
         _uiState.update {
             it.copy(
@@ -273,6 +762,8 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
                 totalLines = 0,
                 savedFileName = null,
                 visCode = null,
+                blindCandidates = emptyList(),
+                blindConfidence = 0.0,
                 status = "已清空",
             )
         }
@@ -281,39 +772,68 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
     fun clearGallery() {
         viewModelScope.launch {
             withContext(Dispatchers.IO) { imageStore.clear() }
-            _uiState.update { it.copy(status = "图库已清空", galleryCount = 0) }
+            _uiState.update {
+                it.copy(
+                    status = "图库已清空",
+                    galleryCount = 0,
+                    gallery = emptyList(),
+                    galleryBytes = 0,
+                    thumbnails = emptyMap(),
+                    viewing = null,
+                    viewingBitmap = null,
+                )
+            }
         }
     }
 
     override fun onCleared() {
         recorder?.stop()
         recorder = null
+        stopWaterfallUpdates()
+        player?.stop()
+        player = null
+        mediaProjection?.let { runCatching { it.stop() } }
+        mediaProjection = null
         super.onCleared()
     }
 
-    private fun onDecoded(result: SstvDecoder.Result) {
+    // ══════════════════════════════════════════════════════════════════
+    // 解码结果 → UI 状态
+    // ══════════════════════════════════════════════════════════════════
+
+    private fun onDecoded(frame: SstvRecorder.SstvFrame) {
+        val result = frame.result
         lastResult = result
-        val complete = result.decodedLines >= result.mode.imageLines
+        val complete = frame.complete
 
         // 「实时预览」只决定**接收过程中**是否逐行重建画面；收满一帧必须出图，
         // 否则关闭预览的用户连最终结果都看不到（只能盲点保存）。
         // 每次重建 Bitmap：内容变化但引用不变时 Compose 不会重绘。
         val needBitmap = settingsStore.livePreview || complete
-        val bitmap = if (needBitmap) {
-            SstvImageStore.toBitmap(result.pixels, result.width, result.height)
-        } else {
-            _uiState.value.bitmap
-        }
+        val bitmap = if (needBitmap) toDisplayBitmap(result) else _uiState.value.bitmap
+
         var savedName = _uiState.value.savedFileName
         var saveError: String? = null
         // 自动保存：整帧收齐后只尝试一次，失败不重试（否则每轮部分解码都会重写文件）
         if (complete && !autoSaveAttempted && settingsStore.autoSave) {
             autoSaveAttempted = true
-            val saved = imageStore.save(result)
+            val options = settingsStore.postProcess
+            val saved = if (options.anyEnabled) {
+                imageStore.savePixels(
+                    SstvPostProcess.process(result.pixels, result.width, result.height, options),
+                    result.width,
+                    result.height,
+                    result.mode.displayName,
+                    enhanced = true,
+                )
+            } else {
+                imageStore.save(result)
+            }
             savedName = saved?.name
             if (saved == null) saveError = "自动保存失败，可手动重试"
         }
 
+        val continuous = _uiState.value.continuous
         _uiState.update {
             it.copy(
                 bitmap = bitmap,
@@ -324,27 +844,715 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
                 totalLines = result.mode.imageLines,
                 syncPulseCount = result.syncPulseCount,
                 savedFileName = savedName,
-                galleryCount = if (savedName != null && it.savedFileName == null) {
-                    it.galleryCount + 1
-                } else {
-                    it.galleryCount
-                },
+                noiseHz = frame.noiseHz,
+                completedFrames = if (complete) frame.index + 1 else it.completedFrames,
                 error = saveError ?: it.error,
                 status = if (complete) {
-                    "${result.mode.displayName} 接收完成" + (savedName?.let { n -> "，已保存 $n" } ?: "")
+                    val prefix = if (continuous) "第 ${frame.index + 1} 张：" else ""
+                    "$prefix${result.mode.displayName} 接收完成" +
+                        (savedName?.let { n -> "，已保存 $n" } ?: "")
                 } else {
                     "${result.mode.displayName} 接收中… ${result.decodedLines}/${result.mode.imageLines} 行"
                 },
             )
         }
 
-        // 收满一帧后由采集器自行停止；这里异步收敛 UI 状态与资源
-        if (complete && _uiState.value.isReceiving) {
-            viewModelScope.launch {
-                recorder?.stop()
-                recorder = null
-                _uiState.update { it.copy(isReceiving = false) }
+        if (complete) refreshGallery()
+    }
+
+    /** 按当前后处理设置生成显示用位图。 */
+    private fun toDisplayBitmap(result: SstvDecoder.Result): Bitmap {
+        val options = settingsStore.postProcess
+        return if (options.anyEnabled) {
+            SstvImageStore.toBitmap(
+                SstvPostProcess.process(result.pixels, result.width, result.height, options),
+                result.width,
+                result.height,
+            )
+        } else {
+            SstvImageStore.toBitmap(result.pixels, result.width, result.height)
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // 后处理开关
+    // ══════════════════════════════════════════════════════════════════
+
+    fun setHistogramStretch(enabled: Boolean) = updatePostProcess { it.copy(histogramStretch = enabled) }
+
+    fun setMedianFilter(enabled: Boolean) = updatePostProcess { it.copy(medianFilter = enabled) }
+
+    fun setRepairBadLines(enabled: Boolean) = updatePostProcess { it.copy(repairBadLines = enabled) }
+
+    /**
+     * 一次性开关三项后处理（主界面的总开关用）。
+     *
+     * 刻意不做成「连续调用三个单项 setter」：那会触发三次状态更新，每次都重建一遍
+     * 640×496 的位图（三项处理 + PNG 编码），在弱机上足以感到卡顿。
+     */
+    fun setPostProcessAll(enabled: Boolean) {
+        updatePostProcess {
+            SstvPostProcess.Options(
+                histogramStretch = enabled,
+                medianFilter = enabled,
+                repairBadLines = enabled,
+            )
+        }
+    }
+
+    private fun updatePostProcess(transform: (SstvPostProcess.Options) -> SstvPostProcess.Options) {
+        val next = transform(settingsStore.postProcess)
+        settingsStore.setPostProcess(next)
+        // 已有结果时立即按新设置重建预览，让用户马上看到差别
+        val snapshot = lastResult
+        val bitmap = if (snapshot != null && _uiState.value.bitmap != null) {
+            toDisplayBitmap(snapshot)
+        } else {
+            _uiState.value.bitmap
+        }
+        _uiState.update {
+            it.copy(
+                postProcess = next,
+                bitmap = bitmap,
+                enhancedPreview = next.anyEnabled,
+                status = postProcessStatus(next),
+            )
+        }
+    }
+
+    private fun postProcessStatus(options: SstvPostProcess.Options): String {
+        if (!options.anyEnabled) return "后处理已全部关闭"
+        val parts = buildList {
+            if (options.histogramStretch) add("直方图拉伸")
+            if (options.medianFilter) add("中值降噪")
+            if (options.repairBadLines) add("坏行修复")
+        }
+        return "后处理已开启：${parts.joinToString(" + ")}"
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // 离线导入（T2）
+    // ══════════════════════════════════════════════════════════════════
+
+    /**
+     * 导入一段录音并离线解码。
+     *
+     * 流程：**按内容选通路**读成 48 kHz 单声道（RIFF/WAVE 走 [SstvWavReader] 的纯 Kotlin
+     * 解析，其余容器走 [SstvMediaAudioReader] 的平台解码器）→ VIS 解码；失败且开启了
+     * 盲扫时用 [SstvBlindScan] 反推模式再解一次。全程在 IO 线程，UI 只看到「导入中…」
+     * 与最终结果。
+     *
+     * **为什么按内容而不是按扩展名/mime 选路**：SAF 返回的 URI 常常没有可用后缀
+     * （形如 `content://…/document/1234`），`ContentResolver.getType` 也可能为 null 或
+     * 与实际内容不符；而「是不是 RIFF/WAVE」只需读 12 个字节就能确定，比任何元数据都可靠。
+     * 只有 WAV 解析失败时才退回平台解码器 —— 那正好覆盖 IMA ADPCM / µ-law 这类
+     * 本解析器刻意不支持的 WAV 变体。
+     *
+     * @param uri 由 `ActivityResultContracts.OpenDocument` 返回的文件 URI
+     */
+    fun importAudio(uri: Uri) {
+        if (_uiState.value.importing) return
+        _uiState.update {
+            it.copy(importing = true, importStatus = "正在读取音频…", error = null, blindCandidates = emptyList())
+        }
+
+        viewModelScope.launch {
+            val context = getApplication<Application>()
+            // ① 先落到缓存文件：既能拿到大小（挡住误选的大文件），也能让读取器用 File API
+            val temp = withContext(Dispatchers.IO) {
+                runCatching {
+                    val target = importTempFile(context, uri)
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        target.outputStream().use { output -> input.copyTo(output) }
+                        target
+                    }
+                }.getOrNull()
+            }
+            if (temp == null) {
+                _uiState.update {
+                    it.copy(importing = false, importStatus = null, error = "无法读取所选文件")
+                }
+                return@launch
+            }
+            if (temp.length() > MAX_IMPORT_BYTES) {
+                val mb = temp.length() / 1024 / 1024
+                temp.delete()
+                _uiState.update {
+                    it.copy(
+                        importing = false,
+                        importStatus = null,
+                        error = "音频文件过大（${mb} MB），请先截取单帧片段",
+                    )
+                }
+                return@launch
+            }
+
+            // ② 读音频：可能走平台解码器（MediaCodec 的 dequeue 是阻塞调用），放 IO
+            val readOutcome = withContext(Dispatchers.IO) {
+                try {
+                    readAudioFile(temp)
+                } finally {
+                    // 无论成败都要清掉缓存文件，否则解码异常时会在 cacheDir 里留下垃圾
+                    temp.delete()
+                }
+            }
+            when (readOutcome) {
+                is SstvWavReader.Outcome.Failure -> _uiState.update {
+                    it.copy(importing = false, importStatus = null, error = readOutcome.reason)
+                }
+
+                is SstvWavReader.Outcome.Success -> decodeImported(readOutcome)
             }
         }
     }
+
+    /**
+     * 按**内容**选择导入通路，两条通路返回同一种 [SstvWavReader.Outcome]。
+     *
+     * 先看是不是 RIFF/WAVE（读 12 字节，不占内存）：是就交给纯 Kotlin 解析器 ——
+     * 它对 24/32 位整数与 32/64 位浮点 WAV 的支持比系统提取器可靠，而且逻辑有单测；
+     * 不是就直接交给平台解码器（FLAC / MP3 / AAC / OGG 都在这里）。
+     *
+     * WAV 解析失败时再兜一次平台解码器：IMA ADPCM、µ-law 这类 WAV 变体本解析器
+     * 刻意不支持，但系统解码器往往能解。两者都失败时把两个原因都报出来 ——
+     * WAV 的原因更具体（能说出是哪个编码/位深），平台的原因能说明系统侧也救不了，
+     * 合在一起才对排查有用。
+     */
+    private fun readAudioFile(temp: File): SstvWavReader.Outcome {
+        if (!SstvWavReader.isWavFile(temp)) {
+            return SstvMediaAudioReader.read(temp)
+        }
+        when (val wav = SstvWavReader.read(temp)) {
+            is SstvWavReader.Outcome.Success -> return wav
+            is SstvWavReader.Outcome.Failure -> {
+                val media = SstvMediaAudioReader.read(temp)
+                return when (media) {
+                    is SstvWavReader.Outcome.Success -> media
+                    is SstvWavReader.Outcome.Failure ->
+                        SstvWavReader.Outcome.Failure("${wav.reason}；备用解码器亦失败：${media.reason}")
+                }
+            }
+        }
+    }
+
+    /**
+     * 导入时的缓存文件。
+     *
+     * 刻意**保留真实扩展名**（早先固定写死 `sstv_import.wav`）：`MediaExtractor` 在部分
+     * 系统版本上会把文件后缀当作选择提取器的提示，把 MP3 命名成 `.wav` 有被 WAV 提取器
+     * 错误接管的先例。拿不到 mime 也拿不到后缀时就用无后缀名 —— 无后缀比错误后缀安全，
+     * 因为两条通路本来都是按内容判断的。
+     */
+    private fun importTempFile(context: Application, uri: Uri): File {
+        val extension = audioExtensionOf(context, uri)
+        val name = if (extension.isEmpty()) IMPORT_TEMP_BASE else "$IMPORT_TEMP_BASE.$extension"
+        return File(context.cacheDir, name)
+    }
+
+    /** 由 mime 推断扩展名；mime 不可用或不在已知表里时返回空串。 */
+    private fun audioExtensionOf(context: Application, uri: Uri): String {
+        val mime = runCatching { context.contentResolver.getType(uri) }.getOrNull()
+        if (mime != null) {
+            MIME_EXTENSIONS[mime.lowercase()]?.let { return it }
+        }
+        // mime 靠不住时退一步看 URI 后缀（Downloads 里选来的文件常带真实文件名）
+        val segment = runCatching { uri.lastPathSegment }.getOrNull().orEmpty()
+        val candidate = segment.substringAfterLast('.', "").lowercase()
+        return if (candidate in KNOWN_AUDIO_EXTENSIONS) candidate else ""
+    }
+
+    private suspend fun decodeImported(audio: SstvWavReader.Outcome.Success) {
+        val rate = SstvWavReader.TARGET_SAMPLE_RATE
+        val manualMode = presetOverride ?: settingsStore.manualMode
+        val describe = describeAudio(audio)
+        // 保留样本：盲扫候选之间切换时无需让用户重新导入
+        importedAudio = audio.samples
+        _uiState.update { it.copy(importStatus = "$describe，正在解码…") }
+
+        val decoded = withContext(Dispatchers.Default) {
+            SstvDecoder(rate).decode(audio.samples, forcedMode = manualMode)
+        }
+
+        when (decoded) {
+            is SstvDecoder.Outcome.Success -> showImported(decoded.result, describe, candidates = emptyList())
+            is SstvDecoder.Outcome.Failure -> {
+                if (!settingsStore.blindScanOnFailure) {
+                    _uiState.update {
+                        it.copy(
+                            importing = false,
+                            importStatus = null,
+                            error = "${decoded.reason}（可在设置中开启盲扫自动判定）",
+                        )
+                    }
+                    return
+                }
+                blindScanImported(audio.samples, describe, decoded.reason)
+            }
+        }
+    }
+
+    /** VIS 失败后的盲扫兜底：反推模式 → 用该模式再解一次。 */
+    private suspend fun blindScanImported(
+        samples: FloatArray,
+        describe: String,
+        visFailure: String,
+    ) {
+        _uiState.update { it.copy(blindScanning = true, importStatus = "$describe；VIS 缺失，正在盲扫模式…") }
+        val scan = withContext(Dispatchers.Default) {
+            SstvBlindScan.scan(samples, SstvWavReader.TARGET_SAMPLE_RATE)
+        }
+
+        val best = scan.best
+        if (best == null) {
+            _uiState.update {
+                it.copy(
+                    importing = false,
+                    blindScanning = false,
+                    importStatus = null,
+                    blindCandidates = emptyList(),
+                    error = "$visFailure；盲扫亦失败：${scan.reason ?: "未找到候选模式"}",
+                )
+            }
+            return
+        }
+
+        _uiState.update {
+            it.copy(
+                blindCandidates = scan.candidates,
+                blindConfidence = scan.confidence,
+                importStatus = "$describe；盲扫判定为 ${best.mode.displayName}，正在解码…",
+            )
+        }
+
+        val decoded = withContext(Dispatchers.Default) {
+            SstvDecoder(SstvWavReader.TARGET_SAMPLE_RATE).decode(samples, forcedMode = best.mode)
+        }
+        _uiState.update { it.copy(blindScanning = false) }
+        when (decoded) {
+            is SstvDecoder.Outcome.Success -> showImported(
+                decoded.result,
+                "$describe；VIS 缺失，盲扫判定 ${best.mode.displayName}" +
+                    "（置信度 ${(scan.confidence * 100).toInt()}%）",
+                candidates = scan.candidates,
+            )
+
+            is SstvDecoder.Outcome.Failure -> _uiState.update {
+                it.copy(
+                    importing = false,
+                    importStatus = null,
+                    error = "盲扫判定为 ${best.mode.displayName} 但解码失败：${decoded.reason}",
+                )
+            }
+        }
+    }
+
+    /**
+     * 用盲扫候选中的另一个模式重新解码**已导入的音频**。
+     *
+     * 盲扫的置信度不可能总是 100%（同一行周期的模式本质上不可分），因此必须让用户
+     * 能一键换候选 —— 这正是二期风险项 R3（盲扫误判）的缓解手段。
+     */
+    fun decodeImportedWith(mode: SstvMode) {
+        val samples = importedAudio ?: run {
+            _uiState.update { it.copy(error = "没有可重解的音频，请重新导入") }
+            return
+        }
+        if (_uiState.value.importing) return
+        _uiState.update { it.copy(importing = true, importStatus = "正在按 ${mode.displayName} 重新解码…") }
+        viewModelScope.launch {
+            val decoded = withContext(Dispatchers.Default) {
+                SstvDecoder(SstvWavReader.TARGET_SAMPLE_RATE).decode(samples, forcedMode = mode)
+            }
+            when (decoded) {
+                is SstvDecoder.Outcome.Success -> showImported(
+                    decoded.result,
+                    "按候选 ${mode.displayName} 重新解码",
+                    candidates = _uiState.value.blindCandidates,
+                )
+
+                is SstvDecoder.Outcome.Failure -> _uiState.update {
+                    it.copy(importing = false, importStatus = null, error = "${mode.displayName}：${decoded.reason}")
+                }
+            }
+        }
+    }
+
+    private fun describeAudio(audio: SstvWavReader.Outcome.Success): String = buildString {
+        append("已读取 ")
+        append("%.1f".format(audio.durationSeconds))
+        append(" 秒")
+        if (audio.resampled) append("（${audio.sourceSampleRate} Hz → ${SstvWavReader.TARGET_SAMPLE_RATE} Hz）")
+        if (audio.sourceChannels > 1) append("，${audio.sourceChannels} 声道已下混")
+        if (audio.truncated) append("，已截断到 ${SstvWavReader.MAX_SECONDS.toInt()} 秒")
+    }
+
+    private suspend fun showImported(
+        result: SstvDecoder.Result,
+        describe: String,
+        candidates: List<SstvBlindScan.Candidate>,
+    ) {
+        lastResult = result
+        autoSaveAttempted = true
+        // 位图重建与落盘都是重活，必须离开主线程（本函数在 viewModelScope 的 Main 上）
+        val bitmap = withContext(Dispatchers.Default) { toDisplayBitmap(result) }
+        var savedName: String? = null
+        if (settingsStore.autoSave) {
+            savedName = withContext(Dispatchers.IO) {
+                val options = settingsStore.postProcess
+                if (options.anyEnabled) {
+                    imageStore.savePixels(
+                        SstvPostProcess.process(result.pixels, result.width, result.height, options),
+                        result.width,
+                        result.height,
+                        result.mode.displayName,
+                        enhanced = true,
+                    )?.name
+                } else {
+                    imageStore.save(result)?.name
+                }
+            }
+        }
+        _uiState.update {
+            it.copy(
+                importing = false,
+                importStatus = null,
+                bitmap = bitmap,
+                mode = result.mode,
+                visCode = result.mode.visCode,
+                hedrShiftHz = result.hedrShiftHz,
+                slantRatio = result.slantRatio,
+                decodedLines = result.decodedLines,
+                totalLines = result.mode.imageLines,
+                syncPulseCount = result.syncPulseCount,
+                savedFileName = savedName,
+                blindCandidates = candidates,
+                status = "$describe → ${result.mode.displayName} 解码完成 ${result.decodedLines} 行" +
+                    (savedName?.let { n -> "，已保存 $n" } ?: ""),
+                error = null,
+            )
+        }
+        refreshGallery()
+    }
+
+    /** 清除导入/盲扫的临时提示。 */
+    fun clearImportStatus() {
+        _uiState.update { it.copy(importStatus = null, error = null) }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // 图库（T1）
+    // ══════════════════════════════════════════════════════════════════
+
+    /** 为图库列表解码缩略图（只在协程中调用）。 */
+    fun loadThumbnails(reqWidth: Int = 240, reqHeight: Int = 240) {
+        val entries = _uiState.value.gallery
+        if (entries.isEmpty()) return
+        viewModelScope.launch {
+            val decoded = withContext(Dispatchers.IO) {
+                entries.mapNotNull { entry ->
+                    if (_uiState.value.thumbnails.containsKey(entry.file.name)) return@mapNotNull null
+                    val bitmap = imageStore.decodeThumbnail(entry.file, reqWidth, reqHeight)
+                    bitmap?.let { entry.file.name to it }
+                }
+            }
+            if (decoded.isEmpty()) return@launch
+            _uiState.update { it.copy(thumbnails = it.thumbnails + decoded) }
+        }
+    }
+
+    fun deleteImage(entry: SstvImageStore.Entry) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { imageStore.delete(entry.file) }
+            _uiState.update {
+                it.copy(
+                    thumbnails = it.thumbnails - entry.file.name,
+                    viewing = if (it.viewing?.file == entry.file) null else it.viewing,
+                    viewingBitmap = if (it.viewing?.file == entry.file) null else it.viewingBitmap,
+                    status = "已删除 ${entry.file.name}",
+                )
+            }
+            refreshGallery()
+        }
+    }
+
+    /** 打开全屏查看（大图解码必须放协程）。 */
+    fun openViewer(entry: SstvImageStore.Entry) {
+        viewingFile = entry.file
+        _uiState.update { it.copy(viewing = entry, viewingBitmap = null) }
+        viewModelScope.launch {
+            val bitmap = withContext(Dispatchers.IO) { imageStore.decodeThumbnail(entry.file, 1600, 1600) }
+            // 用户可能已经切走/关闭，避免把过期结果写回
+            if (viewingFile != entry.file) return@launch
+            _uiState.update { it.copy(viewingBitmap = bitmap) }
+        }
+    }
+
+    fun closeViewer() {
+        viewingFile = null
+        _uiState.update { it.copy(viewing = null, viewingBitmap = null) }
+    }
+
+    /** 导出到系统相册。 */
+    fun exportToGallery(entry: SstvImageStore.Entry) {
+        val context = getApplication<Application>()
+        _uiState.update { it.copy(galleryBusy = "正在导出 ${entry.file.name}…") }
+        viewModelScope.launch {
+            val outcome = withContext(Dispatchers.IO) { imageStore.exportToGallery(context, entry.file) }
+            val message = when (outcome) {
+                is SstvImageStore.ExportOutcome.Success ->
+                    "已导出到相册（Pictures/${SstvImageStore.GALLERY_ALBUM}）"
+
+                is SstvImageStore.ExportOutcome.Failure -> outcome.reason
+            }
+            _uiState.update { it.copy(galleryBusy = null, status = message) }
+        }
+    }
+
+    /** 通过 FileProvider 分享（返回 URI 由 UI 发起 `ACTION_SEND`）。 */
+    fun shareUri(entry: SstvImageStore.Entry): Uri? =
+        imageStore.shareUri(getApplication(), entry.file)
+
+    // ══════════════════════════════════════════════════════════════════
+    // 发射（T3）
+    // ══════════════════════════════════════════════════════════════════
+
+    fun setTxMode(mode: SstvMode) {
+        settingsStore.txModeName = mode.name
+        _uiState.update { it.copy(txModeName = mode.name, txStatus = "已选择 ${mode.displayName}") }
+        // 图像按新分辨率重新装配（源图已按旧模式缩放，直接复用会变形）
+        reloadTxSource()
+    }
+
+    fun setTxIncludeVis(include: Boolean) {
+        _uiState.update { it.copy(txIncludeVis = include) }
+    }
+
+    fun setCallsign(value: String) {
+        settingsStore.callsign = value
+        _uiState.update { it.copy(callsign = settingsStore.callsign) }
+    }
+
+    fun setTxOverlayCallsign(enabled: Boolean) {
+        settingsStore.txOverlayCallsign = enabled
+        _uiState.update { it.copy(txOverlayCallsign = enabled) }
+        reloadTxSource()
+    }
+
+    /** 从系统相册/文件选择器选图作为发射源。 */
+    fun setTxImage(uri: Uri) {
+        txOrigin = TxOrigin.Uri(uri)
+        loadTxSource()
+    }
+
+    /** 从 SSTV 图库（已解码图像）选图作为发射源。 */
+    fun setTxFromGallery(entry: SstvImageStore.Entry) {
+        txOrigin = TxOrigin.File(entry.file)
+        loadTxSource()
+    }
+
+    private sealed interface TxOrigin {
+        data class Uri(val uri: android.net.Uri) : TxOrigin
+
+        data class File(val file: java.io.File) : TxOrigin
+    }
+
+    private var txOrigin: TxOrigin? = null
+
+    private fun reloadTxSource() {
+        if (txOrigin != null) loadTxSource()
+    }
+
+    private fun loadTxSource() {
+        val origin = txOrigin ?: return
+        val mode = _uiState.value.txMode
+        val callsign = if (_uiState.value.txOverlayCallsign) _uiState.value.callsign else null
+        _uiState.update { it.copy(txStatus = "正在载入图片…") }
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                val context = getApplication<Application>()
+                when (origin) {
+                    is TxOrigin.Uri -> SstvBitmapSource.load(context, origin.uri, mode, callsign)
+                    is TxOrigin.File -> SstvBitmapSource.load(context, origin.file, mode, callsign)
+                }
+            }
+            if (result == null) {
+                txSource = null
+                _uiState.update { it.copy(txPreview = null, txSourceLabel = null, txStatus = "图片载入失败") }
+                return@launch
+            }
+            txSource = result
+            val preview = withContext(Dispatchers.Default) {
+                val pixels = IntArray(result.width * result.height)
+                for (y in 0 until result.height) {
+                    for (x in 0 until result.width) {
+                        pixels[y * result.width + x] = result.rgbAt(x, y)
+                    }
+                }
+                SstvImageStore.toBitmap(pixels, result.width, result.height)
+            }
+            val label = when (origin) {
+                is TxOrigin.Uri -> "来自相册/文件"
+                is TxOrigin.File -> origin.file.name
+            }
+            val seconds = mode.frameSeconds + SstvEncoder.VIS_TOTAL_SECONDS
+            _uiState.update {
+                it.copy(
+                    txPreview = preview,
+                    txSourceLabel = label,
+                    txStatus = "已载入 ${result.width}×${result.height}，按 ${mode.displayName} 发射约 " +
+                        "${"%.0f".format(seconds)} 秒",
+                )
+            }
+        }
+    }
+
+    /** 开始发射（对着电台话筒播放）。 */
+    fun startTx() {
+        val source = txSource
+        if (source == null) {
+            _uiState.update { it.copy(txStatus = "请先选择一张图片") }
+            return
+        }
+        if (_uiState.value.txPlaying) return
+        val mode = _uiState.value.txMode
+        val includeVis = _uiState.value.txIncludeVis
+        val encoder = SstvEncoder(SstvWavReader.TARGET_SAMPLE_RATE)
+        val total = encoder.estimateSampleCount(mode, includeVis)
+
+        player?.stop()
+        player = com.example.hamkit.data.sstv.SstvAudioPlayer(
+            sampleRate = SstvWavReader.TARGET_SAMPLE_RATE,
+            onProgress = { progress -> _uiState.update { it.copy(txProgress = progress) } },
+            onFinished = {
+                _uiState.update { it.copy(txPlaying = false, txProgress = 1f, txStatus = "发射完成") }
+            },
+            onError = { reason ->
+                _uiState.update { it.copy(txPlaying = false, txStatus = reason) }
+            },
+        ).also { it.play(encoder.encodeChunks(source, mode, includeVis = includeVis), total) }
+
+        _uiState.update {
+            it.copy(
+                txPlaying = true,
+                txProgress = 0f,
+                txStatus = "正在发射 ${mode.displayName}（约 ${"%.0f".format(total.toDouble() / SstvWavReader.TARGET_SAMPLE_RATE)} 秒）",
+            )
+        }
+    }
+
+    fun stopTx() {
+        player?.stop()
+        player = null
+        _uiState.update { it.copy(txPlaying = false, txStatus = "已停止发射") }
+    }
+
+    /**
+     * 导出音频文件（SAF 创建文档返回的 URI）。
+     *
+     * 这是发射页的「替代路径」：手机扬声器 → 电台话筒的声学链路失真不可控（见
+     * [com.example.hamkit.data.sstv.SstvWavWriter] 的说明），导出后用音频线接入能得到
+     * 干净得多的信号。导出同样按块进行，PD-290（约 28 MB）也不会撑爆内存。
+     */
+    fun exportTxAudio(uri: Uri) {
+        val source = txSource
+        if (source == null) {
+            _uiState.update { it.copy(txStatus = "请先选择一张图片") }
+            return
+        }
+        if (_uiState.value.txPlaying) {
+            _uiState.update { it.copy(txStatus = "请先停止发射再导出") }
+            return
+        }
+        val mode = _uiState.value.txMode
+        val includeVis = _uiState.value.txIncludeVis
+        _uiState.update { it.copy(txStatus = "正在导出音频…") }
+
+        viewModelScope.launch {
+            val context = getApplication<Application>()
+            val samples = withContext(Dispatchers.IO) {
+                runCatching {
+                    val encoder = SstvEncoder(SstvWavReader.TARGET_SAMPLE_RATE)
+                    val chunks = encoder.encodeChunks(source, mode, includeVis = includeVis)
+                    context.contentResolver.openOutputStream(uri)?.use { out ->
+                        SstvWavWriter.writePcm16ToStream(
+                            tempDir = context.cacheDir,
+                            sampleRate = SstvWavReader.TARGET_SAMPLE_RATE,
+                            chunks = chunks,
+                            out = out,
+                        )
+                    }
+                }.getOrNull()
+            }
+            _uiState.update {
+                it.copy(
+                    txStatus = if (samples != null) {
+                        "已导出 WAV（${"%.1f".format(samples.toDouble() / SstvWavReader.TARGET_SAMPLE_RATE)} 秒）"
+                    } else {
+                        "导出失败"
+                    },
+                )
+            }
+        }
+    }
+
+    private companion object {
+        /**
+         * 导入音频的大小上限。
+         *
+         * WAV 通路会把整个文件读成字节数组再转成 FloatArray，峰值内存约为文件大小的
+         * 3 倍；96 MB 对应约 8 分钟 48 kHz/16 位单声道录音，已远超单帧上限
+         * （[SstvWavReader.MAX_SECONDS] = 300 秒），此处只用于挡住误选的大文件。
+         * 压缩容器（FLAC/MP3）走平台解码器、边解边在 [com.example.hamkit.data.sstv.SstvAudioConvert.MonoAccumulator]
+         * 里封顶，因此同一个上限对它们更宽松，无需单独设阈值。
+         */
+        const val MAX_IMPORT_BYTES = 96L * 1024 * 1024
+
+        /**
+         * 导入缓存的文件名主干（真实扩展名由 mime 推断后拼上）。
+         *
+         * 每次导入都覆盖同名文件：缓存目录里只留一份，不会随导入次数堆积。
+         */
+        const val IMPORT_TEMP_BASE = "sstv_import"
+
+        /** 瀑布图快照刷新间隔：约 6–7 帧/秒，肉眼看是连续滚动，开销可忽略。 */
+        const val WATERFALL_REFRESH_MS = 150L
+
+        /** 瀑布图的背景色（无信号处）。 */
+        const val WATERFALL_EMPTY = 0xFF101014.toInt()
+
+        /** mime → 扩展名。只列业余录音会遇到的容器，其余走无后缀名。 */        private val MIME_EXTENSIONS = mapOf(
+            "audio/wav" to "wav",
+            "audio/wave" to "wav",
+            "audio/x-wav" to "wav",
+            "audio/vnd.wave" to "wav",
+            "audio/mpeg" to "mp3",
+            "audio/mp3" to "mp3",
+            "audio/flac" to "flac",
+            "audio/x-flac" to "flac",
+            "audio/mp4" to "m4a",
+            "audio/m4a" to "m4a",
+            "audio/x-m4a" to "m4a",
+            "audio/aac" to "aac",
+            "audio/ogg" to "ogg",
+            "application/ogg" to "ogg",
+            "audio/opus" to "opus",
+            "audio/3gpp" to "3gp",
+        )
+
+        /** URI 后缀的合法取值（mime 不可用时的兜底）。 */
+        private val KNOWN_AUDIO_EXTENSIONS = MIME_EXTENSIONS.values.toSet()
+    }
+}
+
+/**
+ * 人类可读的字节数。
+ *
+ * 刻意放在**文件顶层**而不是 ViewModel 的成员：`SstvUiState` 的属性（`recordingsLabel`）
+ * 也要用它，而成员函数无法从另一个类里访问。
+ */
+private fun formatBytes(bytes: Long): String = when {
+    bytes >= 1024L * 1024 * 1024 -> "%.2f GB".format(bytes / 1024.0 / 1024 / 1024)
+    bytes >= 1024L * 1024 -> "%.1f MB".format(bytes / 1024.0 / 1024)
+    bytes >= 1024L -> "%.0f KB".format(bytes / 1024.0)
+    else -> "$bytes B"
 }

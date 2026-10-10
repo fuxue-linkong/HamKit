@@ -1,5 +1,6 @@
 package com.example.hamkit.data.sstv
 
+import kotlin.math.PI
 import kotlin.math.roundToInt
 
 /**
@@ -26,10 +27,17 @@ import kotlin.math.roundToInt
  *   行同步是在同一条「已被延迟」的频率流上检测的，同步位置与像素采样因此共享同一
  *   时间轴，额外补偿反而会引入偏移（PSNR 由 29.9 dB 掉到 14.9 dB）。该参数保留用于
  *   更换滤波器配置时的微调。
+ * @param pixelNyquistFilter 是否对每个通道做**零相位像素 Nyquist 低通**（默认开启）。
+ *
+ *   技术参照 robot36（xdsopl/robot36，0BSD）：截止频率取「一个像素能表达的最高横向
+ *   频率」，再用前向 + 反向二阶 EMA 实现零相位（不产生水平位移）。开启后弱信号下的
+ *   椒盐噪点明显减少，而强信号下的细节损失可忽略（截止正好落在可还原范围的边界上）。
+ *   置 false 退回一期的「像素中点窗平均」行为，便于 A/B 对比与回归。
  */
 class SstvDecoder(
     private val sampleRate: Int = SstvVisDetector.DEFAULT_SAMPLE_RATE,
     private val groupDelaySamples: Double = 0.0,
+    private val pixelNyquistFilter: Boolean = true,
 ) {
 
     /** 解码成功的结果。 */
@@ -141,6 +149,9 @@ class SstvDecoder(
         val effectiveRate = fit.effectiveRate(sampleRate)
         val pixels = IntArray(mode.linePixels * mode.imageLines)
         var decodedLines = 0
+        // 每次解码都是一段独立的音频流，行奇偶状态必须重新起算（否则上一段音频的
+        // 判定会污染这一段；虽然标记本身会立刻纠正，但第一行仍会带错色度）
+        lastEvenParity = true
         for (line in 0 until mode.radioLines) {
             if (!decodeRadioLine(
                     freqs, fit, mode, line, effectiveShiftHz, pixels, validFromSample, effectiveRate,
@@ -168,6 +179,17 @@ class SstvDecoder(
     /** 跨行保持的色度平面（Robot 24/36 的行交替色度需要上一行的分量）。 */
     private var chromaCr = IntArray(0)
     private var chromaCb = IntArray(0)
+
+    /**
+     * 上一行判定出的奇偶（Robot 24/36）。
+     *
+     * 标记脉冲模糊或落在两个候选之间时沿用上一行的结果 —— 行奇偶只会在帧边界变化，
+     * 逐行独立猜测反而更容易在弱信号下抖动（robot36 用「toggle」达到类似效果）。
+     */
+    private var lastEvenParity = true
+
+    /** 通道电平流的中间缓冲（避免每行、每通道都新建数组）。 */
+    private var levelScratch = FloatArray(0)
 
     /**
      * 解码一个无线行并写入 [pixels]。
@@ -205,13 +227,7 @@ class SstvDecoder(
             if (channelStart >= freqs.size - 1) return false
             if (channelStart + task.pixels * pixelSamples < validFrom) return false
 
-            val arr = IntArray(task.pixels)
-            for (x in 0 until task.pixels) {
-                val center = channelStart + (x + 0.5) * pixelSamples
-                // 末尾越界由 sampleLevel 内部钳制，避免因最后几个样本缺失而丢掉整行
-                arr[x] = sampleLevel(freqs, center, pixelSamples, hedrShiftHz)
-            }
-            values.add(arr)
+            values.add(sampleChannel(freqs, channelStart, task, hedrShiftHz, effectiveRate))
         }
 
         when (mode.layout) {
@@ -240,9 +256,11 @@ class SstvDecoder(
                         pixels[row * width + x] = SstvColor.ycbcrToRgb(y[x], u[x], v[x])
                     }
                 } else {
-                    // Robot 24/36：每行只发一个色度分量，另一分量沿用上一行
+                    // Robot 24/36：每行只发一个色度分量，另一分量沿用上一行。
+                    // **奇偶来自分隔脉冲本身**，而不是行序号 —— 录音从奇数行开始时，
+                    // 行序号 0 实际是奇数行，按序号推断会让整幅图红蓝互换
                     val chroma = values[1]
-                    if (row % 2 == 0) {
+                    if (resolveLineParity(freqs, mode, lineStart, hedrShiftHz, effectiveRate, line)) {
                         System.arraycopy(chroma, 0, chromaCr, 0, width)
                     } else {
                         System.arraycopy(chroma, 0, chromaCb, 0, width)
@@ -255,17 +273,149 @@ class SstvDecoder(
             }
 
             SstvChannelLayout.RGB_SEQUENTIAL -> {
-                // Martin：发送顺序为 G → B → R
-                val green = values[0]
-                val blue = values[1]
-                val red = values[2]
+                // **按通道角色取值**，而不是按下标：Martin/Scottie 的发顺序是 G→B→R，
+                // Wraase SC2-180 是 R→G→B，按下标取会把红蓝（乃至绿色）接错
+                val order = mode.rgbOrder.roles
+                val red = values[order.indexOf(SstvChannelRole.RED)]
+                val green = values[order.indexOf(SstvChannelRole.GREEN)]
+                val blue = values[order.indexOf(SstvChannelRole.BLUE)]
                 val row = line
                 for (x in 0 until width) {
                     pixels[row * width + x] = SstvColor.pack(red[x], green[x], blue[x])
                 }
             }
+
+            SstvChannelLayout.MONO -> {
+                // Robot B/W：单通道即灰度，直接写回 R=G=B（不做任何色彩空间转换）
+                val mono = values[0]
+                val row = line
+                for (x in 0 until width) {
+                    val level = mono[x]
+                    pixels[row * width + x] = SstvColor.pack(level, level, level)
+                }
+            }
         }
         return true
+    }
+
+    /**
+     * 判定当前无线行的奇偶（Robot 24/36）：真 = 偶行（该行的色度通道是 Cr）。
+     *
+     * 判据是分隔脉冲的频率（偶行 1500 Hz / 奇行 2300 Hz）。只有当**明显更像**其中一个
+     * 候选时才采信，否则沿用上一行的判定 —— 弱信号下脉冲会被噪声抹平，硬猜每行的奇偶
+     * 会让红蓝通道随机翻转，画面上表现为逐行色斑。
+     */
+    private fun resolveLineParity(
+        freqs: FloatArray,
+        mode: SstvMode,
+        lineStart: Double,
+        hedrShiftHz: Double,
+        effectiveRate: Double,
+        line: Int,
+    ): Boolean {
+        val marker = mode.parityMarker ?: return line % 2 == 0
+        val center = lineStart + (marker.startSeconds + marker.seconds / 2.0) * effectiveRate
+        val half = maxOf(1.0, marker.seconds * effectiveRate * SAMPLE_WINDOW_RATIO)
+        val measured = sampleMeanHz(freqs, center, half) - hedrShiftHz
+
+        val evenError = kotlin.math.abs(measured - marker.evenHz)
+        val oddError = kotlin.math.abs(measured - marker.oddHz)
+        val decided = when {
+            evenError + PARITY_MARGIN_HZ < oddError -> true
+            oddError + PARITY_MARGIN_HZ < evenError -> false
+            else -> lastEvenParity
+        }
+        lastEvenParity = decided
+        return decided
+    }
+
+    /**
+     * 把一个通道采成 0–255 的电平序列。
+     *
+     * 两条路径：
+     *  - **像素 Nyquist 低通**（默认）：先把通道覆盖的样本转成频率流，做**零相位**
+     *    （前向 + 反向）二阶 EMA，再在像素中点取值。截止频率恰为像素 Nyquist —— 即
+     *    「一个像素能表达的最高横向频率」，因此只滤掉不可能还原的成分，不会牺牲真实细节。
+     *    前向+反向是关键：单向滤波会把整行内容沿时间轴平移，表现为水平错位。
+     *  - **关闭时**退回一期的「像素中点 30% 窗平均」，便于 A/B 对比与回归。
+     *
+     * 该技术参照 robot36（xdsopl/robot36，0BSD）的 `ExponentialMovingAverage` +
+     * `cutoff(horizontalPixels, 2 * channelSamples, 2)` 用法实现。
+     */
+    private fun sampleChannel(
+        freqs: FloatArray,
+        channelStart: Double,
+        task: SstvChannelTask,
+        hedrShiftHz: Double,
+        effectiveRate: Double,
+    ): IntArray {
+        val pixelSamples = task.pixelSeconds * effectiveRate
+        val arr = IntArray(task.pixels)
+
+        if (!pixelNyquistFilter) {
+            for (x in 0 until task.pixels) {
+                val center = channelStart + (x + 0.5) * pixelSamples
+                arr[x] = sampleLevel(freqs, center, pixelSamples, hedrShiftHz)
+            }
+            return arr
+        }
+
+        val count = (task.pixels * pixelSamples).toInt().coerceAtLeast(task.pixels * 2)
+        ensureLevelScratch(count)
+        val from = channelStart.toInt()
+        var lastFinite = SstvMode.BLACK_HZ.toFloat()
+        for (i in 0 until count) {
+            val index = (from + i).coerceIn(0, freqs.size - 1)
+            val value = freqs[index]
+            // 非有限值用前一个样本顶替，避免一个野值经 IIR 扩散到整行
+            if (value.isFinite()) lastFinite = value
+            levelScratch[i] = lastFinite
+        }
+        applyZeroPhaseLowPass(levelScratch, count, task.pixels)
+
+        for (x in 0 until task.pixels) {
+            val center = (x + 0.5) * pixelSamples
+            arr[x] = sampleLevelFromStream(levelScratch, count, center, pixelSamples, hedrShiftHz)
+        }
+        return arr
+    }
+
+    private fun ensureLevelScratch(required: Int) {
+        if (levelScratch.size < required) levelScratch = FloatArray(required)
+    }
+
+    /**
+     * 零相位二阶 EMA 低通，截止频率 = **像素 Nyquist**。
+     *
+     * 截止频率 `f = pixels`、采样率 `rate = 2 × channelSamples` 时
+     * `f/rate = pixels / (2·pixels·pixelSamples) = 0.5 / pixelSamples`，
+     * 正是像素周期的 Nyquist —— 与 robot36 传参 `cutoff(horizontalPixels, 2 * channelSamples, 2)` 等价。
+     *
+     * `order = 2` 在 robot36 的实现里是把一阶 alpha 开平方后**跑两遍**（前向 + 反向），
+     * 因此总响应约等于一阶、但相位为线性。反向那一遍刻意用最后一个样本初始化 `prev`
+     * 而不是 0 —— robot36 用 0 初始化会把最右侧若干像素压暗（这是本实现的一处改进）。
+     */
+    private fun applyZeroPhaseLowPass(buffer: FloatArray, count: Int, pixels: Int) {
+        if (count < 4 || pixels <= 0) return
+        val normalized = (pixels.toDouble() / (2.0 * count)).coerceIn(0.0, 0.5)
+        if (normalized <= 0.0) return
+        val x = kotlin.math.cos(2.0 * PI * normalized)
+        val single = x - 1.0 + kotlin.math.sqrt(x * (x - 4.0) + 3.0)
+        if (single <= 0.0) return
+        val alpha = kotlin.math.sqrt(single).toFloat()
+
+        var prev = buffer[0]
+        for (i in 0 until count) {
+            val value = buffer[i]
+            prev += alpha * (value - prev)
+            buffer[i] = prev
+        }
+        prev = buffer[count - 1]
+        for (i in count - 1 downTo 0) {
+            val value = buffer[i]
+            prev += alpha * (value - prev)
+            buffer[i] = prev
+        }
     }
 
     /**
@@ -294,6 +444,35 @@ class SstvDecoder(
         return level.roundToInt().coerceIn(0, 255)
     }
 
+    /** 在**已低通**的电平流上按像素中点取值（位置相对通道起点）。 */
+    private fun sampleLevelFromStream(
+        buffer: FloatArray,
+        count: Int,
+        centerSample: Double,
+        pixelSamples: Double,
+        hedrShiftHz: Double,
+    ): Int {
+        val half = maxOf(1.0, pixelSamples * SAMPLE_WINDOW_RATIO)
+        val from = (centerSample - half).toInt().coerceIn(0, count - 1)
+        val to = (centerSample + half).toInt().coerceIn(from + 1, count)
+        var sum = 0.0
+        for (i in from until to) sum += buffer[i]
+        val meanHz = sum / (to - from)
+        val level = (meanHz - hedrShiftHz - SstvMode.BLACK_HZ) /
+            (SstvMode.WHITE_HZ - SstvMode.BLACK_HZ) * 255.0
+        return level.roundToInt().coerceIn(0, 255)
+    }
+
+    /** 在 [centerSample] 附近取窗求平均频率（Hz）。用于奇偶判定等「读频率」的场合。 */
+    private fun sampleMeanHz(freqs: FloatArray, centerSample: Double, halfSamples: Double): Double {
+        val half = maxOf(1.0, halfSamples)
+        val from = (centerSample - half).toInt().coerceIn(0, freqs.size - 1)
+        val to = (centerSample + half).toInt().coerceIn(from + 1, freqs.size)
+        var sum = 0.0
+        for (i in from until to) sum += freqs[i]
+        return sum / (to - from)
+    }
+
     companion object {
         /** 像素采样窗占像素时长的比例（取中部，避开边界过渡）。 */
         private const val SAMPLE_WINDOW_RATIO = 0.3
@@ -304,5 +483,15 @@ class SstvDecoder(
          * 脉冲足够多时其平均频率的统计误差可忽略，远比 VIS leader 的单次估计可靠。
          */
         private const val MIN_PULSES_FOR_SHIFT_REFINE = 8
+
+        /**
+         * 奇偶判定的最小置信余量（Hz）。
+         *
+         * 两个候选频率相差 800 Hz（1500 vs 2300），因此要求实测值「离中点多近」是可调项：
+         * 取 200 Hz 表示实测值必须落在正确候选 ±200 Hz 内、且离错误候选 ≥ 600 Hz 才采信。
+         * 这个余量在 SNR 20 dB 下实测足够（噪声约 ±24 Hz），同时能挡住「采到图像内容」
+         * 这种完全跑偏的情况。
+         */
+        private const val PARITY_MARGIN_HZ = 200.0
     }
 }

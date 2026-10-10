@@ -125,6 +125,8 @@ class SstvCodecTest {
                 when (event) {
                     is SstvLineEvent.Sync -> elapsed += event.seconds
                     is SstvLineEvent.Gap -> elapsed += event.seconds
+                    // 奇偶标记在时间轴上与普通间隔等价，只在频率上携带信息
+                    is SstvLineEvent.ParityMarker -> elapsed += event.seconds
                     is SstvLineEvent.Channel -> {
                         startsFromEvents.add(event.task.role to elapsed)
                         elapsed += event.task.pixels * event.task.pixelSeconds

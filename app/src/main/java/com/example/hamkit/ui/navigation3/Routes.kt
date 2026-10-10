@@ -128,4 +128,28 @@ sealed interface Route : NavKey, Parcelable {
     @Parcelize
     @Serializable
     data object SstvSettings : Route
+
+    /**
+     * SSTV 图库：浏览、全屏查看、删除、分享、导出到相册。
+     *
+     * @param pickForTx 为 true 时进入「为发射选图」模式：点击图像即选中并返回发射页
+     */
+    @Parcelize
+    @Serializable
+    data class SstvGallery(val pickForTx: Boolean = false) : Route
+
+    /** SSTV 发射：选图 → 编码成 SSTV 音频 → 播放或导出 WAV */
+    @Parcelize
+    @Serializable
+    data object SstvTx : Route
+
+    /**
+     * HF Fax（WEFAX）天气传真接收。
+     *
+     * 与 SSTV 不是同一套协议（无 VIS、无行同步、行节拍靠 120 行/分自由运行），
+     * 因此单独一个页面而不是挂在 SSTV 里。
+     */
+    @Parcelize
+    @Serializable
+    data object HfFax : Route
 }

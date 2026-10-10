@@ -55,12 +55,28 @@ Official website: https://hamkit.click
 ### SSTV (Slow-Scan Television)
 - **In-house pure-Kotlin DSP**: quadrature FM demodulation (8th-order Butterworth low-pass + multi-sample phase differencing), no third-party dependencies
 - **Automatic VIS header detection**; verified to lock correctly even with a ±120 Hz frequency offset, with manual mode override as fallback
-- Supports **PD-120 / 180 / 240, Robot 24 / 36 / 72, Martin 1 / 2, Scottie 1 / 2 / DX** (11 modes)
+- Supports **PD-50 / 90 / 120 / 160 / 180 / 240 / 290, Robot 8 / 12 / 24 B/W, Robot 24 / 36 / 72, Martin 1 / 2, Scottie 1 / 2 / DX, Wraase SC2-180** (19 modes, monochrome family included)
 - **Line sync detection + least-squares slant correction**: automatically compensates for clock mismatch (±1% drift verified)
 - **Mistuning compensation** from the average frequency of all sync pulses, preserving correct levels under Doppler
+- **Line parity read from the signal**: Robot 24/36 Cr/Cb is chosen by the separator tone, so a recording that starts on an odd line no longer swaps red and blue
 - Live line-by-line preview, with automatic saving once a frame completes
-- Scottie's mid-line sync is handled by inferring line start from the measured sync position (`2·sep + 2·chanLen` offset)
+- **Offline decoding**: import WAV (8/16/24/32-bit int, 32/64-bit float) and **FLAC / MP3 / AAC / OGG** (platform decoder, no third-party dependencies)
+- **Receive recording**: the raw audio is streamed to a WAV file (VIS header included) and can be re-decoded later
+- **Signal waterfall**: a live frequency-vs-time view of the demodulated signal, useful for tuning and signal-quality checks
+- **Blind scan**: when the VIS header is lost to noise, the mode is inferred from sync-pulse spacing, a detune histogram and black-level gap structure, with a ranked candidate list
+- **Weak-signal handling**: SNR-driven adaptive integration window (strong signals behave exactly as before), zero-phase pixel-Nyquist low-pass, plus optional histogram stretch / median denoise / bad-line repair
+- **Continuous reception**: after a frame completes, mode and mistuning are kept and the next frame is picked up automatically
+- **Selectable audio source**: microphone or **playback capture** (Android 10+, decodes audio playing in other apps such as a player or a WebSDR page)
+- **Transmit**: pick an image → encode to SSTV audio → play into the radio mic, or export a standard WAV for a line-in cable; optional callsign overlay and VIS header, fully streamed (even PD-290 fits in memory)
+- **Gallery**: thumbnail grid, full-screen view, delete, share (FileProvider), export to the system gallery
 - Pairs with satellite tracking: ARISS ISS SSTV events use **PD-120** at 145.800 MHz
+
+### HF Fax (WEFAX weather charts)
+- In-house pure-Kotlin decoder: **120 lines/min (0.5 s per line), 640 px wide, greyscale**, on a receive path fully separate from SSTV (WEFAX has neither VIS nor a per-line sync pulse)
+- **300 Hz start-tone detection** finds the image start; "start immediately" skips it when recording mid-transmission
+- **Automatic horizontal alignment** from the white margin (brightest column tracked across lines) and **automatic mistuning estimation**
+- Shares the weak-signal post-processing (histogram stretch / median denoise / bad-line repair) and saves to the gallery
+- ⚠️ **Not yet validated against a real WEFAX signal** — module-level self-loop tests only; vertical alignment is inherently free-running (no per-line sync in WEFAX)
 
 ### Transit Alerts
 - AlarmManager exact alarms + WorkManager daily refresh

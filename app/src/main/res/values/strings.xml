@@ -336,6 +336,14 @@
     <!-- SSTV模块 -->
     <string name="sstv" translatable="false">SSTV</string>
     <string name="sstv_desc" translatable="false">慢扫描电视：接收并解码业余无线电图像</string>
+    <!-- 播放捕获（Android 10+）所需的前台服务通知 -->
+    <string name="sstv_capture_notification_title" translatable="false">SSTV 播放捕获</string>
+    <string name="sstv_capture_notification_text" translatable="false">正在从其它应用的播放音频中解码 SSTV，可在应用内停止</string>
+    <string name="sstv_capture_channel_name" translatable="false">SSTV 播放捕获</string>
+    <string name="sstv_capture_channel_desc" translatable="false">解码其它应用正在播放的 SSTV 音频时显示</string>
+    <!-- HF Fax（WEFAX）天气传真：与 SSTV 不是同一套协议，故单列入口 -->
+    <string name="hf_fax" translatable="false">HF Fax</string>
+    <string name="hf_fax_desc" translatable="false">气象传真：接收 WEFAX 天气图（120 行/分，无 VIS 与行同步）</string>
 
     <!-- FT8模块 -->
     <string name="ft8" translatable="false">FT8</string>
