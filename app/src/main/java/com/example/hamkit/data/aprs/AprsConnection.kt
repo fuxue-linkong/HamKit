@@ -1,6 +1,7 @@
 package com.example.hamkit.data.aprs
 
 import android.util.Log
+import com.example.hamkit.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
@@ -51,13 +52,20 @@ class AprsConnection(
                 writer = PrintWriter(OutputStreamWriter(socket!!.getOutputStream(), Charsets.UTF_8), true)
                 reader = BufferedReader(InputStreamReader(socket!!.getInputStream(), Charsets.UTF_8))
 
+                // 合规（HK-BUG-003）：不在本地计算 passcode。
+                // 用户未自行填写时使用 READ_ONLY_PASSCODE（pass -1）建立只读会话：
+                // 可接收报文，服务器拒绝本连接注入的任何报文。
                 val loginLine = AprsPacket.formatLogin(
                     config.callsign,
                     config.ssid,
-                    config.passcode.ifEmpty { config.computedPasscode.toString() },
-                    "HamKit-2.0"
+                    config.effectivePasscode,
+                    "HamKit-${BuildConfig.VERSION_NAME}"
                 )
                 writer?.println(loginLine)
+
+                if (config.isReadOnly) {
+                    Log.i(TAG, "Connecting in READ-ONLY mode (no passcode supplied, pass -1)")
+                }
 
                 // APRS-IS 协议：不发 filter 时服务器仅推送发给本 callsign 的直接流量。
                 // m/N filter 需入口站点已上报位置，未上报时服务器无法计算"最近"故不推送。

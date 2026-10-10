@@ -59,11 +59,31 @@ data class AprsConfig(
     val useCompression: Boolean = true,
     val enableTransmit: Boolean = false,
     val enableReceive: Boolean = true,
-    val filter: String = ""
+    val filter: String = "",
+    /**
+     * 是否已确认「持照与责任声明」（HK-REQ-004）。
+     *
+     * 首次连接 APRS-IS 前必须确认；未确认不得登录。
+     */
+    val licenseConfirmed: Boolean = false
 ) {
     val fullCallsign: String
         get() = if (ssid.isNotEmpty()) "$callsign-$ssid" else callsign
 
-    val computedPasscode: Int
-        get() = if (callsign.isNotEmpty()) AprsPacket.passcode(fullCallsign) else -1
+    /**
+     * 是否处于只读模式（HK-REQ-003）。
+     *
+     * 用户未自行填写 passcode 时为 true：以 [AprsPacket.READ_ONLY_PASSCODE]（pass -1）连接，
+     * 可接收报文，服务器拒绝其注入的任何报文。
+     *
+     * 注意：本应用**不计算** passcode（HK-BUG-003 合规整改），因此不再有 computedPasscode 回退。
+     */
+    val isReadOnly: Boolean
+        get() = passcode.isBlank()
+
+    /**
+     * 实际用于登录的 passcode 字符串：用户填写的值，或在只读模式下使用 `-1`。
+     */
+    val effectivePasscode: String
+        get() = if (isReadOnly) AprsPacket.READ_ONLY_PASSCODE else passcode.trim()
 }
