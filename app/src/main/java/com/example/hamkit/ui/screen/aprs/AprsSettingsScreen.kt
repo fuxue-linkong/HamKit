@@ -2,6 +2,7 @@ package com.example.hamkit.ui.screen.aprs
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -11,6 +12,8 @@ import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imeNestedScroll
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
@@ -25,11 +28,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.hamkit.data.aprs.AprsPacket
+import com.example.hamkit.R
 import com.example.hamkit.ui.appViewModel
 import com.example.hamkit.ui.navigation3.Route
 import com.example.hamkit.ui.viewmodel.AprsViewModel
@@ -46,6 +50,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AprsSettingsScreen(
     onNavigateBack: () -> Unit = {},
@@ -54,8 +59,6 @@ fun AprsSettingsScreen(
     val viewModel = appViewModel<AprsViewModel>()
     val config by viewModel.settings.collectAsStateWithLifecycle()
     val lastError by viewModel.lastError.collectAsStateWithLifecycle()
-
-    val fullCallsign = if (config.ssid.isNotEmpty()) "${config.callsign}-${config.ssid}" else config.callsign
 
     val scrollBehavior = MiuixScrollBehavior()
 
@@ -83,6 +86,13 @@ fun AprsSettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
+                // 边到边（compileSdk 37 → Android 15+ 强制）下窗口不再被 IME 顶起，
+                // Manifest 的 adjustResize 已失效，IME inset 必须在 Compose 层消费：
+                // imePadding 把键盘高度变为可滚动的底部内边距，底部输入框才能滚入可见区。
+                .imePadding()
+                // 键盘弹出/收起时把 IME 嵌套滚动交给本容器，
+                // 聚焦的 TextField 可自动滚入可见区域（否则只能手动拖动）。
+                .imeNestedScroll()
                 .overScrollVertical()
                 .scrollEndHaptic()
                 .padding(horizontal = 16.dp)
@@ -116,21 +126,27 @@ fun AprsSettingsScreen(
                         )
                     }
                     Spacer(Modifier.height(8.dp))
+                    // 合规（HK-BUG-003）：不再展示/计算任何 passcode。
+                    // 用户必须自行持有 APRS-IS passcode；留空即以只读方式连接（pass -1）。
                     TextField(
                         value = config.passcode,
                         onValueChange = { viewModel.updateSettings { c -> c.copy(passcode = it) } },
-                        label = "Passcode (留空自动计算)",
+                        label = stringResource(R.string.aprs_passcode_label),
                         modifier = Modifier.fillMaxWidth(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                     )
-                    if (config.callsign.isNotEmpty()) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            "计算 Passcode: ${AprsPacket.passcode(fullCallsign)}",
-                            style = MiuixTheme.textStyles.footnote1,
-                            color = colorScheme.onSurfaceSecondary
-                        )
-                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        stringResource(
+                            if (config.isReadOnly) {
+                                R.string.aprs_passcode_readonly_hint
+                            } else {
+                                R.string.aprs_passcode_held_hint
+                            }
+                        ),
+                        style = MiuixTheme.textStyles.footnote1,
+                        color = colorScheme.onSurfaceSecondary
+                    )
                 }
             }
 

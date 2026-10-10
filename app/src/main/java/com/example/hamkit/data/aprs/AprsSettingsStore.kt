@@ -64,6 +64,15 @@ class AprsSettingsStore(context: Context) {
         get() = prefs.getString(KEY_FILTER, "") ?: ""
         set(value) { prefs.edit().putString(KEY_FILTER, value).apply() }
 
+    /**
+     * 是否已确认「持照与责任声明」（HK-REQ-004）。
+     *
+     * 首次连接 APRS-IS 前必须确认；确认后持久化，不再重复弹出。
+     */
+    var licenseConfirmed: Boolean
+        get() = prefs.getBoolean(KEY_LICENSE_CONFIRMED, false)
+        set(value) { prefs.edit().putBoolean(KEY_LICENSE_CONFIRMED, value).apply() }
+
     fun toConfig(): AprsConfig = AprsConfig(
         callsign = callsign,
         ssid = ssid,
@@ -78,7 +87,8 @@ class AprsSettingsStore(context: Context) {
         useCompression = useCompression,
         enableTransmit = enableTransmit,
         enableReceive = enableReceive,
-        filter = filter
+        filter = filter,
+        licenseConfirmed = licenseConfirmed
     )
 
     fun fromConfig(config: AprsConfig) {
@@ -96,6 +106,7 @@ class AprsSettingsStore(context: Context) {
         enableTransmit = config.enableTransmit
         enableReceive = config.enableReceive
         filter = config.filter
+        licenseConfirmed = config.licenseConfirmed
     }
 
     companion object {
@@ -114,5 +125,6 @@ class AprsSettingsStore(context: Context) {
         private const val KEY_ENABLE_TX = "enable_tx"
         private const val KEY_ENABLE_RX = "enable_rx"
         private const val KEY_FILTER = "filter"
+        private const val KEY_LICENSE_CONFIRMED = "license_confirmed"
     }
 }

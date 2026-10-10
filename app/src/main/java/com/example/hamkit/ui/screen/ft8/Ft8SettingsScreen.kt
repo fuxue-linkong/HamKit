@@ -1,6 +1,7 @@
 package com.example.hamkit.ui.screen.ft8
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -10,6 +11,8 @@ import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imeNestedScroll
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
@@ -42,6 +45,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun Ft8SettingsScreen(
     onNavigateBack: () -> Unit = {}
@@ -76,6 +80,10 @@ fun Ft8SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
+                // 同 AprsSettingsScreen：边到边下 IME inset 需在 Compose 层消费，
+                // 否则键盘会遮挡呼号 / 网格输入框（HK-BUG-001 同类页面）
+                .imePadding()
+                .imeNestedScroll()
                 .overScrollVertical()
                 .scrollEndHaptic()
                 .padding(horizontal = 16.dp)

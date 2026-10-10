@@ -352,4 +352,18 @@
     <string name="encoding" translatable="false">编码中…</string>
     <string name="callsign" translatable="false">呼号</string>
     <string name="maidenhead_grid" translatable="false">网格定位</string>
+
+    <!-- 返回键（系统导航） -->
+    <string name="back_press_again_to_exit" translatable="false">再按一次返回退出 HamKit</string>
+
+    <!-- APRS-IS 合规整改（HK-BUG-003 / HK-REQ-003 / HK-REQ-004） -->
+    <string name="aprs_passcode_label" translatable="false">Passcode（需自行持有）</string>
+    <string name="aprs_passcode_readonly_hint" translatable="false">留空即以只读方式连接（pass -1）：可接收报文，无法发送。</string>
+    <string name="aprs_passcode_held_hint" translatable="false">凭据由你本人持有；HamKit 不计算、不显示也不代为申请 Passcode。</string>
+    <string name="aprs_readonly_banner" translatable="false">当前为只读模式：未填写 Passcode，仅接收不发送。</string>
+    <string name="aprs_readonly_send_blocked" translatable="false">只读模式：未填写 Passcode，无法发送</string>
+    <string name="aprs_license_title" translatable="false">持照与责任声明</string>
+    <string name="aprs_license_message" translatable="false">APRS-IS 是业余无线电网络，仅限持有有效业余无线电执照的爱好者使用。\n\n你呼号下的所有流量（包含位置上报与消息）由你本人负责。请确认你已持有有效执照，且 Passcode 由你本人合法持有；HamKit 不会为你计算或发放 Passcode。\n\n未填写 Passcode 时将以只读模式连接（pass -1），只能接收报文。</string>
+    <string name="aprs_license_confirm" translatable="false">我已持有有效执照并同意</string>
+    <string name="aprs_license_cancel" translatable="false">暂不连接</string>
 </resources>

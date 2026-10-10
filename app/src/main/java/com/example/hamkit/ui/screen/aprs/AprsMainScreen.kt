@@ -25,20 +25,25 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.hamkit.R
 import com.example.hamkit.ui.appViewModel
 import com.example.hamkit.ui.navigation3.Route
 import com.example.hamkit.ui.viewmodel.AprsViewModel
 import top.yukonga.miuix.kmp.basic.Button
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
+import top.yukonga.miuix.kmp.window.WindowDialog
 import java.util.Locale
 
 @Composable
@@ -50,6 +55,8 @@ fun AprsMainScreen(
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val stations by viewModel.stations.collectAsStateWithLifecycle()
     val lastError by viewModel.lastError.collectAsStateWithLifecycle()
+    val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val pendingLicenseConfirm by viewModel.pendingLicenseConfirm.collectAsStateWithLifecycle()
 
     val isConnected = connectionState == AprsViewModel.ConnectionState.CONNECTED ||
         connectionState == AprsViewModel.ConnectionState.CONNECTING
@@ -118,7 +125,8 @@ fun AprsMainScreen(
 
                     Row(modifier = Modifier.fillMaxWidth()) {
                         Button(
-                            onClick = { viewModel.connect() },
+                            // 首次连接先弹「持照与责任声明」，确认后才登录（HK-REQ-004）
+                            onClick = { viewModel.requestConnect() },
                             modifier = Modifier.weight(1f),
                             enabled = !isConnected
                         ) { Text("连接") }
@@ -128,6 +136,16 @@ fun AprsMainScreen(
                             modifier = Modifier.weight(1f),
                             enabled = isConnected
                         ) { Text("断开") }
+                    }
+
+                    // 只读模式提示（HK-REQ-003）：未填写 passcode 时仅接收不发送
+                    if (settings.isReadOnly) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = stringResource(R.string.aprs_readonly_banner),
+                            style = MiuixTheme.textStyles.footnote1,
+                            color = colorScheme.onSurfaceSecondary
+                        )
                     }
 
                     lastError?.let { error ->
@@ -229,4 +247,64 @@ fun AprsMainScreen(
             }
         }
     }
+
+    // 首次连接前的「持照与责任声明」确认（HK-REQ-004）
+    if (pendingLicenseConfirm) {
+        AprsLicenseConfirmDialog(
+            callsign = settings.fullCallsign,
+            onConfirm = { viewModel.confirmLicenseAndConnect() },
+            onDismiss = { viewModel.dismissLicenseConfirm() },
+        )
+    }
+}
+
+/**
+ * 持照与责任声明确认对话框（HK-REQ-004）。
+ *
+ * 明示「你呼号下的所有流量由你本人负责」，并说明本应用不计算 / 不发放 passcode；
+ * 未确认不可登录 APRS-IS。
+ */
+@Composable
+private fun AprsLicenseConfirmDialog(
+    callsign: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    WindowDialog(
+        show = true,
+        title = stringResource(R.string.aprs_license_title),
+        onDismissRequest = onDismiss,
+        content = {
+            Column {
+                Text(
+                    text = stringResource(R.string.aprs_license_message),
+                    style = MiuixTheme.textStyles.body2,
+                    color = colorScheme.onSurface,
+                )
+                if (callsign.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "本次连接呼号：$callsign",
+                        style = MiuixTheme.textStyles.footnote1,
+                        color = colorScheme.onSurfaceSecondary,
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                Row {
+                    TextButton(
+                        text = stringResource(R.string.aprs_license_cancel),
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(20.dp))
+                    TextButton(
+                        text = stringResource(R.string.aprs_license_confirm),
+                        onClick = onConfirm,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.textButtonColorsPrimary(),
+                    )
+                }
+            }
+        },
+    )
 }
