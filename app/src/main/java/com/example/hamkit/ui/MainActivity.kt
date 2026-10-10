@@ -1,12 +1,15 @@
 package com.example.hamkit.ui
 
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.app.Application
 import android.content.Intent
 import android.content.res.Configuration
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -33,6 +36,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -173,6 +177,21 @@ class MainActivity : ComponentActivity() {
                 LocalMainViewModel provides mainViewModel,
             ) {
                 HamKitTheme(appSettings = appSettings, uiMode = uiMode) {
+                    // 全局返回键总兜底（HK-BUG-002）。
+                    //
+                    // 根因：应用自身没有任何 enabled 的返回处理器兜底 —— 主页时
+                    // MainScreenBackHandler 的启用条件（栈深 1 且 selectedPage != 0）恒为 false，
+                    // 子页返回又依赖 miuix 的 NavDisplay / navigationevent 回调链，
+                    // 于是虚拟导航栏/手势返回在部分 ROM 上完全失效。
+                    //
+                    // 这里用 androidx.activity 的 BackHandler（注册到 Activity 的
+                    // OnBackPressedDispatcher，完全不经过 navigationevent）作为最外层兜底：
+                    // 它在手势/预测性返回与三键导航下都会被派发，且因为注册时机最早、
+                    // 处于回调栈最外层，只有当更内层（NavDisplay / 子页面）都不消费时才触发。
+                    //
+                    // 优先级：子页出栈 → 主页面回第 0 页 → 再按返回才退出应用（防误触双击退出）。
+                    RootBackHandler(navigator = navigator)
+
                     val mainScreenEntry = @Composable {
                         MainScreen(
                             initialPage = selectedMainPage,
@@ -257,6 +276,18 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/**
+ * 主页面分页状态。
+ *
+ * 由 [MainScreen] 提供，供底栏 / 侧边栏导航使用，因此保持**非空**合同
+ * （这些组件在 [MainScreen] 内部组合，必然能取到值）。
+ *
+ * 注意：[RootBackHandler] 位于 [MainScreen] 之外，在「主页尚未渲染」的时序下访问本
+ * CompositionLocal 会触发此处的 `error(...)`。**不要**直接读它，也不要用 `runCatching`
+ * 包（AVD 实测该异常仍会逃逸并导致启动崩溃）；应先用
+ * [androidx.compose.runtime.currentCompositionLocalContext] 判断是否存在，
+ * 见 [rememberMainPagerStateOrNull]。
+ */
 val LocalMainPagerState = staticCompositionLocalOf<MainPagerState> { error("LocalMainPagerState not provided") }
 
 /**
@@ -413,9 +444,13 @@ private fun MainScreenBackHandler(
     mainState: MainPagerState,
     navController: Navigator,
 ) {
+    // 只负责「主页面从第 N 页回到第 0 页」。主页再按一次返回（即已在第 0 页）由
+    // RootBackHandler 兜底退出应用，避免这里出现「注册了 handler 但全部 disabled」的空窗。
     val isPagerBackHandlerEnabled by remember {
         derivedStateOf {
-            navController.current() is Route.Main && navController.backStackSize() == 1 && mainState.selectedPage != 0
+            navController.current() is Route.Main &&
+                navController.backStackSize() == 1 &&
+                mainState.selectedPage != 0
         }
     }
 
@@ -429,6 +464,58 @@ private fun MainScreenBackHandler(
         }
     )
 }
+
+/**
+ * 全局返回键总兜底（HK-BUG-002）。
+ *
+ * 见 [MainActivity.onCreate] 中的调用点注释：使用 `androidx.activity` 的 [BackHandler]，
+ * 注册到 Activity 的 `OnBackPressedDispatcher`，不依赖 navigationevent 回调链，
+ * 因此不会出现「有 handler 注册但全部 disabled」导致的返回键完全失效。
+ *
+ * **职责边界（AVD 实测教训）**：本函数只处理「返回栈出栈」与「退出应用」，
+ * 刻意不访问 [LocalMainPagerState] —— 它由 `MainScreen` 提供，而本函数位于
+ * `MainScreen` 之外；在「主页尚未渲染」的时序下访问会抛
+ * `IllegalStateException: LocalMainPagerState not provided`（且 `runCatching` 也挡不住），
+ * 曾导致启动即崩溃。
+ *
+ * 「主页面回第 0 页」由 `MainScreen` 内部的 [MainScreenBackHandler] 负责：
+ * - 它在 `MainScreen` 内部组合，必然能取到分页状态；
+ * - 它是 [BackHandler] 的**子节点**，注册时机晚于本函数，因此在
+ *   `OnBackPressedDispatcher` 回调栈中位于更内层，启用时优先于本函数收到返回事件。
+ *
+ * 触发顺序：子页出栈（本函数）→ 主页面回第 0 页（MainScreenBackHandler）
+ * → 双击返回退出应用（本函数）。
+ */
+@Composable
+private fun RootBackHandler(navigator: Navigator) {
+    val activity = LocalContext.current as? Activity
+    val context = LocalContext.current
+
+    // 上次「准备退出」的时间戳，仅用于双击返回退出的时间窗判断
+    var lastExitBackAt by remember { mutableLongStateOf(0L) }
+
+    BackHandler(enabled = true) {
+        if (navigator.backStackSize() > 1) {
+            navigator.pop()
+            return@BackHandler
+        }
+
+        val now = System.currentTimeMillis()
+        if (now - lastExitBackAt <= EXIT_BACK_INTERVAL_MS) {
+            activity?.finish()
+        } else {
+            lastExitBackAt = now
+            Toast.makeText(
+                context,
+                context.getString(R.string.back_press_again_to_exit),
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+}
+
+/** 双击返回退出的时间窗 */
+private const val EXIT_BACK_INTERVAL_MS = 2000L
 
 /**
  * 包装 [ViewModelStoreOwner]，在其 [defaultViewModelCreationExtras] 中注入 [ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY]。
