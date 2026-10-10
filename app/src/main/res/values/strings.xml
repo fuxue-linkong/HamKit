@@ -352,4 +352,61 @@
     <string name="encoding" translatable="false">编码中…</string>
     <string name="callsign" translatable="false">呼号</string>
     <string name="maidenhead_grid" translatable="false">网格定位</string>
+
+    <!-- QSO 通联日志 -->
+    <string name="qso_log_title" translatable="false">通联日志</string>
+    <string name="qso_log_add" translatable="false">添加</string>
+    <string name="qso_log_export" translatable="false">导出</string>
+    <string name="qso_log_add_title" translatable="false">添加通联记录</string>
+    <string name="qso_log_edit_title" translatable="false">编辑通联记录</string>
+    <string name="qso_log_field_callsign" translatable="false">呼号</string>
+    <string name="qso_log_field_grid" translatable="false">网格</string>
+    <string name="qso_log_field_rst_sent" translatable="false">报告 (发送)</string>
+    <string name="qso_log_field_rst_rcvd" translatable="false">报告 (接收)</string>
+    <string name="qso_log_rst_sent" translatable="false">发</string>
+    <string name="qso_log_rst_rcvd" translatable="false">收</string>
+    <string name="qso_log_field_freq" translatable="false">频率 (MHz)</string>
+    <string name="qso_log_field_comment" translatable="false">备注</string>
+    <string name="qso_log_field_complete" translatable="false">已完成通联</string>
+    <string name="qso_log_filter_callsign" translatable="false">呼号前缀筛选</string>
+    <string name="qso_log_filter_band" translatable="false">频段</string>
+    <string name="qso_log_filter_time" translatable="false">时间范围</string>
+    <string name="qso_log_filter_all_band" translatable="false">全部频段</string>
+    <string name="qso_log_time_all" translatable="false">全部时间</string>
+    <string name="qso_log_time_today" translatable="false">今天</string>
+    <string name="qso_log_time_7d" translatable="false">近 7 天</string>
+    <string name="qso_log_time_30d" translatable="false">近 30 天</string>
+    <string name="qso_log_filter_clear" translatable="false">清除筛选</string>
+    <string name="qso_log_empty" translatable="false">暂无通联记录</string>
+    <string name="qso_log_complete" translatable="false">已完成</string>
+    <string name="qso_log_incomplete" translatable="false">未完成</string>
+    <string name="qso_log_count" translatable="false">%1$d 条记录</string>
+    <string name="qso_log_count_filtered" translatable="false">%1$d / %2$d 条记录</string>
+    <string name="qso_log_save" translatable="false">保存</string>
+    <string name="qso_log_delete" translatable="false">删除</string>
+    <string name="qso_log_delete_confirm" translatable="false">确认删除与 %1$s 的通联记录？</string>
+    <string name="qso_export_format" translatable="false">导出格式</string>
+    <string name="qso_export_scope" translatable="false">导出范围</string>
+    <string name="qso_export_scope_filtered" translatable="false">当前筛选</string>
+    <string name="qso_export_scope_all" translatable="false">全部记录</string>
+    <string name="qso_export_save" translatable="false">保存到文件</string>
+    <string name="qso_export_share" translatable="false">分享</string>
+    <string name="qso_export_saved" translatable="false">导出成功</string>
+    <string name="qso_export_empty" translatable="false">没有可导出的记录</string>
+    <string name="qso_settings_title" translatable="false">QSO 日志</string>
+    <string name="qso_settings_desc" translatable="false">FT8 通联记录与 ADIF/XML 导出</string>
+
+    <!-- 返回键（系统导航） -->
+    <string name="back_press_again_to_exit" translatable="false">再按一次返回退出 HamKit</string>
+
+    <!-- APRS-IS 合规整改（HK-BUG-003 / HK-REQ-003 / HK-REQ-004） -->
+    <string name="aprs_passcode_label" translatable="false">Passcode（需自行持有）</string>
+    <string name="aprs_passcode_readonly_hint" translatable="false">留空即以只读方式连接（pass -1）：可接收报文，无法发送。</string>
+    <string name="aprs_passcode_held_hint" translatable="false">凭据由你本人持有；HamKit 不计算、不显示也不代为申请 Passcode。</string>
+    <string name="aprs_readonly_banner" translatable="false">当前为只读模式：未填写 Passcode，仅接收不发送。</string>
+    <string name="aprs_readonly_send_blocked" translatable="false">只读模式：未填写 Passcode，无法发送</string>
+    <string name="aprs_license_title" translatable="false">持照与责任声明</string>
+    <string name="aprs_license_message" translatable="false">APRS-IS 是业余无线电网络，仅限持有有效业余无线电执照的爱好者使用。\n\n你呼号下的所有流量（包含位置上报与消息）由你本人负责。请确认你已持有有效执照，且 Passcode 由你本人合法持有；HamKit 不会为你计算或发放 Passcode。\n\n未填写 Passcode 时将以只读模式连接（pass -1），只能接收报文。</string>
+    <string name="aprs_license_confirm" translatable="false">我已持有有效执照并同意</string>
+    <string name="aprs_license_cancel" translatable="false">暂不连接</string>
 </resources>

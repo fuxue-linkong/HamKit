@@ -45,4 +45,5 @@ data class HomeActions(
 
     /** SSTV 慢扫描电视入口 */
     val onSstvClick: () -> Unit = {},
+    val onQsoLogClick: () -> Unit = {},
 )

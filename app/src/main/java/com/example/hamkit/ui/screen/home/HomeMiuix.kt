@@ -129,6 +129,8 @@ fun HomePagerMiuix(
                             Ft8EntryCardMiuix(actions.onFt8Click)
                             // SSTV 慢扫描电视入口
                             SstvEntryCardMiuix(actions.onSstvClick)
+                            // QSO 日志入口
+                            QsoLogEntryCardMiuix(actions.onQsoLogClick)
                         } else {
                             // 权限卡片：引导用户授权定位（未授权时隐藏其余卡片）
                             PermissionCardMiuix(permissionState, actions.onPermissionsClick)
@@ -494,6 +496,17 @@ private fun SstvEntryCardMiuix(onClick: () -> Unit) {
         BasicComponent(
             title = stringResource(R.string.sstv),
             summary = stringResource(R.string.sstv_desc),
+            onClick = onClick
+        )
+    }
+}
+
+@Composable
+private fun QsoLogEntryCardMiuix(onClick: () -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        BasicComponent(
+            title = stringResource(R.string.qso_settings_title),
+            summary = stringResource(R.string.qso_settings_desc),
             onClick = onClick
         )
     }
