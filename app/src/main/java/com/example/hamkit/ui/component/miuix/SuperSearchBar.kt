@@ -191,7 +191,10 @@ fun SearchStatus.SearchPager(
                     val navEventState = rememberNavigationEventState(NavigationEventInfo.None)
                     NavigationBackHandler(
                         state = navEventState,
-                        isBackEnabled = true,
+                        // HK-BUG-002 同类隐患：原先硬编码 true，只要该组件被使用，
+                        // 返回键就会被永久吞掉（其它返回处理器全部失效）。
+                        // 仅当搜索栏处于展开态时才消费返回事件，用于收起搜索栏。
+                        isBackEnabled = searchStatus.shouldExpand(),
                         onBackCompleted = {
                             onSearchStatusChange(
                                 searchStatus.copy(
