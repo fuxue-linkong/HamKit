@@ -1,33 +1,53 @@
 package com.example.hamkit
 
+import com.example.hamkit.data.aprs.AprsConfig
 import com.example.hamkit.data.aprs.AprsPacket
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/**
+ * APRS 报文格式化单元测试。
+ *
+ * 合规说明（HK-BUG-003）：APRS-IS 官方要求软件作者负责发放 passcode，
+ * 不得「按需提供」验证码。因此本应用**不实现 passcode 算法**，
+ * 相关算法测试已随实现一并删除，改为：
+ * - 金标准断言：只读登录串必须是官方约定的 `pass -1`；
+ * - 回归守卫：`AprsPacket` 不得重新引入 passcode 计算方法。
+ */
 class AprsPacketTest {
 
-    @Test
-    fun `passcode calculation is correct for known callsigns`() {
-        // APRS-IS passcode algorithm: XOR-based hash
-        val code1 = AprsPacket.passcode("N0CALL")
-        assertTrue("Passcode should be positive", code1 > 0)
-        assertTrue("Passcode should be <= 32767", code1 <= 32767)
+    // ── 回归守卫：算法不得随发行包发布 ──
 
-        // Same callsign should produce same passcode
-        assertEquals(code1, AprsPacket.passcode("N0CALL"))
+    @Test
+    fun `AprsPacket exposes no passcode computation`() {
+        val illegalNames = listOf("passcode", "computePasscode", "calculatePasscode", "passcodeFor")
+        val leaked = AprsPacket::class.java.declaredMethods
+            .map { it.name }
+            .filter { name -> illegalNames.any { name.equals(it, ignoreCase = true) } }
+        assertTrue(
+            "APRS-IS 合规（HK-BUG-003）：不得在应用内提供 passcode 计算，发现: $leaked",
+            leaked.isEmpty()
+        )
+    }
+
+    // ── 金标准：只读 / 持有 passcode 两种登录串 ──
+
+    @Test
+    fun `formatLogin emits pass -1 for read-only session`() {
+        val login = AprsPacket.formatLogin("N0CALL", null, AprsPacket.READ_ONLY_PASSCODE, "HamKit-3.0.1")
+        assertEquals("user N0CALL pass -1 vers HamKit-3.0.1", login)
     }
 
     @Test
-    fun `passcode handles ssid correctly`() {
-        val withoutSsid = AprsPacket.passcode("N0CALL")
-        val withSsid = AprsPacket.passcode("N0CALL-1")
-        assertEquals(withoutSsid, withSsid)
+    fun `formatLogin emits supplied passcode with ssid`() {
+        val login = AprsPacket.formatLogin("N0CALL", "7", "12345", "HamKit-3.0.1")
+        assertEquals("user N0CALL-7 pass 12345 vers HamKit-3.0.1", login)
     }
 
     @Test
-    fun `passcode handles lowercase`() {
-        assertEquals(AprsPacket.passcode("N0CALL"), AprsPacket.passcode("n0call"))
+    fun `read only passcode constant matches APRS-IS convention`() {
+        assertEquals("-1", AprsPacket.READ_ONLY_PASSCODE)
     }
 
     @Test
@@ -35,14 +55,6 @@ class AprsPacketTest {
         assertEquals("N0CALL-7", AprsPacket.formatCallSsid("N0CALL", "7"))
         assertEquals("N0CALL", AprsPacket.formatCallSsid("N0CALL", ""))
         assertEquals("N0CALL", AprsPacket.formatCallSsid("N0CALL", null))
-    }
-
-    @Test
-    fun `formatLogin produces correct login string`() {
-        val login = AprsPacket.formatLogin("N0CALL", "7", "12345", "TestApp-1.0")
-        assertTrue(login.contains("user N0CALL-7"))
-        assertTrue(login.contains("pass 12345"))
-        assertTrue(login.contains("vers TestApp-1.0"))
     }
 
     @Test

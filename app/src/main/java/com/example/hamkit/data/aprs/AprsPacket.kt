@@ -1,20 +1,23 @@
 package com.example.hamkit.data.aprs
 
 import android.location.Location
-import java.util.Locale
 
 object AprsPacket {
     private val QRG_RE = Regex(".*?(\\d{2,3}[.,]\\d{3,4}).*?")
 
-    fun passcode(callsign: String): Int {
-        val call = callsign.split("-")[0].uppercase(Locale.ROOT) + "\u0000"
-        var hash = 0x73e2
-        for (i in 0 until call.length - 1 step 2) {
-            hash = hash xor (call[i].code shl 8)
-            hash = hash xor call[i + 1].code
-        }
-        return hash and 0x7fff
-    }
+    /**
+     * APRS-IS 只读连接使用的占位 passcode。
+     *
+     * APRS-IS 官方约定：`pass -1` 表示「只验证呼号、不授予注入权限」的只读会话，
+     * 该连接可以接收报文，但服务器会拒绝其发送的任何报文。
+     *
+     * 合规背景（HK-BUG-003）：APRS-IS 官方要求
+     * “Authors, YOU are responsible for issuing passcodes to amateur radio operators ONLY.
+     * Do not make this available in an ondemand fashion …”。
+     * 因此本应用**不实现、不内置、不显示** passcode 算法，用户必须自行持有验证码；
+     * 留空时即用本常量以只读方式连接。
+     */
+    const val READ_ONLY_PASSCODE = "-1"
 
     fun formatCallSsid(callsign: String, ssid: String?): String {
         return if (!ssid.isNullOrEmpty()) "$callsign-$ssid" else callsign

@@ -2,6 +2,7 @@ package com.example.hamkit.ui.viewmodel
 
 import android.app.Application
 import android.location.Location
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.hamkit.data.aprs.AprsConfig
@@ -60,11 +61,46 @@ class AprsViewModel(application: Application) : AndroidViewModel(application) {
     private val _lastSentPacket = MutableStateFlow<String?>(null)
     val lastSentPacket: StateFlow<String?> = _lastSentPacket.asStateFlow()
 
+    /**
+     * 是否需要先弹出「持照与责任声明」确认（HK-REQ-004）。
+     *
+     * 用户点击「连接」但尚未确认声明时为 true；确认或取消后回到 false。
+     */
+    private val _pendingLicenseConfirm = MutableStateFlow(false)
+    val pendingLicenseConfirm: StateFlow<Boolean> = _pendingLicenseConfirm.asStateFlow()
+
     /** 更新配置：内存 + 持久化，UI 通过 settings StateFlow 响应式刷新 */
     fun updateSettings(transform: (AprsConfig) -> AprsConfig) {
         val newConfig = transform(_settings.value)
         settingsStore.fromConfig(newConfig)
         _settings.value = newConfig
+    }
+
+    /**
+     * 用户点击「连接」的入口。
+     *
+     * 首次连接（未确认持照声明）时不直接连接，而是发出确认请求，
+     * 由 UI 弹出 [pendingLicenseConfirm] 对应的对话框；确认后走
+     * [confirmLicenseAndConnect]，未确认不可登录（HK-REQ-004）。
+     */
+    fun requestConnect() {
+        if (_settings.value.licenseConfirmed) {
+            connect()
+        } else {
+            _pendingLicenseConfirm.value = true
+        }
+    }
+
+    /** 用户在声明对话框中点击「已持有执照并同意」：持久化确认状态后再连接 */
+    fun confirmLicenseAndConnect() {
+        _pendingLicenseConfirm.value = false
+        updateSettings { it.copy(licenseConfirmed = true) }
+        connect()
+    }
+
+    /** 用户在声明对话框中取消：不连接、不落盘确认状态 */
+    fun dismissLicenseConfirm() {
+        _pendingLicenseConfirm.value = false
     }
 
     init {
@@ -100,11 +136,25 @@ class AprsViewModel(application: Application) : AndroidViewModel(application) {
             _lastError.value = "请先设置呼号"
             return
         }
+        // 合规兜底（HK-REQ-004）：未确认持照声明不得登录。
+        // 正常路径由 requestConnect 弹窗确认，此处防御绕过 UI 的直接调用。
+        if (!config.licenseConfirmed) {
+            _pendingLicenseConfirm.value = true
+            return
+        }
 
         disconnect()
 
         _connectionState.value = ConnectionState.CONNECTING
         AprsService.start(getApplication())
+
+        if (config.isReadOnly) {
+            Log.i(
+                TAG,
+                "APRS-IS read-only session: no passcode supplied, using pass -1 " +
+                    "(receive only, transmission rejected by server)"
+            )
+        }
 
         connectionJob = viewModelScope.launch {
             connection = AprsConnection(config, object : AprsConnection.AprsConnectionListener {
@@ -147,6 +197,11 @@ class AprsViewModel(application: Application) : AndroidViewModel(application) {
     fun transmitPosition(location: Location) {
         val config = _settings.value
         if (!config.enableTransmit) return
+        // 只读模式（未填写 passcode）不可注入报文，否则只会得到服务器的拒绝
+        if (config.isReadOnly) {
+            _lastError.value = READ_ONLY_SEND_BLOCKED
+            return
+        }
 
         val packet = AprsPacket.formatPosition(
             latitude = location.latitude,
@@ -187,6 +242,11 @@ class AprsViewModel(application: Application) : AndroidViewModel(application) {
         val config = _settings.value
         if (config.callsign.isEmpty()) {
             _lastError.value = "请先设置呼号"
+            return
+        }
+        // 只读模式（未填写 passcode）不发送消息（HK-REQ-003）
+        if (config.isReadOnly) {
+            _lastError.value = READ_ONLY_SEND_BLOCKED
             return
         }
 
@@ -233,6 +293,8 @@ class AprsViewModel(application: Application) : AndroidViewModel(application) {
     private fun sendPendingMessages() {
         val config = _settings.value
         if (config.callsign.isEmpty()) return
+        // 只读模式不重发离线队列（HK-REQ-003）
+        if (config.isReadOnly) return
         viewModelScope.launch {
             val pending = messageStore.getPendingOutgoingMessages()
             pending.forEach { msg ->
@@ -249,6 +311,8 @@ class AprsViewModel(application: Application) : AndroidViewModel(application) {
     private fun sendAck(destination: String, msgNumber: String) {
         val config = _settings.value
         if (config.callsign.isEmpty()) return
+        // 只读模式无法发送 ACK（HK-REQ-003）
+        if (config.isReadOnly) return
         val ackBody = "ack$msgNumber"
         val packet = AprsPacket.formatMessage(config.fullCallsign, destination, ackBody, null)
         val fullPacket = "${config.fullCallsign}>APRLAR:$packet"
@@ -362,6 +426,7 @@ class AprsViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     companion object {
+        private const val TAG = "AprsViewModel"
         private const val STACTION_MAX_AGE_MS = 24L * 60 * 60 * 1000
         private const val MESSAGE_MAX_AGE_MS = 30L * 24 * 60 * 60 * 1000
         const val MSG_STATUS_NEW = 0
@@ -369,5 +434,8 @@ class AprsViewModel(application: Application) : AndroidViewModel(application) {
         const val MSG_STATUS_ACKED = 2
         const val MSG_STATUS_FAILED = 3
         private const val MSG_MAX_RETRY = 3
+
+        /** 只读模式（未填写 passcode）下的发送拦截提示（HK-REQ-003） */
+        const val READ_ONLY_SEND_BLOCKED = "只读模式：未填写 Passcode，无法发送"
     }
 }

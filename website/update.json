@@ -1,6 +1,0 @@
-{
-  "versionCode": 15,
-  "versionName": "2.1.2",
-  "downloadUrl": "https://apk.hamkit.click/release/HamKit_2.1.2_15-release.apk",
-  "changelog": "## 2.1.2 更新日志\n\n- 优先从官网拉取更新日志，服务器不可达时回退 GitHub Releases"
-}
