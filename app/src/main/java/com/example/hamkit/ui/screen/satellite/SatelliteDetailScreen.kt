@@ -39,6 +39,7 @@ import androidx.lifecycle.compose.dropUnlessResumed
 import com.example.hamkit.R
 import com.example.hamkit.data.satellite.RadioInfo
 import com.example.hamkit.data.satellite.SatelliteLiveInfo
+import com.example.hamkit.data.sstv.SstvSatelliteLink
 import com.example.hamkit.ui.LocalMainViewModel
 import com.example.hamkit.ui.UiMode
 import com.example.hamkit.ui.LocalUiMode
@@ -59,9 +60,6 @@ import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import java.util.Locale
-
-/** ISS 的 NORAD 编号：其 ARISS SSTV 活动统一使用 PD-120 模式。 */
-private const val ISS_NORAD = 25544
 
 /**
  * 卫星详情页入口：按当前界面风格分发到 Miuix / Material 实现。
@@ -215,13 +213,14 @@ fun SatelliteDetailMiuix(catalogNumber: Int, onBack: () -> Unit = {}) {
                 }
             }
 
-            // SSTV 卫星：一键接收入口（ARISS 的 ISS 活动使用 PD-120）
-            if (radios.any { it.mode.contains("SSTV", ignoreCase = true) }) {
+            // SSTV 卫星：一键接收入口（ARISS 的 ISS 活动使用 PD-120）。
+            // 判定与预置模式统一走 SstvSatelliteLink，与过境提醒通知保持同一套规则。
+            if (SstvSatelliteLink.isSstvSatellite(radios.map { it.mode }, catalogNumber)) {
                 DetailCardMiuix {
                     DetailRowMiuix(label = "SSTV 图像传输", value = "该卫星支持")
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        text = if (catalogNumber == ISS_NORAD) {
+                        text = if (catalogNumber == SstvSatelliteLink.ISS_NORAD) {
                             "ARISS 活动通常在 145.800 MHz 使用 PD-120，单帧约 126 秒。"
                         } else {
                             "该卫星的转发器标注了 SSTV 模式，可进入解码器接收图像。"
@@ -233,8 +232,7 @@ fun SatelliteDetailMiuix(catalogNumber: Int, onBack: () -> Unit = {}) {
                         onClick = dropUnlessResumed {
                             navigator.push(
                                 Route.SstvMain(
-                                    // ISS 的 ARISS 活动统一使用 PD-120，直接锁定可省去 VIS 识别的失败风险
-                                    presetModeName = if (catalogNumber == ISS_NORAD) "PD_120" else null
+                                    presetModeName = SstvSatelliteLink.presetModeNameFor(catalogNumber)
                                 )
                             )
                         },

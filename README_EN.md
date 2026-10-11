@@ -69,7 +69,7 @@ Official website: https://hamkit.click
 - **Selectable audio source**: microphone or **playback capture** (Android 10+, decodes audio playing in other apps such as a player or a WebSDR page)
 - **Transmit**: pick an image → encode to SSTV audio → play into the radio mic, or export a standard WAV for a line-in cable; optional callsign overlay and VIS header, fully streamed (even PD-290 fits in memory)
 - **Gallery**: thumbnail grid, full-screen view, delete, share (FileProvider), export to the system gallery
-- Pairs with satellite tracking: ARISS ISS SSTV events use **PD-120** at 145.800 MHz
+- Pairs with satellite tracking: ARISS ISS SSTV events use **PD-120** at 145.800 MHz. The pass-reminder notification opens the decoder straight in receiving state (PD-120 preset, recording starts automatically), and back-to-back transmissions roll over to the next frame by themselves
 
 ### HF Fax (WEFAX weather charts)
 - In-house pure-Kotlin decoder: **120 lines/min (0.5 s per line), 640 px wide, greyscale**, on a receive path fully separate from SSTV (WEFAX has neither VIS nor a per-line sync pulse)

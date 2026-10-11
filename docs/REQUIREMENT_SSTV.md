@@ -744,7 +744,7 @@ Scottie 曾是唯一被排除的族，理由是「同步脉冲位于行中，需
 | 4 | T6 计划「按 SNR 分档选择 `phaseSpan`」 | 实现为**每帧探测一次、整帧冻结** | 相位差分会改变频率流的噪声特性；帧内切换会让同一帧的前后段噪声不一致。探测放在 VIS 侦听期（并行喂一个 `span = 1` 的探针），因此不需要额外音频 |
 | 5 | T7 计划「坏行修复」 | 判定条件加严为「**接近纯黑**的均匀行」 | 最初的「任意均匀行」判据会把图像里正常的中灰/亮色横条一起替换掉。同步丢失时采到的是 1200 Hz（同步）或 1500 Hz（porch），必然映射为黑，因此以「黑」限定更精确（见 `SstvPostProcessTest` 的两个对偶用例） |
 | 6 | T5 计划「对每个候选做一次试解码，取同步命中率最高 + 图像最平整者」 | 另加**黑电平间隙结构判据** | 实测发现：Martin 1（446.446 ms）与 Scottie 1（428.38 ms）只差 4.2%，落在拟合斜率闸门（0.95–1.05）内，且两者的**试解码图像都是平滑的**（错位只表现为水平压缩与整体位移），平整度分不开。二者的真正差别是**间隙在行内的分布**（Martin 三个间隙全在同步之后，Scottie 有两个在同步之前），据此可稳定区分 |
-| 7 | T8 计划「过境提醒直达接收态」 | **未接线到 `AlarmManager`** | 提醒链路改动会牵动提醒存储与权限，与本轮 SSTV 改动无耦合；已实现的是「连续接收 + 模式/失谐量保留」，提醒侧接线留作后续 |
+| 7 | T8 计划「过境提醒直达接收态」 | 首轮未接线；**第二轮（§12.6）已补齐** | 首轮未接线的原因：提醒链路改动会牵动提醒存储与权限，与那轮 SSTV 改动无耦合。首轮交付的是「连续接收 + 模式/失谐量保留」 |
 | 8 | T8 计划「收满一帧后重新侦听下一个 VIS 头」 | 连续模式**保留模式、不重新侦听 VIS** | ARISS 连发时每张图用同一模式，保留模式可零等待接续；而重新侦听 VIS 有把图像内容里的偶然音调串成假 VIS 的风险。若两帧之间真的换了模式，手动锁定或重新接收即可（见 `SstvRecorder.restartForNextFrame` 的 KDoc） |
 | 9 | T6 的迟滞控制器若每帧新建实例 | 改为**按模式跨帧复用** | 每帧新建会让决策退化成「以正常档为起点的单次阈值判断」，迟滞完全失效；连续接收时质量在边界附近抖动就会逐帧切换积分窗，图像清晰度整体跳动 |
 
@@ -796,10 +796,62 @@ hop 被反复计算。现在只保留一个检测器实例并只喂新增音频�
 | 项 | 说明 |
 |---|---|
 | **真机声学验证（T9）** | 仍未在手机上对着真实电台接收过 SSTV。可自动化的部分（合成信号加噪、通道畸变）已在 §12.4 覆盖，但「声学链路 + AGC + 多普勒」的组合只能上机验证。建议优先用 3.5 mm 音频线直连电台验证算法上限，再验证声学路径 |
-| **卫星过境提醒直达接收态** | 见 §12.2 第 7 项 |
 | **盲扫的固有歧义** | 行周期相同的模式（`ROBOT_24`/`ROBOT_36` 时序完全等价；`ROBOT_12_BW`/`ROBOT_24_BW` 同为 100 ms/行）原理上不可分，UI 因此展示候选列表供一键切换（这正是规划风险项 R3 的缓解手段） |
 | **Robot 12 B/W 参数为推断值** | 见 §12.2 第 3 项 |
 | **导入音频的峰值内存** | `SstvWavReader` 会把整个文件读成字节数组再转 `FloatArray`，峰值约为文件大小的 3 倍；已用 96 MB 文件上限与 300 秒时长上限兜底，但超大录音仍建议先截取单帧片段 |
+
+### 12.6 T8 遗留补齐：过境提醒直达 SSTV 接收态
+
+> 补齐日期：2026-10-11 ｜ 规划依据：[SSTV_PHASE2_PLAN.md](SSTV_PHASE2_PLAN.md) T8
+> 状态：**已实现**（编译 + 13 个新用例守护；真机点通知的端到端行为未验证，见文末）
+
+**为什么单独一轮做。** 首轮把 T8 拆成「连续接收」与「提醒接线」两半，只交付了前者：提醒链路
+要碰 `AlarmManager` 调度、通知权限与提醒存储，与 SSTV 解码侧没有耦合，混在一个 PR 里只会让
+回归面变大。但连续接收落地后，缺的这一环就变成「提醒响了，用户还得自己找到 SSTV 页面再按下
+开始」—— 而过境窗口只有几分钟。
+
+**链路。** 从闹钟到开收，各段各改一处：
+
+```
+ReminderReceiver（已存在，AlarmManager 触发）
+  └─ ReminderNotificationHelper.showPassReminder()
+       ├─ SstvSatelliteLink.isSstvSatellite()     判定要不要给 SSTV 入口
+       ├─ SstvSatelliteLink.presetModeNameFor()   决定预置哪个模式（ISS → PD-120）
+       └─ SstvLaunchIntent.putLaunchRequest()     把「直达接收态」写进 Intent
+            └─ MainActivity.consumeSstvLaunchIntent()（onCreate + onNewIntent 两处）
+                 └─ pendingSstvLaunch（StateFlow，消费一次即清空）
+                      └─ LaunchedEffect → navigator.push(Route.SstvMain(autoStart = true))
+                           └─ SstvMainScreen：applyPreset() 后立即 startReceiving()
+```
+
+**四个刻意的取舍。**
+
+1. **正文点击与动作按钮都直达接收态。** 部分 ROM 会把通知正文点击折叠成「打开应用」，
+   动作按钮（`接收 SSTV`）是更稳的入口；两者行为一致，避免出现「点这里只打开、点那里才开收」
+   这种要用户试错的区别。代价是只想看提醒的用户也会被带进接收态 —— 但过境提醒本就是用户
+   为「收这一次」而设的，且 SSTV 页一键可停。
+2. **预置模式由 `SstvSatelliteLink` 一处决定。** 详情页原本把 `25544` 与 `"PD_120"` 硬编码了
+   两遍（Miuix 与 Material 两份实现，Material 那份还是魔法数字）。现在三处入口共用同一份规则，
+   并由 `SstvSatelliteLinkTest` 额外守护「预置模式名必须真的存在于 `SstvMode` 表」—— 枚举改名
+   造成的静默失效比崩溃更难查。
+3. **`autoStart` 是路由参数，不是全局状态。** 从卫星详情页手动进入时它保持 false：只有过境
+   提醒这一条路径会自动开收，用户自己点进 SSTV 时仍然自己按开始。
+4. **权限不静默失败。** 未授予 `RECORD_AUDIO` 时走系统授权弹窗；用户拒绝则落回既有的
+   `onPermissionDenied()` 提示，而不是进入「界面显示正在接收、实际收不到任何东西」的假状态。
+
+**涉及文件**
+
+| 类型 | 文件 |
+|---|---|
+| 新增 | `data/sstv/SstvSatelliteLink.kt`（判定与预置规则）、`data/sstv/SstvLaunchIntent.kt`（Intent 契约 + `SstvLaunchRequest`） |
+| 新增测试 | `SstvSatelliteLinkTest.kt`（9 例，纯 JVM）、`SstvLaunchIntentTest.kt`（4 例，Robolectric） |
+| 变更 | `data/reminder/ReminderNotificationHelper.kt`（SSTV 条件下写 extra 并加动作按钮）、`ui/MainActivity.kt`（Intent 解析 + 导航消费，顺带删掉从未被消费的 `intentState`）、`ui/navigation3/Routes.kt`（`SstvMain.autoStart`）、`ui/screen/sstv/SstvMainScreen.kt`（预置后自动开收）、`ui/screen/satellite/SatelliteDetailScreen.kt`、`ui/screen/satellite/SatelliteDetailMaterial.kt`（改用共享规则）、`res/values/strings.xml` |
+
+**未验证项**：本次只做到「编译通过 + 单元测试覆盖判定规则与 Intent 契约」。「真机点通知 →
+应用冷启动/热启动 → 进入 SSTV → 自动开收」这条端到端路径无条件验证。主要风险是厂商 ROM 对
+后台启动 Activity 的限制（Android 10+ 有后台启动限制，用户主动点击通知属于允许的例外，
+但定制 ROM 未必严格遵守）。首次上机验证应覆盖三种情况：应用已被杀（冷启动）、应用在后台、
+应用正停留在 SSTV 页时再次点击通知。
 
 ---
 

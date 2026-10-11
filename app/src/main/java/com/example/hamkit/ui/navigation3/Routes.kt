@@ -119,10 +119,15 @@ sealed interface Route : NavKey, Parcelable {
      *
      * @param presetModeName 预置锁定的模式名（如 ISS 的 PD_120）；来自卫星详情页的
      *   「接收 SSTV」入口，为 null 时使用 VIS 自动识别
+     * @param autoStart 进入页面后立即开始接收（二期 T8：卫星过境提醒直达接收态）；
+     *   由详情页手动进入时为 false，用户自己按「开始接收」
      */
     @Parcelize
     @Serializable
-    data class SstvMain(val presetModeName: String? = null) : Route
+    data class SstvMain(
+        val presetModeName: String? = null,
+        val autoStart: Boolean = false,
+    ) : Route
 
     /** SSTV 设置：模式锁定、保存策略与图库管理 */
     @Parcelize

@@ -67,6 +67,8 @@ import androidx.navigationevent.compose.rememberNavigationEventState
 import kotlinx.coroutines.flow.MutableStateFlow
 import com.example.hamkit.R
 import com.example.hamkit.HamKitApplication
+import com.example.hamkit.data.sstv.SstvLaunchIntent
+import com.example.hamkit.data.sstv.SstvLaunchRequest
 import com.example.hamkit.ui.component.bottombar.BottomBar
 import com.example.hamkit.ui.component.bottombar.MainPagerState
 import com.example.hamkit.ui.component.bottombar.SideRail
@@ -120,7 +122,13 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 class MainActivity : ComponentActivity() {
 
-    private val intentState = MutableStateFlow(0)
+    /**
+     * 待消费的「直达 SSTV 接收态」请求（二期 T8）。
+     *
+     * 由卫星过境提醒的通知点击带入（[SstvLaunchIntent]）。Compose 侧消费一次即清空，
+     * 否则重组、配置变更或进程恢复都会重复把 SSTV 页压进返回栈。
+     */
+    private val pendingSstvLaunch = MutableStateFlow<SstvLaunchRequest?>(null)
 
     /**
      * 通知权限运行时请求（Android 13+）。
@@ -138,6 +146,9 @@ class MainActivity : ComponentActivity() {
 
         // Android 13+ 首次进入即请求通知权限；用户拒绝后下次仍可经权限页面再次请求
         requestNotificationPermissionIfNeeded()
+
+        // 冷启动时由通知点击带入的「直达 SSTV 接收态」请求（二期 T8）
+        consumeSstvLaunchIntent(intent)
 
         setContent {
             val viewModel = viewModel<MainActivityViewModel>()
@@ -196,6 +207,20 @@ class MainActivity : ComponentActivity() {
                     // 优先级：子页出栈 → 主页面回第 0 页 → 再按返回才退出应用（防误触双击退出）。
                     RootBackHandler(navigator = navigator)
 
+                    // 卫星过境提醒直达 SSTV 接收态（二期 T8）：把待消费请求转成一次导航。
+                    // 先清空再 push —— 否则这次状态变化引发的重组会重复入栈。
+                    val pendingSstv by pendingSstvLaunch.collectAsStateWithLifecycle()
+                    LaunchedEffect(pendingSstv) {
+                        val launch = pendingSstv ?: return@LaunchedEffect
+                        pendingSstvLaunch.value = null
+                        navigator.push(
+                            Route.SstvMain(
+                                presetModeName = launch.presetModeName,
+                                autoStart = launch.autoStart,
+                            ),
+                        )
+                    }
+
                     val mainScreenEntry = @Composable {
                         MainScreen(
                             initialPage = selectedMainPage,
@@ -248,7 +273,7 @@ class MainActivity : ComponentActivity() {
                                 entry<Route.AprsSymbolPicker> { WithApplicationViewModelStoreOwner { AprsSymbolPickerScreen(onNavigateBack = { navigator.pop() }) } }
                                 entry<Route.Ft8Main> { WithApplicationViewModelStoreOwner { Ft8MainScreen(onNavigate = { navigator.push(it) }, onNavigateBack = { navigator.pop() }) } }
                                 entry<Route.Ft8Settings> { WithApplicationViewModelStoreOwner { Ft8SettingsScreen(onNavigateBack = { navigator.pop() }) } }
-                                entry<Route.SstvMain> { route -> WithApplicationViewModelStoreOwner { SstvMainScreen(presetModeName = route.presetModeName, onNavigate = { navigator.push(it) }, onNavigateBack = { navigator.pop() }) } }
+                                entry<Route.SstvMain> { route -> WithApplicationViewModelStoreOwner { SstvMainScreen(presetModeName = route.presetModeName, autoStart = route.autoStart, onNavigate = { navigator.push(it) }, onNavigateBack = { navigator.pop() }) } }
                                 entry<Route.SstvSettings> { WithApplicationViewModelStoreOwner { SstvSettingsScreen(onNavigate = { navigator.push(it) }, onNavigateBack = { navigator.pop() }) } }
                                 entry<Route.SstvGallery> { route -> WithApplicationViewModelStoreOwner { SstvGalleryScreen(pickForTx = route.pickForTx, onPicked = { navigator.pop() }, onNavigateBack = { navigator.pop() }) } }
                                 entry<Route.SstvTx> { WithApplicationViewModelStoreOwner { SstvTxScreen(onNavigate = { navigator.push(it) }, onNavigateBack = { navigator.pop() }) } }
@@ -270,8 +295,22 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        // Increment intentState to trigger LaunchedEffect re-execution
-        intentState.value += 1
+        // 应用已在运行时点通知：解析新的直达请求，由 Compose 侧的 LaunchedEffect 消费
+        consumeSstvLaunchIntent(intent)
+    }
+
+    /**
+     * 解析「过境提醒 → SSTV 接收态」请求。
+     *
+     * 只认 [SstvLaunchIntent.isAutoStart] 为真的 Intent：普通启动（桌面图标、
+     * 其他功能跳转）不带该 extra，因此不会误入 SSTV 页。
+     */
+    private fun consumeSstvLaunchIntent(intent: Intent?) {
+        if (!SstvLaunchIntent.isAutoStart(intent)) return
+        pendingSstvLaunch.value = SstvLaunchRequest(
+            presetModeName = SstvLaunchIntent.presetModeName(intent),
+            autoStart = true,
+        )
     }
 
     private fun requestNotificationPermissionIfNeeded() {

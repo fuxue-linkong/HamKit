@@ -80,10 +80,12 @@ import top.yukonga.miuix.kmp.utils.scrollEndHaptic
  * - **信号质量**：让用户能判断「要不要调整音量/手机位置」，而不是盲等。
  *
  * @param presetModeName 由卫星详情页预置的模式名（如 ISS 的 `PD_120`）；非空时锁定该模式
+ * @param autoStart 进入页面后立即开始接收（二期 T8：卫星过境提醒直达接收态）
  */
 @Composable
 fun SstvMainScreen(
     presetModeName: String? = null,
+    autoStart: Boolean = false,
     onNavigate: (Route) -> Unit = {},
     onNavigateBack: () -> Unit = {},
 ) {
@@ -92,13 +94,6 @@ fun SstvMainScreen(
     val context = LocalContext.current
     val scrollBehavior = MiuixScrollBehavior()
 
-    // 由卫星详情页进入时预置模式：ISS 等 SSTV 卫星可直接锁定其常用模式。
-    // 走 applyPreset（不写设置）而非 setManualMode，并在离开页面时清除 ——
-    // ViewModel 是应用级单例，否则预置会一直黏住，让首页进入也变成手动模式。
-    LaunchedEffect(presetModeName) {
-        val mode = presetModeName?.let { name -> SstvMode.entries.find { it.name == name } }
-        if (mode != null) viewModel.applyPreset(mode)
-    }
     DisposableEffect(Unit) {
         onDispose { viewModel.clearPreset() }
     }
@@ -107,6 +102,27 @@ fun SstvMainScreen(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted) viewModel.startReceiving() else viewModel.onPermissionDenied()
+    }
+
+    // 由卫星详情页或过境提醒进入时预置模式：ISS 等 SSTV 卫星可直接锁定其常用模式。
+    // 走 applyPreset（不写设置）而非 setManualMode，并在离开页面时清除 ——
+    // ViewModel 是应用级单例，否则预置会一直黏住，让首页进入也变成手动模式。
+    LaunchedEffect(presetModeName, autoStart) {
+        val mode = presetModeName?.let { name -> SstvMode.entries.find { it.name == name } }
+        if (mode != null) viewModel.applyPreset(mode)
+
+        // 二期 T8：卫星过境提醒直达接收态。必须与 applyPreset 同处一个 LaunchedEffect，
+        // 因为 startReceiving 读的正是 applyPreset 刚写下的 presetOverride —— 拆到两个
+        // 协程里就没有先后保证了。权限已授予就直接开收，否则弹一次系统授权。
+        if (!autoStart) return@LaunchedEffect
+        val granted = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.RECORD_AUDIO,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (granted) {
+            viewModel.startReceiving()
+        } else {
+            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
     }
 
     // 音频文件导入：OpenDocument 无需存储权限；WAV 的 mime 在不同提供方之间不统一，

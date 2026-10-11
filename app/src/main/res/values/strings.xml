@@ -243,6 +243,8 @@
     <string name="reminder_auto_added_title" translatable="false">已自动添加提醒</string>
     <string name="reminder_auto_added_text" translatable="false">%1$s：下次过境 %2$s，已添加提醒</string>
     <string name="reminder_permission_required" translatable="false">需要通知权限才能显示提醒，请前往系统设置开启</string>
+    <!-- SSTV 卫星的过境提醒直达动作（二期 T8） -->
+    <string name="sstv_reminder_action_receive" translatable="false">接收 SSTV</string>
 
     <!-- 卫星数据设置（Phase 3/4） -->
     <string name="satellite_section_title" translatable="false">卫星数据</string>

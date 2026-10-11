@@ -48,6 +48,7 @@ import androidx.lifecycle.compose.dropUnlessResumed
 import com.example.hamkit.R
 import com.example.hamkit.data.satellite.RadioInfo
 import com.example.hamkit.data.satellite.SatelliteLiveInfo
+import com.example.hamkit.data.sstv.SstvSatelliteLink
 import com.example.hamkit.ui.LocalMainViewModel
 import com.example.hamkit.ui.navigation3.LocalNavigator
 import com.example.hamkit.ui.navigation3.Route
@@ -182,13 +183,14 @@ fun SatelliteDetailMaterial(catalogNumber: Int, onBack: () -> Unit = {}) {
                 }
             }
 
-            // SSTV 卫星：一键接收入口（ARISS 的 ISS 活动使用 PD-120）
-            if (radios.any { it.mode.contains("SSTV", ignoreCase = true) }) {
+            // SSTV 卫星：一键接收入口（ARISS 的 ISS 活动使用 PD-120）。
+            // 判定与预置模式统一走 SstvSatelliteLink，与过境提醒通知保持同一套规则。
+            if (SstvSatelliteLink.isSstvSatellite(radios.map { it.mode }, catalogNumber)) {
                 DetailCardMaterial {
                     DetailRowMaterial(label = "SSTV 图像传输", value = "该卫星支持")
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        text = if (catalogNumber == 25544) {
+                        text = if (catalogNumber == SstvSatelliteLink.ISS_NORAD) {
                             "ARISS 活动通常在 145.800 MHz 使用 PD-120，单帧约 126 秒。"
                         } else {
                             "该卫星的转发器标注了 SSTV 模式，可进入解码器接收图像。"
@@ -200,7 +202,7 @@ fun SatelliteDetailMaterial(catalogNumber: Int, onBack: () -> Unit = {}) {
                         onClick = dropUnlessResumed {
                             navigator.push(
                                 Route.SstvMain(
-                                    presetModeName = if (catalogNumber == 25544) "PD_120" else null
+                                    presetModeName = SstvSatelliteLink.presetModeNameFor(catalogNumber)
                                 )
                             )
                         },

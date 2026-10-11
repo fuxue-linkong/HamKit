@@ -10,6 +10,8 @@ import android.media.RingtoneManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.example.hamkit.R
+import com.example.hamkit.data.sstv.SstvLaunchIntent
+import com.example.hamkit.data.sstv.SstvSatelliteLink
 import com.example.hamkit.ui.MainActivity
 import java.time.Instant
 import java.time.ZoneId
@@ -73,11 +75,24 @@ class ReminderNotificationHelper(private val context: Context) {
 
     /**
      * 发送过境提醒通知。通知 ID 使用卫星 NORAD 编号，避免不同卫星通知互相覆盖。
+     *
+     * **SSTV 卫星的直达接收态（二期 T8）**：若该卫星支持 SSTV，通知的正文点击与「接收 SSTV」
+     * 动作都会带上 [SstvLaunchIntent] 的 extra，点一下即进入解码器并开始接收，
+     * 免去「展开应用 → 找卫星 → 进详情页 → 点接收」的四步。预置模式由
+     * [SstvSatelliteLink.presetModeNameFor] 决定（ISS 为 PD-120，其余交给 VIS）。
      */
     fun showPassReminder(item: ReminderItem) {
+        val isSstv = SstvSatelliteLink.isSstvSatellite(item.modes, item.catalogNumber)
+        val sstvPresetMode = if (isSstv) {
+            SstvSatelliteLink.presetModeNameFor(item.catalogNumber)
+        } else {
+            null
+        }
+
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
+        if (isSstv) SstvLaunchIntent.putLaunchRequest(intent, sstvPresetMode)
         val pendingIntent = PendingIntent.getActivity(
             context,
             item.catalogNumber,
@@ -125,6 +140,24 @@ class ReminderNotificationHelper(private val context: Context) {
             .setAutoCancel(true)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .apply {
+                // SSTV 卫星：额外给一个显式动作按钮。部分 ROM 会把通知正文点击折叠成「打开应用」，
+                // 动作按钮则是稳定的直达入口。
+                if (isSstv) {
+                    val actionIntent = Intent(context, MainActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    }
+                    SstvLaunchIntent.putLaunchRequest(actionIntent, sstvPresetMode)
+                    // requestCode 必须与正文 PendingIntent 不同，否则系统会复用同一个
+                    val actionPendingIntent = PendingIntent.getActivity(
+                        context,
+                        item.catalogNumber + SSTV_ACTION_REQUEST_OFFSET,
+                        actionIntent,
+                        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                    )
+                    addAction(0, context.getString(R.string.sstv_reminder_action_receive), actionPendingIntent)
+                }
+            }
             .build()
 
         try {
@@ -180,6 +213,16 @@ class ReminderNotificationHelper(private val context: Context) {
     companion object {
         const val CHANNEL_ID = "satellite_pass_reminder"
         const val AUTO_ADD_ID = 9001
+
+        /**
+         * SSTV 动作按钮的 PendingIntent requestCode 偏移。
+         *
+         * 必须与正文的 requestCode（即 NORAD 编号本身）区分开：`PendingIntent` 的复用判定
+         * 只看 requestCode + `Intent.filterEquals`，而 extras 不参与比较，两者若同号会被
+         * 系统判为同一个 PendingIntent。偏移取 10 万，NORAD 编号远小于该量级，不会撞号。
+         */
+        private const val SSTV_ACTION_REQUEST_OFFSET = 100_000
+
         private const val CHANNEL_NAME = "卫星过境提醒"
         private const val CHANNEL_DESC = "在已开启过境提醒的卫星过境前推送通知"
     }
