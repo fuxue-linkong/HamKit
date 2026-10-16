@@ -30,6 +30,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.hamkit.ui.LocalUiMode
+import com.example.hamkit.ui.UiMode
 import com.example.hamkit.ui.appViewModel
 import com.example.hamkit.ui.viewmodel.AprsViewModel
 import top.yukonga.miuix.kmp.basic.Card
@@ -43,7 +45,13 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 /** APRS 符号（table + code + 名称），覆盖常见移动/固定/应急场景 */
 data class AprsSymbol(val table: Char, val code: Char, val name: String)
 
-private val APRS_SYMBOLS = listOf(
+/**
+ * 可选符号表。
+ *
+ * 用 internal 而非 private：Material 版（[AprsSymbolPickerScreenMaterial]）要展示同一份列表，
+ * 复制一份会导致两套实现的符号清单各自漂移，因此共用此单一数据源。
+ */
+internal val APRS_SYMBOLS = listOf(
     AprsSymbol('/', '>', "汽车"), AprsSymbol('/', '<', "摩托车"),
     AprsSymbol('/', 'k', "卡车"), AprsSymbol('/', 'u', "公交车"),
     AprsSymbol('/', 'b', "自行车"), AprsSymbol('/', 'j', "吉普车"),
@@ -67,8 +75,23 @@ private val APRS_SYMBOLS = listOf(
     AprsSymbol('\\', 'a', "应急(备用)"), AprsSymbol('\\', 'b', "自行车(备用)")
 )
 
+/**
+ * APRS 符号选择页分发入口：按当前 UI 风格选择 Miuix / Material 实现。
+ *
+ * 两者共用同一个 application 级 [AprsViewModel] 实例，切换风格不会丢状态。
+ */
 @Composable
 fun AprsSymbolPickerScreen(
+    onNavigateBack: () -> Unit = {}
+) {
+    when (LocalUiMode.current) {
+        UiMode.Miuix -> AprsSymbolPickerScreenMiuix(onNavigateBack = onNavigateBack)
+        UiMode.Material -> AprsSymbolPickerScreenMaterial(onNavigateBack = onNavigateBack)
+    }
+}
+
+@Composable
+fun AprsSymbolPickerScreenMiuix(
     onNavigateBack: () -> Unit = {}
 ) {
     val viewModel = appViewModel<AprsViewModel>()

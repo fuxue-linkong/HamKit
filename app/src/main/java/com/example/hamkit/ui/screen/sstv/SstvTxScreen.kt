@@ -42,6 +42,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.data.sstv.SstvEncoder
 import com.example.hamkit.data.sstv.SstvMode
+import com.example.hamkit.ui.LocalUiMode
+import com.example.hamkit.ui.UiMode
 import com.example.hamkit.ui.appViewModel
 import com.example.hamkit.ui.navigation3.Route
 import com.example.hamkit.ui.viewmodel.SstvViewModel
@@ -78,6 +80,18 @@ import top.yukonga.miuix.kmp.utils.scrollEndHaptic
  */
 @Composable
 fun SstvTxScreen(
+    onNavigate: (Route) -> Unit = {},
+    onNavigateBack: () -> Unit = {},
+) {
+    when (LocalUiMode.current) {
+        UiMode.Miuix -> SstvTxScreenMiuix(onNavigate, onNavigateBack)
+        UiMode.Material -> SstvTxScreenMaterial(onNavigate, onNavigateBack)
+    }
+}
+
+/** Miuix（MIUI）风格实现。 */
+@Composable
+fun SstvTxScreenMiuix(
     onNavigate: (Route) -> Unit = {},
     onNavigateBack: () -> Unit = {},
 ) {

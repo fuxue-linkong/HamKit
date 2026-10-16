@@ -30,6 +30,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.hamkit.ui.LocalUiMode
+import com.example.hamkit.ui.UiMode
 import com.example.hamkit.ui.appViewModel
 import com.example.hamkit.ui.viewmodel.Ft8ViewModel
 import top.yukonga.miuix.kmp.basic.Card
@@ -45,9 +47,24 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
-@OptIn(ExperimentalLayoutApi::class)
+/**
+ * FT8 设置页分发入口：按当前 UI 风格选择 Miuix / Material 实现。
+ *
+ * 两者共用同一个 application 级 [Ft8ViewModel] 实例，切换风格不会丢状态。
+ */
 @Composable
 fun Ft8SettingsScreen(
+    onNavigateBack: () -> Unit = {}
+) {
+    when (LocalUiMode.current) {
+        UiMode.Miuix -> Ft8SettingsScreenMiuix(onNavigateBack = onNavigateBack)
+        UiMode.Material -> Ft8SettingsScreenMaterial(onNavigateBack = onNavigateBack)
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun Ft8SettingsScreenMiuix(
     onNavigateBack: () -> Unit = {}
 ) {
     val viewModel = appViewModel<Ft8ViewModel>()

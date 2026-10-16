@@ -34,6 +34,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.R
+import com.example.hamkit.ui.LocalUiMode
+import com.example.hamkit.ui.UiMode
 import com.example.hamkit.ui.appViewModel
 import com.example.hamkit.ui.navigation3.Route
 import com.example.hamkit.ui.viewmodel.AprsViewModel
@@ -50,9 +52,32 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
-@OptIn(ExperimentalLayoutApi::class)
+/**
+ * APRS 设置页分发入口：按当前 UI 风格选择 Miuix / Material 实现。
+ *
+ * 两者共用同一个 application 级 [AprsViewModel] 实例，切换风格不会丢已填写的配置。
+ */
 @Composable
 fun AprsSettingsScreen(
+    onNavigateBack: () -> Unit = {},
+    onNavigate: (Route) -> Unit = {}
+) {
+    when (LocalUiMode.current) {
+        UiMode.Miuix -> AprsSettingsScreenMiuix(
+            onNavigateBack = onNavigateBack,
+            onNavigate = onNavigate
+        )
+
+        UiMode.Material -> AprsSettingsScreenMaterial(
+            onNavigateBack = onNavigateBack,
+            onNavigate = onNavigate
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun AprsSettingsScreenMiuix(
     onNavigateBack: () -> Unit = {},
     onNavigate: (Route) -> Unit = {}
 ) {

@@ -45,6 +45,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.data.sstv.SstvImageStore
+import com.example.hamkit.ui.LocalUiMode
+import com.example.hamkit.ui.UiMode
 import com.example.hamkit.ui.appViewModel
 import com.example.hamkit.ui.viewmodel.SstvViewModel
 import top.yukonga.miuix.kmp.basic.Button
@@ -82,6 +84,19 @@ import java.util.Locale
  */
 @Composable
 fun SstvGalleryScreen(
+    pickForTx: Boolean = false,
+    onPicked: (SstvImageStore.Entry) -> Unit = {},
+    onNavigateBack: () -> Unit = {},
+) {
+    when (LocalUiMode.current) {
+        UiMode.Miuix -> SstvGalleryScreenMiuix(pickForTx, onPicked, onNavigateBack)
+        UiMode.Material -> SstvGalleryScreenMaterial(pickForTx, onPicked, onNavigateBack)
+    }
+}
+
+/** Miuix（MIUI）风格实现。 */
+@Composable
+fun SstvGalleryScreenMiuix(
     pickForTx: Boolean = false,
     onPicked: (SstvImageStore.Entry) -> Unit = {},
     onNavigateBack: () -> Unit = {},

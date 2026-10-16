@@ -38,6 +38,8 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.data.ft8.Ft8Band
+import com.example.hamkit.ui.LocalUiMode
+import com.example.hamkit.ui.UiMode
 import com.example.hamkit.ui.appViewModel
 import com.example.hamkit.ui.navigation3.Route
 import com.example.hamkit.ui.viewmodel.Ft8ViewModel
@@ -55,8 +57,31 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
+/**
+ * FT8 主页分发入口：按当前 UI 风格选择 Miuix / Material 实现。
+ *
+ * 两者共用同一个 application 级 [Ft8ViewModel] 实例，切换风格不会丢状态。
+ */
 @Composable
 fun Ft8MainScreen(
+    onNavigate: (Route) -> Unit = {},
+    onNavigateBack: () -> Unit = {}
+) {
+    when (LocalUiMode.current) {
+        UiMode.Miuix -> Ft8MainScreenMiuix(
+            onNavigate = onNavigate,
+            onNavigateBack = onNavigateBack
+        )
+
+        UiMode.Material -> Ft8MainScreenMaterial(
+            onNavigate = onNavigate,
+            onNavigateBack = onNavigateBack
+        )
+    }
+}
+
+@Composable
+fun Ft8MainScreenMiuix(
     onNavigate: (Route) -> Unit = {},
     onNavigateBack: () -> Unit = {}
 ) {

@@ -56,6 +56,8 @@ import com.example.hamkit.data.ft8.Ft8QsoRecord
 import com.example.hamkit.data.qso.AdifExporter
 import com.example.hamkit.data.qso.QsoExportFormat
 import com.example.hamkit.data.qso.QsoExporter
+import com.example.hamkit.ui.LocalUiMode
+import com.example.hamkit.ui.UiMode
 import com.example.hamkit.ui.appViewModel
 import com.example.hamkit.ui.viewmodel.QsoLogViewModel
 import com.example.hamkit.ui.viewmodel.QsoTimeRange
@@ -85,13 +87,28 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 /**
+ * QSO 通联日志分发入口：按当前 UI 风格选择 Miuix / Material 实现。
+ *
+ * 两者共用同一个 application 级 [QsoLogViewModel] 实例，切换风格不会丢状态。
+ */
+@Composable
+fun QsoLogScreen(
+    onNavigateBack: () -> Unit = {},
+) {
+    when (LocalUiMode.current) {
+        UiMode.Miuix -> QsoLogScreenMiuix(onNavigateBack = onNavigateBack)
+        UiMode.Material -> QsoLogScreenMaterial(onNavigateBack = onNavigateBack)
+    }
+}
+
+/**
  * QSO 通联日志：FT8 通联记录的列表 / 筛选 / 增删改 / ADIF-XML 导出。
  *
  * Miuix 单主题，对齐 Ft8SettingsScreen。
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun QsoLogScreen(
+fun QsoLogScreenMiuix(
     onNavigateBack: () -> Unit = {},
 ) {
     val viewModel = appViewModel<QsoLogViewModel>()

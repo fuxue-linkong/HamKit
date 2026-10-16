@@ -39,6 +39,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.hamkit.ui.LocalUiMode
+import com.example.hamkit.ui.UiMode
 import com.example.hamkit.ui.appViewModel
 import com.example.hamkit.ui.viewmodel.HfFaxViewModel
 import top.yukonga.miuix.kmp.basic.Button
@@ -67,6 +69,17 @@ import top.yukonga.miuix.kmp.utils.scrollEndHaptic
  */
 @Composable
 fun HfFaxScreen(
+    onNavigateBack: () -> Unit = {},
+) {
+    when (LocalUiMode.current) {
+        UiMode.Miuix -> HfFaxScreenMiuix(onNavigateBack)
+        UiMode.Material -> HfFaxScreenMaterial(onNavigateBack)
+    }
+}
+
+/** Miuix（MIUI）风格实现。 */
+@Composable
+fun HfFaxScreenMiuix(
     onNavigateBack: () -> Unit = {},
 ) {
     val viewModel = appViewModel<HfFaxViewModel>()

@@ -30,6 +30,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.data.sstv.SstvMode
+import com.example.hamkit.ui.LocalUiMode
+import com.example.hamkit.ui.UiMode
 import com.example.hamkit.ui.appViewModel
 import com.example.hamkit.ui.navigation3.Route
 import com.example.hamkit.ui.viewmodel.SstvViewModel
@@ -53,9 +55,24 @@ import top.yukonga.miuix.kmp.window.WindowDialog
  *
  * 二期的开关都放在这里而不是主界面 —— 主界面只保留「接收中会想改」的东西
  * （连续接收、后处理总开关），其余一次性配置项收到本页，避免主界面过长。
+ *
+ * 本函数只是**风格分发入口**：Miuix / Material 两套实现共用同一个 [SstvViewModel]
+ * 实例（ViewModelStoreOwner 是 application 级），因此切换风格不会丢状态。
  */
 @Composable
 fun SstvSettingsScreen(
+    onNavigate: (Route) -> Unit = {},
+    onNavigateBack: () -> Unit = {},
+) {
+    when (LocalUiMode.current) {
+        UiMode.Miuix -> SstvSettingsScreenMiuix(onNavigate, onNavigateBack)
+        UiMode.Material -> SstvSettingsScreenMaterial(onNavigate, onNavigateBack)
+    }
+}
+
+/** Miuix（MIUI）风格实现。 */
+@Composable
+fun SstvSettingsScreenMiuix(
     onNavigate: (Route) -> Unit = {},
     onNavigateBack: () -> Unit = {},
 ) {

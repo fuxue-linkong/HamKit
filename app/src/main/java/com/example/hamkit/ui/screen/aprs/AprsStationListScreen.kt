@@ -27,6 +27,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.data.aprs.AprsStation
+import com.example.hamkit.ui.LocalUiMode
+import com.example.hamkit.ui.UiMode
 import com.example.hamkit.ui.appViewModel
 import com.example.hamkit.ui.viewmodel.AprsViewModel
 import top.yukonga.miuix.kmp.basic.Card
@@ -43,8 +45,31 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/**
+ * APRS 站点列表页分发入口：按当前 UI 风格选择 Miuix / Material 实现。
+ *
+ * 两者共用同一个 application 级 [AprsViewModel] 实例，切换风格不会丢状态。
+ */
 @Composable
 fun AprsStationListScreen(
+    onNavigateToStation: (AprsStation) -> Unit = {},
+    onNavigateBack: () -> Unit = {}
+) {
+    when (LocalUiMode.current) {
+        UiMode.Miuix -> AprsStationListScreenMiuix(
+            onNavigateToStation = onNavigateToStation,
+            onNavigateBack = onNavigateBack
+        )
+
+        UiMode.Material -> AprsStationListScreenMaterial(
+            onNavigateToStation = onNavigateToStation,
+            onNavigateBack = onNavigateBack
+        )
+    }
+}
+
+@Composable
+fun AprsStationListScreenMiuix(
     onNavigateToStation: (AprsStation) -> Unit = {},
     onNavigateBack: () -> Unit = {}
 ) {

@@ -34,6 +34,8 @@ import com.amap.api.maps.model.LatLng
 import com.amap.api.maps.model.MarkerOptions
 import com.example.hamkit.data.aprs.AprsStation
 import com.example.hamkit.data.location.CoordinateConverter
+import com.example.hamkit.ui.LocalUiMode
+import com.example.hamkit.ui.UiMode
 import com.example.hamkit.ui.appViewModel
 import com.example.hamkit.ui.viewmodel.AprsViewModel
 import top.yukonga.miuix.kmp.basic.IconButton
@@ -44,8 +46,24 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import java.util.Locale
 
+/**
+ * APRS 站点地图页分发入口：按当前 UI 风格选择 Miuix / Material 实现。
+ *
+ * 两者共用同一个 application 级 [AprsViewModel] 实例，切换风格不会丢站点数据。
+ */
 @Composable
 fun AprsMapScreen(
+    onNavigateBack: () -> Unit = {}
+) {
+    when (LocalUiMode.current) {
+        UiMode.Miuix -> AprsMapScreenMiuix(onNavigateBack = onNavigateBack)
+
+        UiMode.Material -> AprsMapScreenMaterial(onNavigateBack = onNavigateBack)
+    }
+}
+
+@Composable
+fun AprsMapScreenMiuix(
     onNavigateBack: () -> Unit = {}
 ) {
     val viewModel = appViewModel<AprsViewModel>()

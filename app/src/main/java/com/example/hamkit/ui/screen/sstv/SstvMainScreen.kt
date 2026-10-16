@@ -51,6 +51,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.data.sstv.SstvCaptureService
 import com.example.hamkit.data.sstv.SstvMode
 import com.example.hamkit.data.sstv.SstvRecorder
+import com.example.hamkit.ui.LocalUiMode
+import com.example.hamkit.ui.UiMode
 import com.example.hamkit.ui.appViewModel
 import com.example.hamkit.ui.navigation3.Route
 import com.example.hamkit.ui.viewmodel.SstvViewModel
@@ -84,6 +86,20 @@ import top.yukonga.miuix.kmp.utils.scrollEndHaptic
  */
 @Composable
 fun SstvMainScreen(
+    presetModeName: String? = null,
+    autoStart: Boolean = false,
+    onNavigate: (Route) -> Unit = {},
+    onNavigateBack: () -> Unit = {},
+) {
+    when (LocalUiMode.current) {
+        UiMode.Miuix -> SstvMainScreenMiuix(presetModeName, autoStart, onNavigate, onNavigateBack)
+        UiMode.Material -> SstvMainScreenMaterial(presetModeName, autoStart, onNavigate, onNavigateBack)
+    }
+}
+
+/** Miuix（MIUI）风格实现。 */
+@Composable
+fun SstvMainScreenMiuix(
     presetModeName: String? = null,
     autoStart: Boolean = false,
     onNavigate: (Route) -> Unit = {},

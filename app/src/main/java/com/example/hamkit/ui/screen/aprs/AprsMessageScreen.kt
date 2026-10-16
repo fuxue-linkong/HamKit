@@ -38,6 +38,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.data.aprs.AprsMessage
+import com.example.hamkit.ui.LocalUiMode
+import com.example.hamkit.ui.UiMode
 import com.example.hamkit.ui.appViewModel
 import com.example.hamkit.ui.viewmodel.AprsViewModel
 import top.yukonga.miuix.kmp.basic.Button
@@ -51,8 +53,31 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/**
+ * APRS 消息页分发入口：按当前 UI 风格选择 Miuix / Material 实现。
+ *
+ * 两者共用同一个 application 级 [AprsViewModel] 实例，切换风格不会丢状态。
+ */
 @Composable
 fun AprsMessageScreen(
+    partnerCallsign: String = "",
+    onNavigateBack: () -> Unit = {}
+) {
+    when (LocalUiMode.current) {
+        UiMode.Miuix -> AprsMessageScreenMiuix(
+            partnerCallsign = partnerCallsign,
+            onNavigateBack = onNavigateBack
+        )
+
+        UiMode.Material -> AprsMessageScreenMaterial(
+            partnerCallsign = partnerCallsign,
+            onNavigateBack = onNavigateBack
+        )
+    }
+}
+
+@Composable
+fun AprsMessageScreenMiuix(
     partnerCallsign: String = "",
     onNavigateBack: () -> Unit = {}
 ) {

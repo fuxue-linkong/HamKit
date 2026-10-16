@@ -18,6 +18,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.dropUnlessResumed
 import com.example.hamkit.R
+import com.example.hamkit.ui.LocalUiMode
+import com.example.hamkit.ui.UiMode
 import com.example.hamkit.ui.ReminderListScreen
 import com.example.hamkit.ui.LocalMainViewModel
 import com.example.hamkit.ui.navigation3.LocalNavigator
@@ -32,11 +34,25 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 
 /**
- * 提醒列表路由入口：复用现有 ReminderListScreen（基于 Miuix 组件），
- * 在外层套双主题 Scaffold（统一用 MiuixTheme 保证子组件色彩一致）。
+ * 提醒列表路由入口：按当前界面风格分发到 Miuix / Material 实现。
+ *
+ * 两套实现共用同一个 [com.example.hamkit.ui.viewmodel.MainViewModel]（由 `LocalMainViewModel`
+ * 提供），因此切换风格不会丢列表状态。
  */
 @Composable
 fun ReminderListRouteScreen() {
+    when (LocalUiMode.current) {
+        UiMode.Miuix -> ReminderListRouteScreenMiuix()
+        UiMode.Material -> ReminderListRouteScreenMaterial()
+    }
+}
+
+/**
+ * Miuix（MIUI）风格实现：复用 [ReminderListScreen]（基于 Miuix 组件），
+ * 在外层套 MiuixTheme 保证子组件色彩一致。
+ */
+@Composable
+fun ReminderListRouteScreenMiuix() {
     val navigator = LocalNavigator.current
     val mainViewModel = LocalMainViewModel.current
     // MainViewModel 的状态是 Compose State<T>（非 StateFlow），直接用 by 委托即可

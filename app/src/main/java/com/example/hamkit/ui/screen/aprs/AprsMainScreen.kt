@@ -29,6 +29,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.R
+import com.example.hamkit.ui.LocalUiMode
+import com.example.hamkit.ui.UiMode
 import com.example.hamkit.ui.appViewModel
 import com.example.hamkit.ui.navigation3.Route
 import com.example.hamkit.ui.viewmodel.AprsViewModel
@@ -46,8 +48,31 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.window.WindowDialog
 import java.util.Locale
 
+/**
+ * APRS 主页分发入口：按当前 UI 风格选择 Miuix / Material 实现。
+ *
+ * 两者共用同一个 application 级 [AprsViewModel] 实例，切换风格不会丢连接状态与站点数据。
+ */
 @Composable
 fun AprsMainScreen(
+    onNavigate: (Route) -> Unit = {},
+    onNavigateBack: () -> Unit = {}
+) {
+    when (LocalUiMode.current) {
+        UiMode.Miuix -> AprsMainScreenMiuix(
+            onNavigate = onNavigate,
+            onNavigateBack = onNavigateBack
+        )
+
+        UiMode.Material -> AprsMainScreenMaterial(
+            onNavigate = onNavigate,
+            onNavigateBack = onNavigateBack
+        )
+    }
+}
+
+@Composable
+fun AprsMainScreenMiuix(
     onNavigate: (Route) -> Unit = {},
     onNavigateBack: () -> Unit = {}
 ) {
