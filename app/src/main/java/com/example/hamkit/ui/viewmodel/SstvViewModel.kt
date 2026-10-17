@@ -286,7 +286,7 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * 持续接收的刷新请求计数器（详见 [scheduleRollingRefresh]）。
      *
-     * 用「递增计数 + conflate」而不是「协程活着就丢弃新请求」：后者会让刷新协程
+     * 用「递增计数 + StateFlow 自带合并」而不是「协程活着就丢弃新请求」：后者会让刷新协程
      * 长期处于活跃态，最后一次请求永远得不到执行，画面停在几行不动。
      */
     private var rollingRefreshRequests = MutableStateFlow(0)
@@ -1131,10 +1131,10 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
      * 历史实现用「刷新协程还在跑就直接 return」，而刷新协程每次都要等 250 ms +
      * 重建整幅位图（高度随接收不断增长，越来越慢）。解码线程每 4 行就请求一次，
      * 于是一旦建图变慢，新请求全被丢弃 —— 画面更新频率随「卷纸」变长而降到接近 0，
-     * 表现为「持续接收时不实时显示图像」。现在改为计数信号 + `conflate`：
+     * 表现为「持续接收时不实时显示图像」。现在改为计数信号 + StateFlow 合并：
      *
      *  - 刷新协程始终常驻一个（只在开始持续接收时启动、收尾时取消）；
-     *  - 收集端用 `conflate` 做背压合并：忙的时候只保留最新一次请求，不排队、不丢尾；
+     *  - StateFlow 本身带合并语义：忙时中间计数被覆盖，只保留最新一次，不排队、不丢尾；
      *  - 每次重建前按 [PERSISTENT_MIN_RENDER_INTERVAL_MS] 检查时间，避免高频重建。
      */
     private fun scheduleRollingRefresh() {

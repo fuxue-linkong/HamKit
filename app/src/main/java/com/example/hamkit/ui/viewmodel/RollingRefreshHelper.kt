@@ -5,7 +5,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.launch
 
 /**
@@ -21,11 +20,13 @@ import kotlinx.coroutines.launch
  *
  * ## 请求合并语义（关键）
  *
- * 用 `conflate` 而不是「协程活跃就丢弃新请求」：
+ * 用「常驻协程 + StateFlow 自带的合并」而不是「协程活跃就丢弃新请求」：
  *
- *  - 解码线程每 [rowsPerRefresh] 行推一次计数，写计数是 O(1)，从不等建图；
- *  - 建图期间到达的多次请求合并为一次，但**最后一次一定执行**。
- *    早期的「活跃就 return」写法会让最新请求永久丢失 —— 建图越慢越丢，
+ *  - 解码线程每 4 行递增一次计数，写计数是 O(1)，从不等建图；
+ *  - `StateFlow` 本身就有**合并（conflation）**语义：收集端忙的时候中间值被覆盖，
+ *    只保留最新值，且**最后一次一定执行**。所以这里直接 `collect` 即可，
+ *    再套 `.conflate()` 是空操作（编译器会按 error 级别报废弃）；
+ *  - 早期的「活跃就 return」写法会让最新请求永久丢失 —— 建图越慢越丢，
  *    画面最后停住不动，正是「持续接收不实时显示图像」的表现。
  *
  * @param requests 请求计数（每次 +1 表示「有新行，可以重建了」）
@@ -43,7 +44,8 @@ fun CoroutineScope.launchRollingRefresher(
     return launch {
         // lastAt < 0 表示「还没重建过」：首次请求立即执行，不受节流影响
         var lastAt = -1L
-        requests.conflate().collect {
+        // StateFlow 自带合并：忙时只保留最新计数，最后一次必达（无需 .conflate()）
+        requests.collect {
             if (lastAt >= 0) {
                 val wait = minIntervalMs - (now() - lastAt)
                 if (wait > 0) delay(wait)
