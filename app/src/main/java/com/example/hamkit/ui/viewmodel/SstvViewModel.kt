@@ -345,6 +345,7 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
             // 前台服务被系统/ROM 拦下：不崩溃，但这里**不能**再调 stop() —— 服务刚要起来
             // 就被停掉，会和它自己 onStartCommand 里的 stopSelf() 打架。只释放本地状态。
             SstvCaptureService.setStartFailureListener(null)
+            SstvCaptureService.setStartReadyListener(null)
             mediaProjection?.let { runCatching { it.stop() } }
             mediaProjection = null
             settingsStore.audioSourceKind = SstvSettingsStore.AUDIO_SOURCE_MIC
@@ -356,37 +357,46 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
         }
+        // 2) 服务真正进入前台后再取投影。
+        //
+        // startForegroundService() 是异步投递，start() 返回 true 不代表服务已在前台；
+        // Android 14+ 在服务尚未前台时调 getMediaProjection() 会抛 SecurityException。
+        // 因此把取投影的动作放到「前台已就绪」回调里，而不是紧跟 start() 之后同步执行。
+        SstvCaptureService.setStartReadyListener {
+            SstvCaptureService.setStartReadyListener(null)
+            SstvCaptureService.setStartFailureListener(null)
+            val manager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as? MediaProjectionManager
+            val projection = manager?.let {
+                runCatching { it.getMediaProjection(resultCode, data) }.getOrNull()
+            }
+            if (projection == null) {
+                finishPlaybackCapture()
+                _uiState.update { it.copy(status = "播放捕获授权失败或已取消") }
+                return@setStartReadyListener
+            }
+            mediaProjection?.let { runCatching { it.stop() } }
+            mediaProjection = projection
+            settingsStore.audioSourceKind = SstvSettingsStore.AUDIO_SOURCE_PLAYBACK
+            _uiState.update {
+                it.copy(
+                    audioSourceKind = SstvSettingsStore.AUDIO_SOURCE_PLAYBACK,
+                    playbackAuthorized = true,
+                    status = "音源已切换为「播放捕获」：在其它应用里播放 SSTV 录音，然后点开始接收",
+                )
+            }
+        }
         if (!SstvCaptureService.start(context)) {
+            SstvCaptureService.setStartReadyListener(null)
             finishPlaybackCapture()
-            _uiState.update { it.copy(status = "播放捕获不可用：缺少前台服务权限，请在系统设置中允许") }
+            _uiState.update { it.copy(status = "播放捕获不可用：缺少前台服务或通知权限，请在系统设置中允许") }
             return
-        }
-        // 2) 再取投影：此时前台服务已在前台，满足 Android 14+ 的顺序要求
-        val manager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as? MediaProjectionManager
-        val projection = manager?.let {
-            runCatching { it.getMediaProjection(resultCode, data) }.getOrNull()
-        }
-        if (projection == null) {
-            finishPlaybackCapture()
-            _uiState.update { it.copy(status = "播放捕获授权失败或已取消") }
-            return
-        }
-        SstvCaptureService.setStartFailureListener(null)
-        mediaProjection?.let { runCatching { it.stop() } }
-        mediaProjection = projection
-        settingsStore.audioSourceKind = SstvSettingsStore.AUDIO_SOURCE_PLAYBACK
-        _uiState.update {
-            it.copy(
-                audioSourceKind = SstvSettingsStore.AUDIO_SOURCE_PLAYBACK,
-                playbackAuthorized = true,
-                status = "音源已切换为「播放捕获」：在其它应用里播放 SSTV 录音，然后点开始接收",
-            )
         }
     }
 
     /** 放弃本次播放捕获：释放投影、摘掉监听、停掉前台服务（所有失败分支共用）。 */
     private fun finishPlaybackCapture() {
         SstvCaptureService.setStartFailureListener(null)
+        SstvCaptureService.setStartReadyListener(null)
         SstvCaptureService.stop(getApplication())
         mediaProjection?.let { runCatching { it.stop() } }
         mediaProjection = null

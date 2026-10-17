@@ -34,8 +34,10 @@ import com.example.hamkit.R
  * 该异常发生在 `onStartCommand` 中且无法被调用方捕获，会**直接崩溃进程**。
  * 因此调用方必须**先拿到投影授权、再启动本服务**（见 `handleCaptureResult`）。
  *
- * 另外本服务把 `startForeground` 的结果回传给调用方：失败时**不再崩溃**，
- * 而是停掉自己并通过回调告知 UI 回退（见 [start] 的 `onFailure`）。
+ * 另外本服务把前台登记的结果回传给调用方：
+ * - 成功进入前台 → [setStartReadyListener] 通知调用方，此时才可以取投影；
+ * - 失败 → 先用 0 类型补登记一次（清掉系统的 5 秒超时判定），再停掉自己并通过
+ *   [setStartFailureListener] 告知 UI 回退，**不会再崩溃进程**。
  *
  * 行为：`ACTION_STOP` 停止自身；被系统回收时返回 `START_NOT_STICKY`（不做无声重启，
  * 否则用户会看到「采集开着但没人用」的状态）。
@@ -50,14 +52,10 @@ class SstvCaptureService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        // 只要进来就先把这一轮的「前台登记义务」清掉（见下方注释），确保无论后续成功失败
+        // 都不会再触发系统的 ForegroundServiceDidNotStartInTimeException。
         createChannel()
-        val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle(getString(R.string.sstv_capture_notification_title))
-            .setContentText(getString(R.string.sstv_capture_notification_text))
-            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
+        val notification = buildNotification()
 
         // API 34+ 必须显式声明前台服务类型，且要与 manifest 里的一致
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -71,15 +69,51 @@ class SstvCaptureService : Service() {
             ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, type)
         }.exceptionOrNull()
         if (error != null) {
+            // ── 为什么失败后要「降级再登记一次」（关键修复）──
+            //
+            // startForegroundService() 会让系统起一个 5 秒计时器：只有**成功**调用过
+            // startForeground 才算交差。厂商 ROM 拒绝 mediaProjection 类型时这里抛异常，
+            // 若直接 stopSelf()，那个计时器不会被撤销，5 秒后主线程仍会抛
+            // ForegroundServiceDidNotStartInTimeException 把进程杀掉 ——
+            // 也就是「优雅失败」反而造出了另一条闪退路径。
+            //
+            // 解法：用 FOREGROUND_SERVICE_TYPE_NONE（0）再登记一次。0 类型不走投影 token
+            // 校验，几乎总能成功，于是系统认为「义务已履行」、计时器被取消；随后立刻收回
+            // 前台状态并停止服务，用户不会看到残留通知。
+            val fallback = runCatching {
+                ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, 0)
+            }.exceptionOrNull()
             // 失败后立刻收起前台状态并停止自己，避免留下一个「半启动」的服务
             stopForegroundCompat()
             stopSelf()
-            // 通过静态回调把失败原因交回 UI（onStartCommand 本身就在主线程，可直接回调）
-            startFailureListener?.invoke(error)
+            // 通过静态回调把失败原因交回 UI（onStartCommand 本身就在主线程，可直接回调）。
+            // 降级登记都失败时，优先把降级错误也带上，方便定位真实原因。
+            val reported = if (fallback != null) {
+                IllegalStateException("${error.message}；降级登记亦失败：${fallback.message}", error)
+            } else {
+                error
+            }
+            startFailureListener?.invoke(reported)
             return START_NOT_STICKY
         }
+        // ── 成功登记前台后回调（关键修复：消除竞态）──
+        //
+        // startForegroundService() 是**异步投递**：调用方拿到的只是「请求已发出」，
+        // 并不意味着 onStartCommand 已执行、服务已进入前台。而 Android 14+ 要求
+        // getMediaProjection() 时前台服务必须**已经**在前台，否则 SecurityException /
+        // 返回 null。因此这里登记成功后主动通知调用方「可以取投影了」。
+        startReadyListener?.invoke()
         return START_NOT_STICKY
     }
+
+    /** 构建常驻通知（前台服务必须有通知，否则平台直接拒绝）。 */
+    private fun buildNotification(): Notification = NotificationCompat.Builder(this, CHANNEL_ID)
+        .setContentTitle(getString(R.string.sstv_capture_notification_title))
+        .setContentText(getString(R.string.sstv_capture_notification_text))
+        .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+        .setOngoing(true)
+        .setPriority(NotificationCompat.PRIORITY_LOW)
+        .build()
 
     override fun onDestroy() {
         stopForegroundCompat()
@@ -123,12 +157,27 @@ class SstvCaptureService : Service() {
         }
 
         /**
+         * 前台服务**已成功登记前台状态**后的监听器。
+         *
+         * 调用方应在这之后才去 `getMediaProjection()` —— `startForegroundService()` 是
+         * 异步的，`start()` 返回 true 只代表请求已发出，此时服务尚未真正进入前台。
+         */
+        @Volatile
+        private var startReadyListener: (() -> Unit)? = null
+
+        /** 挂载 / 传 null 摘除「前台已就绪」监听。 */
+        fun setStartReadyListener(listener: (() -> Unit)?) {
+            startReadyListener = listener
+        }
+
+        /**
          * 启动前台服务。
          *
-         * @return `false` 表示前置条件不满足（缺 `FOREGROUND_SERVICE_MEDIA_PROJECTION`
-         *   权限，或系统版本过低），**此时不会调用 startService**，调用方应直接回退，
-         *   不要继续去取投影。真正的启动失败（厂商 ROM 拦截）会通过
-         *   [setStartFailureListener] 异步回调。
+         * @return `false` 表示前置条件不满足（缺 `FOREGROUND_SERVICE[_MEDIA_PROJECTION]`
+         *   权限、Android 13+ 缺 `POST_NOTIFICATIONS`，或系统版本过低），**此时不会调用
+         *   startService**，调用方应直接回退，不要继续去取投影。真正的启动失败（厂商 ROM
+         *   拦截）会通过 [setStartFailureListener] 异步回调；成功进入前台后由
+         *   [setStartReadyListener] 通知调用方，再取投影。
          */
         fun start(context: Context): Boolean {
             // FGS 权限被用户在系统设置里撤销时，startService 必然抛 SecurityException，
@@ -145,6 +194,17 @@ class SstvCaptureService : Service() {
                 ContextCompat.checkSelfPermission(
                     context,
                     android.Manifest.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION,
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                return false
+            }
+            // Android 13+ 缺通知权限时，部分 ROM 的前台服务会因「无法展示通知」而拒绝登记；
+            // 提前拦下，避免走 startForegroundService() 后落到 5 秒超时那套崩溃路径。
+            // （Android 13 以下通知无需运行时权限，默认视为通过）
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                ContextCompat.checkSelfPermission(
+                    context,
+                    android.Manifest.permission.POST_NOTIFICATIONS,
                 ) != PackageManager.PERMISSION_GRANTED
             ) {
                 return false
