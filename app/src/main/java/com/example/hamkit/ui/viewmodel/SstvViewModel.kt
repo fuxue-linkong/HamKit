@@ -8,6 +8,7 @@ import android.graphics.Bitmap
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
+import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.hamkit.data.sstv.MicrophoneAudioSource
@@ -281,6 +282,14 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
 
     /** 持续接收的刷新协程（节流建图，避免每行都新建位图）。 */
     private var rollingRefreshJob: Job? = null
+
+    /**
+     * 持续接收的刷新请求计数器（详见 [scheduleRollingRefresh]）。
+     *
+     * 用「递增计数 + conflate」而不是「协程活着就丢弃新请求」：后者会让刷新协程
+     * 长期处于活跃态，最后一次请求永远得不到执行，画面停在几行不动。
+     */
+    private var rollingRefreshRequests = MutableStateFlow(0)
 
     /** 持续接收期间**已收满的帧**（交给 [SstvFrameFusion] 做跨帧融合的素材）。 */
     private var fusionFrames: MutableList<SstvFrameFusion.Frame> = mutableListOf()
@@ -1057,6 +1066,8 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         startWaterfallUpdates()
+        // 预览刷新协程常驻一个：解码线程只改计数，建图节奏由这里控制
+        launchRollingRefresher()
 
         persistentJob = viewModelScope.launch(Dispatchers.IO) {
             val demodulator = SstvDemodulator(
@@ -1107,42 +1118,83 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
     private fun onPersistentLine(event: SstvStreamDecoder.LineEvent) {
         val rolling = rollingImage ?: return
         rolling.append(event.pixels)
-        if (rolling.size - rollingRenderedRows >= PERSISTENT_RENDER_ROWS) {
+        // 第一行就刷新：否则用户要等满 PERSISTENT_RENDER_ROWS 行（约 1 秒）才看到画面，
+        // 会误以为「持续接收不出图」
+        if (rolling.size - rollingRenderedRows >= PERSISTENT_RENDER_ROWS || rollingRenderedRows == 0) {
             scheduleRollingRefresh()
         }
     }
 
-    /** 节流建图：合并短时间内的多次请求，避免每行都新建一张大位图。 */
+    /**
+     * 节流建图：把短时间内的多次请求**合并**成一次，而不是丢弃。
+     *
+     * 历史实现用「刷新协程还在跑就直接 return」，而刷新协程每次都要等 250 ms +
+     * 重建整幅位图（高度随接收不断增长，越来越慢）。解码线程每 4 行就请求一次，
+     * 于是一旦建图变慢，新请求全被丢弃 —— 画面更新频率随「卷纸」变长而降到接近 0，
+     * 表现为「持续接收时不实时显示图像」。现在改为计数信号 + `conflate`：
+     *
+     *  - 刷新协程始终常驻一个（只在开始持续接收时启动、收尾时取消）；
+     *  - 收集端用 `conflate` 做背压合并：忙的时候只保留最新一次请求，不排队、不丢尾；
+     *  - 每次重建前按 [PERSISTENT_MIN_RENDER_INTERVAL_MS] 检查时间，避免高频重建。
+     */
     private fun scheduleRollingRefresh() {
-        if (rollingRefreshJob?.isActive == true) return
+        // 只递增计数，不启动新协程（见 launchRollingRefresher 的说明）。
+        // 必须用 update 而不是 `value++`：后者是「读-改-写」，跨线程并发时会丢请求
+        rollingRefreshRequests.update { it + 1 }
+    }
+
+    /**
+     * 启动常驻的预览刷新协程。
+     *
+     * 只在一次持续接收开始时调用一次，并把后续频繁调用的 [scheduleRollingRefresh]
+     * 降级为「改一个计数」—— 这样解码线程从不为建图付出任何代价。
+     */
+    private fun launchRollingRefresher() {
+        rollingRefreshJob?.cancel()
+        // 耗时协程放到 Default 上跑：collect 里的 delay/节流与 Bitmap 重建都不占主线程
         rollingRefreshJob = viewModelScope.launch(Dispatchers.Default) {
-            delay(PERSISTENT_REFRESH_DELAY_MS)
-            val rolling = rollingImage ?: return@launch
-            val decoder = persistentDecoder ?: return@launch
-            val (pixels, height) = rolling.toPixels()
-            if (height == 0) return@launch
-            rollingRenderedRows = rolling.size
-            val bitmap = withContext(Dispatchers.Default) {
-                Bitmap.createBitmap(pixels, rolling.width, height, Bitmap.Config.ARGB_8888)
-            }
-            val stats = decoder.stats()
-            _uiState.update {
-                it.copy(
-                    bitmap = bitmap,
-                    decodedLines = stats.decodedLines,
-                    rollingRows = height,
-                    rollingScrolled = rolling.scrolled,
-                    syncPulseCount = stats.syncPulses,
-                    hedrShiftHz = stats.hedrShiftHz,
-                    slantRatio = stats.slantRatio,
-                    status = if (stats.locked) {
-                        "持续接收中：已 ${stats.decodedLines} 行，同步命中 " +
-                            "${"%.0f".format(stats.syncHitRate * 100)}%"
-                    } else {
-                        "持续接收中：正在等待同步脉冲…"
-                    },
-                )
-            }
+            launchRollingRefresher(
+                requests = rollingRefreshRequests,
+                minIntervalMs = PERSISTENT_MIN_RENDER_INTERVAL_MS,
+                now = SystemClock::uptimeMillis,
+                onRender = { renderRollingPreview() },
+            )
+        }
+    }
+
+    /**
+     * 重建一次卷纸预览位图并推给 UI。
+     *
+     * 高度超过 [SstvRollingImage.DEFAULT_MAX_BITMAP_ROWS] 时 [SstvRollingImage.toPixels]
+     * 会按行等间隔抽样 —— 此时位图高度不再等于已收行数，所以预览高度取「实际位图高度」，
+     * 而不是卷纸的真实行数（原先直接用 `height`，超过上限后两者会不一致）。
+     */
+    private suspend fun renderRollingPreview() {
+        val rolling = rollingImage ?: return
+        val decoder = persistentDecoder ?: return
+        val (pixels, height) = rolling.toPixels()
+        if (height == 0) return
+        rollingRenderedRows = rolling.size
+        val bitmap = withContext(Dispatchers.Default) {
+            Bitmap.createBitmap(pixels, rolling.width, height, Bitmap.Config.ARGB_8888)
+        }
+        val stats = decoder.stats()
+        _uiState.update {
+            it.copy(
+                bitmap = bitmap,
+                decodedLines = stats.decodedLines,
+                rollingRows = height,
+                rollingScrolled = rolling.scrolled,
+                syncPulseCount = stats.syncPulses,
+                hedrShiftHz = stats.hedrShiftHz,
+                slantRatio = stats.slantRatio,
+                status = if (stats.locked) {
+                    "持续接收中：已 ${stats.decodedLines} 行，同步命中 " +
+                        "${"%.0f".format(stats.syncHitRate * 100)}%"
+                } else {
+                    "持续接收中：正在等待同步脉冲…"
+                },
+            )
         }
     }
 
@@ -1287,6 +1339,9 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
         persistent = null
         persistentJob = null
         persistentDecoder = null
+        // 刷新协程先停：它持有 rollingImage 的引用，收尾后再建图只会覆盖掉定稿画面
+        rollingRefreshJob?.cancel()
+        rollingRefreshJob = null
         runCatching { session.source.close() }
         // close() 回填 WAV 头并返回写入的样本数（0 表示什么都没录到，直接丢弃）
         val recorded = session.recording?.let { wav -> runCatching { wav.close() }.getOrDefault(0L) } ?: 0L
@@ -2106,8 +2161,13 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
         /** 持续接收新增多少行才重建预览（节流：640 宽的位图重建并不便宜）。 */
         private const val PERSISTENT_RENDER_ROWS = 4
 
-        /** 预览重建的最小间隔（毫秒）。 */
-        private const val PERSISTENT_REFRESH_DELAY_MS = 250L
+        /**
+         * 预览重建的最小间隔（毫秒）。
+         *
+         * 约 8 帧/秒：肉眼已是连续增长，又给建图（高度越大越慢）留出余量。
+         * 与 [PERSISTENT_RENDER_ROWS] 双闸门 —— 行数够多**或**时间到了才重建。
+         */
+        private const val PERSISTENT_MIN_RENDER_INTERVAL_MS = 120L
 
         /** 瀑布图快照刷新间隔：约 6–7 帧/秒，肉眼看是连续滚动，开销可忽略。 */
         const val WATERFALL_REFRESH_MS = 150L

@@ -4,6 +4,8 @@ import android.content.Intent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,7 +16,10 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -38,6 +43,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,6 +62,7 @@ import com.example.hamkit.ui.viewmodel.SstvViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.launch
 
 /**
  * SSTV 图库的 Material（Material 3）风格实现。
@@ -106,7 +113,9 @@ fun SstvGalleryScreenMaterial(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
-                    .padding(horizontal = 16.dp),
+                    .padding(horizontal = 16.dp)
+                    // 整列可滚动：上方说明与录音卡片在格子多时也要能划出去
+                    .verticalScroll(rememberScrollState()),
             ) {
                 Text(
                     text = if (uiState.gallery.isEmpty()) {
@@ -224,7 +233,10 @@ fun SstvGalleryScreenMaterial(
                 } else {
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(if (pickForTx) 2 else 3),
-                        modifier = Modifier.fillMaxSize(),
+                        // 嵌在可滚动 Column 里：高度必须由内容决定，fillMaxSize 会让整页划不动
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 0.dp),
                         contentPadding = PaddingValues(bottom = 24.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -248,15 +260,17 @@ fun SstvGalleryScreenMaterial(
                 }
             }
 
-            // ── 全屏查看 ──
-            uiState.viewing?.let { entry ->
-                GalleryViewerMaterial(
-                    entry = entry,
+            // ── 全屏查看（可左右滑动切上一张 / 下一张）──
+            uiState.viewing?.let { current ->
+                GalleryPagerMaterial(
+                    gallery = uiState.gallery,
+                    current = current,
                     bitmap = uiState.viewingBitmap,
+                    onSelect = { viewModel.openViewer(it) },
                     onClose = { viewModel.closeViewer() },
-                    onDelete = { pendingDelete = entry },
-                    onExport = { viewModel.exportToGallery(entry) },
-                    onShare = {
+                    onDelete = { pendingDelete = it },
+                    onExport = { viewModel.exportToGallery(it) },
+                    onShare = { entry ->
                         val uri = viewModel.shareUri(entry)
                         if (uri != null) {
                             val intent = Intent(Intent.ACTION_SEND).apply {
@@ -335,55 +349,120 @@ private fun GalleryTileMaterial(
         ),
     ) {
         Column(modifier = Modifier.padding(6.dp)) {
-            // 删除按钮要盖在缩略图上，因此两者放进同一个 Box（右上角对齐）
-            Box {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(4f / 3f)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(Color(0x22000000)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    val bitmap = thumbnail
-                    if (bitmap != null) {
-                        Image(
-                            bitmap = bitmap.asImageBitmap(),
-                            contentDescription = entry.modeName,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop,
-                        )
-                    } else {
-                        Text(
-                            text = "载入中",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+            // 缩略图单独占一行：删除按钮不再盖在图上，改到下方信息行
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(4f / 3f)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color(0x22000000)),
+                contentAlignment = Alignment.Center,
+            ) {
+                val bitmap = thumbnail
+                if (bitmap != null) {
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = entry.modeName,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                    )
+                } else {
+                    Text(
+                        text = "载入中",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
-                // 删除放在缩略图右上角：原来每个格子底部都挂一个「删除」按钮，
-                // 三列网格下会把卡片撑高一截，且误触概率明显更高
+            }
+            Spacer(Modifier.height(4.dp))
+            // 信息行：左侧模式名与时间，右侧删除按钮（不遮挡缩略图）
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = entry.modeName.ifBlank { "未知模式" } +
+                            if (entry.enhanced) " · 增强" else "",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = MATERIAL_STAMP_FORMAT.format(Date(entry.timestamp)),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
                 if (onDelete != null) {
-                    TextButton(
-                        onClick = onDelete,
-                        modifier = Modifier.align(Alignment.TopEnd).padding(2.dp),
-                    ) {
+                    TextButton(onClick = onDelete) {
                         Text("删除", style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = entry.modeName.ifBlank { "未知模式" } + if (entry.enhanced) " · 增强" else "",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                text = MATERIAL_STAMP_FORMAT.format(Date(entry.timestamp)),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
-            )
         }
+    }
+}
+
+/**
+ * 全屏查看的分页容器（Material 版）：左右滑动切换相邻图像。
+ *
+ * 与 Miuix 版同构：只解码当前张的大图，翻页回调 [onSelect] 让 ViewModel 换图。
+ */
+@Composable
+private fun GalleryPagerMaterial(
+    gallery: List<SstvImageStore.Entry>,
+    current: SstvImageStore.Entry,
+    bitmap: android.graphics.Bitmap?,
+    onSelect: (SstvImageStore.Entry) -> Unit,
+    onClose: () -> Unit,
+    onDelete: (SstvImageStore.Entry) -> Unit,
+    onExport: (SstvImageStore.Entry) -> Unit,
+    onShare: (SstvImageStore.Entry) -> Unit,
+) {
+    val currentIndex = gallery.indexOfFirst { it.file.name == current.file.name }
+        .coerceAtLeast(0)
+    val pagerState = rememberPagerState(
+        initialPage = currentIndex,
+        pageCount = { gallery.size },
+    )
+    val scope = rememberCoroutineScope()
+
+    // 外部换图（删除后自动切到下一张）时把 pager 同步过去
+    LaunchedEffect(currentIndex) {
+        if (!pagerState.isScrollInProgress && pagerState.currentPage != currentIndex) {
+            pagerState.scrollToPage(currentIndex)
+        }
+    }
+    // 用户滑动后回调 ViewModel 换图
+    LaunchedEffect(pagerState.currentPage) {
+        gallery.getOrNull(pagerState.currentPage)?.let { page ->
+            if (page.file.name != current.file.name) onSelect(page)
+        }
+    }
+
+    HorizontalPager(
+        state = pagerState,
+        modifier = Modifier.fillMaxSize(),
+        key = { index -> gallery.getOrNull(index)?.file?.name ?: index },
+    ) { index ->
+        val entry = gallery.getOrNull(index) ?: return@HorizontalPager
+        GalleryViewerMaterial(
+            entry = entry,
+            bitmap = if (index == currentIndex) bitmap else null,
+            loadingText = if (index == currentIndex) "正在解码大图…" else "松开后加载…",
+            onClose = onClose,
+            onDelete = { onDelete(entry) },
+            onExport = { onExport(entry) },
+            onShare = { onShare(entry) },
+            onPrev = if (index > 0) {
+                { scope.launch { pagerState.animateScrollToPage(index - 1) } }
+            } else {
+                null
+            },
+            onNext = if (index < gallery.lastIndex) {
+                { scope.launch { pagerState.animateScrollToPage(index + 1) } }
+            } else {
+                null
+            },
+            position = "${index + 1}/${gallery.size}",
+        )
     }
 }
 
@@ -392,10 +471,14 @@ private fun GalleryTileMaterial(
 private fun GalleryViewerMaterial(
     entry: SstvImageStore.Entry,
     bitmap: android.graphics.Bitmap?,
+    loadingText: String,
     onClose: () -> Unit,
     onDelete: () -> Unit,
     onExport: () -> Unit,
     onShare: () -> Unit,
+    onPrev: (() -> Unit)?,
+    onNext: (() -> Unit)?,
+    position: String,
 ) {
     Box(
         modifier = Modifier
@@ -417,10 +500,16 @@ private fun GalleryViewerMaterial(
                     )
                     Text(
                         text = "${MATERIAL_STAMP_FORMAT.format(Date(entry.timestamp))} · " +
-                            formatBytes(entry.sizeBytes),
+                            "${formatBytes(entry.sizeBytes)} · $position",
                         style = MaterialTheme.typography.labelSmall,
                         color = Color(0xFFB0B0B0),
                     )
+                }
+                if (onPrev != null) {
+                    TextButton(onClick = onPrev) { Text("上一张") }
+                }
+                if (onNext != null) {
+                    TextButton(onClick = onNext) { Text("下一张") }
                 }
                 TextButton(onClick = onClose) { Text("关闭") }
             }
@@ -441,7 +530,7 @@ private fun GalleryViewerMaterial(
                     )
                 } else {
                     Text(
-                        text = "正在解码大图…",
+                        text = loadingText,
                         style = MaterialTheme.typography.bodyMedium,
                         color = Color.White,
                     )
