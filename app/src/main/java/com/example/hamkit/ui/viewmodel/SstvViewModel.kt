@@ -1834,16 +1834,42 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(callsign = settingsStore.callsign) }
     }
 
+    /**
+     * 开关呼号叠加。
+     *
+     * 叠加呼号只影响「位图 → 图像源」这一步，源图本身没变，因此这里只做**本地重装配**：
+     * 不再回到相册/文件的 URI 重新读一遍（旧实现这么做，遇到只授权一次的 provider 就会
+     * 把已经载入好的图弄丢）。
+     */
     fun setTxOverlayCallsign(enabled: Boolean) {
         settingsStore.txOverlayCallsign = enabled
         _uiState.update { it.copy(txOverlayCallsign = enabled) }
         reloadTxSource()
     }
 
-    /** 从系统相册/文件选择器选图作为发射源。 */
+    /**
+     * 从系统相册/文件选择器选图作为发射源。
+     *
+     * **关键（HK 修复）**：先用 `contentResolver.openInputStream` 把所选内容**复制到一个**
+     * 缓存文件，再用这个文件解码。原因见 [SstvBitmapSource] 的类注释 —— 同一 URI 反复
+     * 打开在不少 provider 上会失败，表现为「选完图毫无反应」；而缓存文件一次落盘后，
+     * 切模式、开关呼号都只需读本地文件，稳定且不受 URI 授权有效期影响。
+     */
     fun setTxImage(uri: Uri) {
-        txOrigin = TxOrigin.Uri(uri)
-        loadTxSource()
+        _uiState.update { it.copy(txStatus = "正在读取所选图片…") }
+        viewModelScope.launch {
+            val cached = withContext(Dispatchers.IO) { copyTxImageToCache(uri) }
+            if (cached == null) {
+                _uiState.update {
+                    it.copy(
+                        txStatus = "无法读取所选图片（可能没有读取权限或该来源不支持），请换一张或从图库选择",
+                    )
+                }
+                return@launch
+            }
+            txOrigin = TxOrigin.File(cached)
+            loadTxSource()
+        }
     }
 
     /** 从 SSTV 图库（已解码图像）选图作为发射源。 */
@@ -1852,17 +1878,50 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
         loadTxSource()
     }
 
+    /** 发射源：相册选择会先落成 `cacheDir/sstv_tx` 下的缓存副本，图库选择直接用图库文件。 */
     private sealed interface TxOrigin {
-        data class Uri(val uri: android.net.Uri) : TxOrigin
-
+        /** 相册/文件选择的缓存副本（文件名即用户在系统里看到的显示名）。 */
         data class File(val file: java.io.File) : TxOrigin
     }
 
     private var txOrigin: TxOrigin? = null
 
+    /**
+     * 切模式后重装配。
+     *
+     * 直接读缓存副本重新解码：模式不同 => 目标分辨率不同，必须从原图重新缩放，
+     * 复用按旧分辨率缩过的位图会变形。
+     */
     private fun reloadTxSource() {
         if (txOrigin != null) loadTxSource()
     }
+
+    /**
+     * 把所选 URI 复制到缓存目录，文件名用 provider 给出的显示名（失败时退化为固定名）。
+     *
+     * @return 缓存文件；读取失败返回 null
+     */
+    private fun copyTxImageToCache(uri: Uri): java.io.File? = runCatching {
+        val context = getApplication<Application>()
+        val dir = java.io.File(context.cacheDir, TX_IMAGE_CACHE_DIR).apply { mkdirs() }
+        // 显示名只做「展示与扩展名提示」用途，这里清洗掉路径分隔符，避免写出目录外
+        val displayName = runCatching { queryDisplayName(context.contentResolver, uri) }.getOrNull()
+        val safeName = displayName?.replace('/', '_')?.replace('\\', '_')?.takeIf { it.isNotBlank() }
+        val target = java.io.File(dir, safeName ?: TX_IMAGE_CACHE_NAME)
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            target.outputStream().use { output -> input.copyTo(output) }
+        } ?: return null
+        // 清掉上一次的旧缓存，避免缓存目录无限增长
+        dir.listFiles()?.forEach { if (it != target) runCatching { it.delete() } }
+        target.takeIf { it.length() > 0 }
+    }.getOrNull()
+
+    /** 查询 SAF URI 的显示名（`OpenableColumns.DISPLAY_NAME`）。 */
+    private fun queryDisplayName(resolver: android.content.ContentResolver, uri: Uri): String? =
+        resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            }
 
     private fun loadTxSource() {
         val origin = txOrigin ?: return
@@ -1870,16 +1929,16 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
         val callsign = if (_uiState.value.txOverlayCallsign) _uiState.value.callsign else null
         _uiState.update { it.copy(txStatus = "正在载入图片…") }
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                val context = getApplication<Application>()
-                when (origin) {
-                    is TxOrigin.Uri -> SstvBitmapSource.load(context, origin.uri, mode, callsign)
-                    is TxOrigin.File -> SstvBitmapSource.load(context, origin.file, mode, callsign)
-                }
+            val outcome = withContext(Dispatchers.IO) {
+                SstvBitmapSource.loadOrError(origin.file, mode, callsign)
             }
+            val result = outcome.getOrNull()
             if (result == null) {
                 txSource = null
-                _uiState.update { it.copy(txPreview = null, txSourceLabel = null, txStatus = "图片载入失败") }
+                val reason = outcome.exceptionOrNull()?.message ?: "未知原因"
+                _uiState.update {
+                    it.copy(txPreview = null, txSourceLabel = null, txStatus = "图片载入失败：$reason")
+                }
                 return@launch
             }
             txSource = result
@@ -1892,15 +1951,11 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 SstvImageStore.toBitmap(pixels, result.width, result.height)
             }
-            val label = when (origin) {
-                is TxOrigin.Uri -> "来自相册/文件"
-                is TxOrigin.File -> origin.file.name
-            }
             val seconds = mode.frameSeconds + SstvEncoder.VIS_TOTAL_SECONDS
             _uiState.update {
                 it.copy(
                     txPreview = preview,
-                    txSourceLabel = label,
+                    txSourceLabel = origin.file.name,
                     txStatus = "已载入 ${result.width}×${result.height}，按 ${mode.displayName} 发射约 " +
                         "${"%.0f".format(seconds)} 秒",
                 )
@@ -2015,6 +2070,12 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
          * 每次导入都覆盖同名文件：缓存目录里只留一份，不会随导入次数堆积。
          */
         const val IMPORT_TEMP_BASE = "sstv_import"
+
+        /** 发射源图片的缓存子目录（在 `cacheDir` 下）：每次选图只保留最新一份。 */
+        const val TX_IMAGE_CACHE_DIR = "sstv_tx"
+
+        /** 拿不到 provider 显示名时的兜底文件名（扩展名不影响 `decodeStream` 判定格式）。 */
+        const val TX_IMAGE_CACHE_NAME = "sstv_tx_source.img"
 
         /**
          * 持续接收每次读取的样本数（48 kHz 下约 42 ms）。

@@ -9,6 +9,7 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.Typeface
 import android.net.Uri
+import java.io.File
 import kotlin.math.max
 
 /**
@@ -21,43 +22,93 @@ import kotlin.math.max
  * 而编码器只按模式分辨率（最大 PD-290 的 800×616）取点。提前用
  * [BitmapFactory.Options.inSampleSize] + `createScaledBitmap` 降到目标尺寸，内存从
  * 48 MB 降到不足 2 MB，编码时的最近邻取点也变成顺序访问。
+ *
+ * **为什么必须先落缓存文件再解码（HK 修复）**：旧实现对同一个 URI 调了两次
+ * `openInputStream`（第一次只取尺寸）。系统相册、文件的 `ContentProvider`、云盘/网盘、
+ * 聊天软件这类「一次授权、非 seekable」的 provider，第二次打开常拿不到流，于是解码返回
+ * null —— 界面上就表现为「选完图片毫无反应 / 图片载入失败」。现在统一由调用方先把所选
+ * 文件复制成缓存文件（见 [SstvViewModel.setTxImage]），这里只用 [File] 读，一次选中后可
+ * 反复重装配（切模式、开关呼号）而不依赖 URI 权限是否还有效。
  */
 object SstvBitmapSource {
 
     /**
      * 载入图片并适配为 [SstvImageSource]。
      *
+     * **注意**：直接传 `content://` URI 时本方法只保证「只打开一次流」，但仍依赖该 URI 的
+     * 读取权限；发射页应优先走「复制到缓存文件」的路径。保留此重载是为了兼容既有调用点。
+     *
      * @param mode 目标模式（决定缩放后的分辨率）
      * @param callsign 非空时在图像右下角叠加呼号
      * @return 载入失败（文件损坏 / 不是图片 / 无权限）时返回 null
      */
     fun load(context: Context, uri: Uri, mode: SstvMode, callsign: String? = null): SstvImageSource? =
-        load(mode, callsign) { context.contentResolver.openInputStream(uri) }
+        load(mode, callsign) { readAll(context, uri) }
 
     /**
-     * 从应用私有文件载入（用于「把图库里已解码的图重新发射」）。
+     * 从本地文件载入（应用缓存文件，或图库里已解码的图）。
      *
      * 与 URI 版本共用同一套缩放与叠加逻辑，只是打开方式不同。
      */
-    fun load(context: Context, file: java.io.File, mode: SstvMode, callsign: String? = null): SstvImageSource? =
-        load(mode, callsign) { file.inputStream() }
+    fun load(context: Context, file: File, mode: SstvMode, callsign: String? = null): SstvImageSource? =
+        load(mode, callsign) { runCatching { file.readBytes() }.getOrNull() }
+
+    /**
+     * 带失败原因版本：UI 需要把「为什么载入失败」显示给用户，而不是一律「图片载入失败」。
+     *
+     * 注意 [runCatching] 会吞掉 `OutOfMemoryError` 之外的异常并把 message 原样上抛，
+     * 调用方据此拼出「图片载入失败：<原因>」。
+     *
+     * @return 成功给出 [Result.Success]，失败给出可读的中文原因
+     */
+    fun loadOrError(file: File, mode: SstvMode, callsign: String? = null): Result<SstvImageSource> =
+        runCatching {
+            require(file.isFile && file.length() > 0) { "所选的图片文件为空或已被移除，请重新选择" }
+            // 只读一次：SstvBitmapSource 的重载都基于字节数组，避免重复打开数据源
+            val bytes = file.readBytes()
+            decodeScaled(bytes, mode.linePixels, mode.imageLines)
+                ?: error("无法识别该图片格式（支持 JPEG / PNG / WebP / GIF / BMP / HEIF），请换一张试试")
+        }.map { bitmap ->
+            // 解码得到的 Bitmap 由这里负责回收：叠加呼号会产出新位图，两者都不能泄漏
+            val withOverlay = if (callsign.isNullOrBlank()) bitmap else overlayCallsign(bitmap, callsign)
+            val source = fromBitmap(withOverlay)
+            if (withOverlay !== bitmap) withOverlay.recycle()
+            bitmap.recycle()
+            source
+        }
+
+    /** 为看图预览等场景提供「只解码不叠加」的公开入口（失败返回 null）。 */
+    fun decodeForPreview(file: File, maxWidth: Int, maxHeight: Int): Bitmap? = runCatching {
+        decodeScaled(file.readBytes(), maxWidth, maxHeight)
+    }.getOrNull()
 
     private fun load(
         mode: SstvMode,
         callsign: String?,
-        openStream: () -> java.io.InputStream?,
-    ): SstvImageSource? {
-        val bitmap = decodeScaled(openStream, mode.linePixels, mode.imageLines) ?: return null
+        readBytes: () -> ByteArray?,
+    ): SstvImageSource? = runCatching {
+        val bytes = readBytes() ?: return@runCatching null
+        val bitmap = decodeScaled(bytes, mode.linePixels, mode.imageLines) ?: return@runCatching null
         val withOverlay = if (callsign.isNullOrBlank()) bitmap else overlayCallsign(bitmap, callsign)
         val source = fromBitmap(withOverlay)
         if (withOverlay !== bitmap) withOverlay.recycle()
         bitmap.recycle()
-        return source
-    }
+        source
+    }.getOrNull()
+
+    /**
+     * 把 URI 内容整体读成字节数组。
+     *
+     * 只打开一次流；读失败（无权限 / provider 拒绝）时返回 null。SSTV 发射的源图最多几 MB，
+     * 一次性读进内存比「同一 URI 开两次流」可靠得多。
+     */
+    private fun readAll(context: Context, uri: Uri): ByteArray? = runCatching {
+        context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+    }.getOrNull()
 
     /** 载入图片并 **不回收**（供 UI 预览；调用方负责 recycle）。 */
     fun loadPreview(context: Context, uri: Uri, maxWidth: Int = 1280): Bitmap? =
-        decodeScaled({ context.contentResolver.openInputStream(uri) }, maxWidth, maxWidth)
+        decodeScaled(readAll(context, uri) ?: return null, maxWidth, maxWidth)
 
     /** 从已解码的像素数组构造图像源（用于「把图库里已解码的图重新发射」）。 */
     fun fromPixels(pixels: IntArray, width: Int, height: Int): SstvImageSource =
@@ -111,15 +162,13 @@ object SstvBitmapSource {
      *
      * 两步走是内存与画质的折中：`inSampleSize` 只能取 2 的幂，若只用它，缩放结果会在
      * 目标尺寸的 1–2 倍之间浮动；再补一次 `createScaledBitmap` 才能精确落到模式分辨率。
+     *
+     * 改为从字节数组解码（`decodeByteArray`）而不是流：一张图只解析一份内存缓冲，
+     * 既不重复打开数据源，也避开了 provider 流不可回退的问题。
      */
-    private fun decodeScaled(
-        openStream: () -> java.io.InputStream?,
-        targetWidth: Int,
-        targetHeight: Int,
-    ): Bitmap? = runCatching {
+    private fun decodeScaled(bytes: ByteArray, targetWidth: Int, targetHeight: Int): Bitmap? = runCatching {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        openStream()?.use { BitmapFactory.decodeStream(it, null, bounds) }
-            ?: return@runCatching null
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
 
         val options = BitmapFactory.Options().apply {
@@ -131,7 +180,7 @@ object SstvBitmapSource {
             )
             inPreferredConfig = Bitmap.Config.ARGB_8888
         }
-        val decoded = openStream()?.use { BitmapFactory.decodeStream(it, null, options) }
+        val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
             ?: return@runCatching null
 
         if (decoded.width == targetWidth && decoded.height == targetHeight) {

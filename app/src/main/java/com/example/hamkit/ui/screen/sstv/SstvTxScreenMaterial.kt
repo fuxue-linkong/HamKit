@@ -1,6 +1,7 @@
 package com.example.hamkit.ui.screen.sstv
 
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -73,8 +74,13 @@ fun SstvTxScreenMaterial(
     val viewModel = appViewModel<SstvViewModel>()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    // 相册/文件选择图片（OpenDocument 不需要任何存储权限）
+    // 相册选图：首选系统内置图片选择器（见 SstvTxScreen.kt 中同段注释）
     val pickImage = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia(),
+    ) { uri -> uri?.let { viewModel.setTxImage(it) } }
+
+    // 兜底：传统文件选择器（可到非媒体类目录取图）
+    val pickImageLegacy = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri -> uri?.let { viewModel.setTxImage(it) } }
 
@@ -161,7 +167,11 @@ fun SstvTxScreenMaterial(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         OutlinedButton(
-                            onClick = { pickImage.launch(arrayOf("image/*")) },
+                            onClick = {
+                                pickImage.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                                )
+                            },
                             modifier = Modifier.weight(1f),
                         ) {
                             Text("相册选图")
@@ -172,6 +182,14 @@ fun SstvTxScreenMaterial(
                         ) {
                             Text("图库选图")
                         }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    // 相册里没有的原图（下载目录、U 盘、其他 App 私有目录）走文件选择器
+                    OutlinedButton(
+                        onClick = { pickImageLegacy.launch(arrayOf("image/*")) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("从文件选择")
                     }
 
                     Spacer(Modifier.height(12.dp))

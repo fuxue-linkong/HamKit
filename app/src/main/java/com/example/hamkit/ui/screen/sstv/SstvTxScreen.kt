@@ -1,6 +1,7 @@
 package com.example.hamkit.ui.screen.sstv
 
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -96,8 +97,18 @@ fun SstvTxScreenMiuix(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val scrollBehavior = MiuixScrollBehavior()
 
-    // 相册/文件选择图片（OpenDocument 不需要任何存储权限）
+    // 相册选图：首选系统内置图片选择器 PickVisualMedia。
+    //
+    // 为什么不再用 `OpenDocument(arrayOf("image/*"))`：它把选图交给第三方 provider（网盘、
+    // 聊天软件、某些 ROM 的自研相册），这些 provider 常只允许打开一次流或不给可持久化的
+    // 读权限，SSTV 旧实现要在同一 URI 上开两次流，结果就是「选完图没反应」。内置选择器
+    // 由系统进程授予一次性读权限，且 ViewModel 侧会立刻把内容复制到缓存文件。
     val pickImage = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia(),
+    ) { uri -> uri?.let { viewModel.setTxImage(it) } }
+
+    // 兜底：传统文件选择器（可到非媒体类目录取图；老 ROM / 无内置选择器时用）
+    val pickImageLegacy = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri -> uri?.let { viewModel.setTxImage(it) } }
 
@@ -181,7 +192,11 @@ fun SstvTxScreenMiuix(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Button(
-                            onClick = { pickImage.launch(arrayOf("image/*")) },
+                            onClick = {
+                                pickImage.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                                )
+                            },
                             modifier = Modifier.weight(1f),
                         ) {
                             Text("相册选图")
@@ -192,6 +207,15 @@ fun SstvTxScreenMiuix(
                         ) {
                             Text("图库选图")
                         }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    // 相册里没有的原图（下载目录、U 盘、其他 App 私有目录）走文件选择器
+                    Button(
+                        onClick = { pickImageLegacy.launch(arrayOf("image/*")) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(),
+                    ) {
+                        Text("从文件选择")
                     }
 
                     Spacer(Modifier.height(12.dp))
