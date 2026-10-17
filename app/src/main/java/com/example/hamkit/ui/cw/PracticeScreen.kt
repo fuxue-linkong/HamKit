@@ -28,8 +28,14 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
+/**
+ * CW 练习页的 Miuix（MIUI）风格实现。
+ *
+ * 本函数由 [CWPracticeRouteScreen] 按界面风格分发调用：Material 模式下走同包的
+ * PracticeScreenMaterial（参数列表与本函数完全一致，行为等价）。
+ */
 @Composable
-fun PracticeScreen(
+fun PracticeScreenMiuix(
     currentText: String,
     morseCode: String,
     userInput: String,

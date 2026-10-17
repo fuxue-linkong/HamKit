@@ -54,10 +54,9 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.hamkit.R
 import com.example.hamkit.permission.PermissionState
-import com.example.hamkit.ui.WeatherCard
+import com.example.hamkit.ui.WeatherCardMaterial
 import com.example.hamkit.ui.theme.LocalCardAlpha
 import kotlinx.coroutines.delay
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZoneOffset
@@ -85,28 +84,26 @@ fun HomePagerMaterial(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 业务卡片使用 Miuix 主题色板，外层包裹 MiuixTheme 以确保渲染正确
-            MiuixTheme {
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    // 条件卡：定位未授权 → 仅权限引导卡；定位已授权 → 时间排布 + 各功能入口
-                    if (permissionState.requiredGranted) {
-                        // 时间排布：时间卡（含每日言滚动）+ 紧贴的天气卡
-                        HomeHeaderMaterial(businessState, actions.onRefreshWeather)
-                        // 卫星列表卡：附近过境卫星
-                        SatelliteListCard(businessState, actions)
-                        // 定位详情入口
-                        LocationEntryCard(actions.onLocationDetailClick)
-                        CwEntryCard(actions.onCWPracticeClick)
-                        AprsEntryCard(actions.onAprsClick)
-                        Ft8EntryCard(actions.onFt8Click)
-                        // SSTV 慢扫描电视入口
-                        SstvEntryCard(actions.onSstvClick)
-                        // QSO 日志入口
-                        QsoLogEntryCard(actions.onQsoLogClick)
-                    } else {
-                        // 权限卡片：引导用户授权定位（未授权时隐藏其余卡片）
-                        PermissionCard(permissionState, actions.onPermissionsClick)
-                    }
+            // 业务卡片全部是 material3 实现（含天气卡的 Material 变体），无需再包 MiuixTheme
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                // 条件卡：定位未授权 → 仅权限引导卡；定位已授权 → 时间排布 + 各功能入口
+                if (permissionState.requiredGranted) {
+                    // 时间排布：时间卡（含每日言滚动）+ 紧贴的天气卡
+                    HomeHeaderMaterial(businessState, actions.onRefreshWeather)
+                    // 卫星列表卡：附近过境卫星
+                    SatelliteListCard(businessState, actions)
+                    // 定位详情入口
+                    LocationEntryCard(actions.onLocationDetailClick)
+                    CwEntryCard(actions.onCWPracticeClick)
+                    AprsEntryCard(actions.onAprsClick)
+                    Ft8EntryCard(actions.onFt8Click)
+                    // SSTV 慢扫描电视入口
+                    SstvEntryCard(actions.onSstvClick)
+                    // QSO 日志入口
+                    QsoLogEntryCard(actions.onQsoLogClick)
+                } else {
+                    // 权限卡片：引导用户授权定位（未授权时隐藏其余卡片）
+                    PermissionCard(permissionState, actions.onPermissionsClick)
                 }
             }
             Spacer(Modifier.height(bottomInnerPadding))
@@ -119,7 +116,7 @@ fun HomePagerMaterial(
  *
  * 顶部为时间卡：本地时间（大字号）+ 右侧日期（星期 / 年 月 日，"日"放大）+ UTC 时间 +
  * 每日一言水平滚动；时间卡正下方紧贴天气卡。背景色与定位状态色联动。
- * 颜色使用 MiuixTheme.colorScheme 以与 WeatherCard 保持视觉一致（外层已包裹 MiuixTheme）。
+ * 颜色使用 MaterialTheme.colorScheme，与天气卡的 Material 变体保持视觉一致。
  */
 @Composable
 private fun HomeHeaderMaterial(
@@ -216,7 +213,7 @@ private fun HomeHeaderMaterial(
                         .padding(top = 2.dp)
                 )
                 // 天气内容：禁用自带背景，复用本卡背景，注入 Material 主题色
-                WeatherCard(
+                WeatherCardMaterial(
                     weather = state.weather,
                     isLoading = state.weatherLoading,
                     error = state.weatherError,

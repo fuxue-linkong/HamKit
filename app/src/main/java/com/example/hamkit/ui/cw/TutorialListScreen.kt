@@ -35,7 +35,7 @@ data class TutorialLesson(
 )
 
 @Composable
-fun TutorialListScreen(
+fun TutorialListScreenMiuix(
     onLessonClick: (Int) -> Unit,
     courseProgress: Map<Int, Float> = emptyMap(),
     contentPadding: PaddingValues

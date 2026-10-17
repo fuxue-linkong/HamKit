@@ -55,7 +55,9 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
-private val morseMap = mapOf(
+// 编码表与编解码函数改为 internal：Material 版（MorseCodeScreenMaterial.kt）复用同一份，
+// 避免把 Unicode 转码逻辑抄成两份而产生行为分叉。仅放宽可见性，实现一字未改。
+internal val morseMap = mapOf(
     'A' to ".-", 'B' to "-...", 'C' to "-.-.", 'D' to "-..", 'E' to ".",
     'F' to "..-.", 'G' to "--.", 'H' to "....", 'I' to "..", 'J' to ".---",
     'K' to "-.-", 'L' to ".-..", 'M' to "--", 'N' to "-.", 'O' to "---",
@@ -66,12 +68,12 @@ private val morseMap = mapOf(
     '5' to ".....", '6' to "-....", '7' to "--...", '8' to "---..", '9' to "----."
 )
 
-private val reverseMorseMap = morseMap.entries.associate { (k, v) -> v to k }
+internal val reverseMorseMap = morseMap.entries.associate { (k, v) -> v to k }
 
 // 十六进制字符集：用于 Unicode 转码（中文等非摩斯字符走此路径）
-private val hexChars = "0123456789ABCDEF"
+internal val hexChars = "0123456789ABCDEF"
 
-private fun encode(text: String): String {
+internal fun encode(text: String): String {
     return text.uppercase()
         .split(Regex("\\s+"))
         .filter { it.isNotEmpty() }
@@ -90,7 +92,7 @@ private fun encode(text: String): String {
         }
 }
 
-private fun decode(morse: String): String {
+internal fun decode(morse: String): String {
     return morse.trim()
         .split("/")
         .joinToString(" ") { word ->
@@ -128,7 +130,7 @@ private fun decode(morse: String): String {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun MorseCodeScreen(
+fun MorseCodeScreenMiuix(
     bgPage: Color,
     bgCard: Color,
     primaryColor: Color,

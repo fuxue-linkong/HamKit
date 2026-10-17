@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.dropUnlessResumed
 import com.example.hamkit.R
 import com.example.hamkit.ui.AMapCard
+import com.example.hamkit.ui.AMapCardMaterial
 import com.example.hamkit.ui.LocalUiMode
 import com.example.hamkit.ui.UiMode
 import com.example.hamkit.ui.LocalMainViewModel
@@ -54,7 +55,6 @@ import top.yukonga.miuix.kmp.basic.TextButton as MiuixTextButton
 import top.yukonga.miuix.kmp.basic.TopAppBar as MiuixTopAppBar
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
@@ -228,12 +228,11 @@ private fun LocationDetailScreenMaterial(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Spacer(Modifier.height(0.dp))
-            // 业务卡片使用 Miuix 主题色板，外层包裹 MiuixTheme 以确保渲染正确
-            MiuixTheme {
-                LocationCardMaterial(locationState, onRefresh)
-                locationState.result?.let { loc ->
-                    AMapCard(latitude = loc.latitude, longitude = loc.longitude)
-                }
+            // Material 分支全程用 material3 组件：卡片与地图外壳都走 Material 版实现，
+            // 因此这里不再需要 MiuixTheme 包裹（原先是为了让 Miuix 的地图卡片正确取色）
+            LocationCardMaterial(locationState, onRefresh)
+            locationState.result?.let { loc ->
+                AMapCardMaterial(latitude = loc.latitude, longitude = loc.longitude)
             }
         }
     }

@@ -28,8 +28,14 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlin.math.roundToInt
 
+/**
+ * 自由练习设置页的 Miuix（MIUI）风格实现。
+ *
+ * 本函数由 [CWPracticeRouteScreen] 按界面风格分发调用：Material 模式下走同包的
+ * FreePracticeSettingsScreenMaterial（参数列表与本函数完全一致，行为等价）。
+ */
 @Composable
-fun FreePracticeSettingsScreen(
+fun FreePracticeSettingsScreenMiuix(
     settings: CWSettings,
     onSettingsChange: (CWSettings) -> Unit,
     onStartPractice: () -> Unit,

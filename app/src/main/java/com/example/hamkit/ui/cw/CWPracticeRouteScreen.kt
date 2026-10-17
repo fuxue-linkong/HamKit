@@ -23,6 +23,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.dropUnlessResumed
 import com.example.hamkit.R
+import com.example.hamkit.ui.LocalUiMode
+import com.example.hamkit.ui.UiMode
 import com.example.hamkit.ui.appViewModel
 import com.example.hamkit.ui.navigation3.LocalNavigator
 import com.example.hamkit.ui.theme.LocalEnableBlur
@@ -39,9 +41,21 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
  * CW 练习路由入口：用状态机在主菜单和三个子页面之间切换，
  * 子页面（自由练习设置 / 教程列表 / 摩斯电码编解码）保留在 cw/ 子目录中，
  * 不污染 Routes.kt，符合"原 UI 处理方式"。
+ *
+ * 本函数是**风格分发入口**：两套实现共用同一个 [CWPracticeViewModel] 实例
+ * （application 级 ViewModelStoreOwner），因此切换风格不会丢练习进度。
  */
 @Composable
 fun CWPracticeRouteScreen() {
+    when (LocalUiMode.current) {
+        UiMode.Miuix -> CWPracticeRouteScreenMiuix()
+        UiMode.Material -> CWPracticeRouteScreenMaterial()
+    }
+}
+
+/** Miuix（MIUI）风格实现。 */
+@Composable
+fun CWPracticeRouteScreenMiuix() {
     val navigator = LocalNavigator.current
     val cwViewModel = appViewModel<CWPracticeViewModel>()
     val settings by cwViewModel.settings.collectAsStateWithLifecycle()
@@ -114,7 +128,7 @@ fun CWPracticeRouteScreen() {
                 .only(WindowInsetsSides.Horizontal)
         ) { innerPadding ->
             when (page) {
-                CWPage.Main -> CWPracticeScreen(
+                CWPage.Main -> CWPracticeScreenMiuix(
                     onBackClick = onBack,
                     onFreePracticeClick = { page = CWPage.FreeSettings },
                     onTutorialClick = { page = CWPage.Tutorial },
@@ -122,7 +136,7 @@ fun CWPracticeRouteScreen() {
                     contentPadding = innerPadding
                 )
 
-                CWPage.FreeSettings -> FreePracticeSettingsScreen(
+                CWPage.FreeSettings -> FreePracticeSettingsScreenMiuix(
                     settings = settings,
                     onSettingsChange = cwViewModel::updateSettings,
                     onStartPractice = {
@@ -140,7 +154,7 @@ fun CWPracticeRouteScreen() {
                     val isPlaying by cwViewModel.isPlaying.collectAsStateWithLifecycle()
                     val isPaused by cwViewModel.isPaused.collectAsStateWithLifecycle()
                     val accuracy by cwViewModel.accuracy.collectAsStateWithLifecycle()
-                    PracticeScreen(
+                    PracticeScreenMiuix(
                         currentText = currentText,
                         morseCode = morseCode,
                         userInput = userInput,
@@ -163,7 +177,7 @@ fun CWPracticeRouteScreen() {
 
                 CWPage.Tutorial -> {
                     val courseProgress by cwViewModel.courseProgress.collectAsStateWithLifecycle()
-                    TutorialListScreen(
+                    TutorialListScreenMiuix(
                         onLessonClick = { courseId ->
                             // 生成对应课程的教程内容并进入教程练习页
                             cwViewModel.generateTutorialText(courseId)
@@ -183,7 +197,7 @@ fun CWPracticeRouteScreen() {
                     val accuracy by cwViewModel.accuracy.collectAsStateWithLifecycle()
                     val courseTitle by cwViewModel.currentCourseTitle.collectAsStateWithLifecycle()
                     val lessonInfo by cwViewModel.currentLessonInfo.collectAsStateWithLifecycle()
-                    PracticeScreen(
+                    PracticeScreenMiuix(
                         currentText = currentText,
                         morseCode = morseCode,
                         userInput = userInput,
@@ -205,7 +219,7 @@ fun CWPracticeRouteScreen() {
                     )
                 }
 
-                CWPage.MorseCode -> MorseCodeScreen(
+                CWPage.MorseCode -> MorseCodeScreenMiuix(
                     bgPage = colorScheme.surface,
                     bgCard = colorScheme.surface,
                     primaryColor = colorScheme.primary,
@@ -218,4 +232,5 @@ fun CWPracticeRouteScreen() {
     }
 }
 
-private enum class CWPage { Main, FreeSettings, FreePractice, Tutorial, TutorialPractice, MorseCode }
+/** CW 练习页面的状态机取值；两套风格实现共用（Material 版在另一个文件里）。 */
+internal enum class CWPage { Main, FreeSettings, FreePractice, Tutorial, TutorialPractice, MorseCode }

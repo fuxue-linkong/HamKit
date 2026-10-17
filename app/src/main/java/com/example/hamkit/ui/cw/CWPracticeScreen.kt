@@ -23,8 +23,9 @@ import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
+/** Miuix（MIUI）风格实现：CW 练习主菜单。 */
 @Composable
-fun CWPracticeScreen(
+fun CWPracticeScreenMiuix(
     onBackClick: () -> Unit,
     onFreePracticeClick: () -> Unit,
     onTutorialClick: () -> Unit,
