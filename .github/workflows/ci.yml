@@ -354,9 +354,16 @@ jobs:
           echo "| Test & Build Release | ${{ needs.test-and-build.result }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
-          if [ "${{ needs.test-and-build.result }}" = "success" ] || [ "${{ needs.test-and-build.result }}" = "skipped" ]; then
-            echo "✅ Overall: success" >> "$GITHUB_STEP_SUMMARY"
-          else
+          # cancelled 不属于「构建失败」：常见于新 push 顶掉旧 run（concurrency 取消），
+          # 此时上游 job 的实质步骤往往已全部成功，若判成失败会让整个 workflow 假红。
+          # 真正的失败只可能是 failure，其余（success / skipped / cancelled）都视为未失败。
+          result="${{ needs.test-and-build.result }}"
+          if [ "$result" = "failure" ]; then
             echo "❌ Overall: failure" >> "$GITHUB_STEP_SUMMARY"
             exit 1
+          fi
+          if [ "$result" = "cancelled" ]; then
+            echo "⚠️ Overall: cancelled (被新的推送取消，非构建失败)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "✅ Overall: success" >> "$GITHUB_STEP_SUMMARY"
           fi
