@@ -3,10 +3,12 @@ package com.example.hamkit.ui.screen.sstv
 import android.Manifest
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -38,10 +40,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -57,10 +63,14 @@ import com.example.hamkit.ui.appViewModel
 import com.example.hamkit.ui.navigation3.Route
 import com.example.hamkit.ui.viewmodel.SstvViewModel
 import kotlin.math.roundToInt
+import top.yukonga.miuix.kmp.basic.BasicComponent
+import top.yukonga.miuix.kmp.basic.BasicComponentDefaults
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.LinearProgressIndicator
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Switch
@@ -80,6 +90,10 @@ import top.yukonga.miuix.kmp.utils.scrollEndHaptic
  * - **导入 WAV**：不必守着电台，可事后解码录音（一期只能实时收）；
  * - **盲扫候选**：VIS 头被噪声吃掉时不再只能手动逐个试模式；
  * - **信号质量**：让用户能判断「要不要调整音量/手机位置」，而不是盲等。
+ *
+ * **版式（2026-10 整理）**：从上到下只有「预览与操作」与「接收设置」两张卡，外加
+ * 一个按需出现的「盲扫候选」卡。接收明细（VIS、失谐、行周期比…）默认收起 ——
+ * 这些是调试参数，常看的只有「模式 + 进度 + 信号质量」，所以把后三者留在预览卡里。
  *
  * @param presetModeName 由卫星详情页预置的模式名（如 ISS 的 `PD_120`）；非空时锁定该模式
  * @param autoStart 进入页面后立即开始接收（二期 T8：卫星过境提醒直达接收态）
@@ -109,6 +123,8 @@ fun SstvMainScreenMiuix(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scrollBehavior = MiuixScrollBehavior()
+    // 接收明细默认收起：常看的参数已放在预览卡的状态行里
+    var detailsExpanded by remember { mutableStateOf(false) }
 
     DisposableEffect(Unit) {
         onDispose { viewModel.clearPreset() }
@@ -151,21 +167,17 @@ fun SstvMainScreenMiuix(
     // 顺序不能颠倒 —— Android 14 起要求调用 getMediaProjection() 时已有该类型的前台服务
     val captureLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
-    ) { result ->
-        val data = result.data
-        if (result.resultCode == Activity.RESULT_OK && data != null &&
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
-        ) {
-            val manager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE)
-                as? MediaProjectionManager
-            val projection = manager?.let {
-                runCatching { it.getMediaProjection(result.resultCode, data) }.getOrNull()
-            }
-            viewModel.usePlaybackCapture(projection)
-            if (projection == null) SstvCaptureService.stop(context)
+    ) { result -> handleCaptureResult(context, viewModel, result.resultCode, result.data) }
+
+    /** 「开始/停止接收」：未授权时先弹系统授权。 */
+    fun toggleReceiving() {
+        if (uiState.isReceiving) {
+            viewModel.stopReceiving()
         } else {
-            viewModel.usePlaybackCapture(null)
-            SstvCaptureService.stop(context)
+            val granted = ContextCompat.checkSelfPermission(
+                context, Manifest.permission.RECORD_AUDIO,
+            ) == PackageManager.PERMISSION_GRANTED
+            if (granted) viewModel.startReceiving() else permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
         }
     }
 
@@ -183,30 +195,9 @@ fun SstvMainScreenMiuix(
                     }
                 },
                 actions = {
-                    Text(
-                        "发射",
-                        style = MiuixTheme.textStyles.body1,
-                        color = colorScheme.primary,
-                        modifier = Modifier
-                            .clickable { onNavigate(Route.SstvTx) }
-                            .padding(horizontal = 8.dp, vertical = 6.dp),
-                    )
-                    Text(
-                        "图库",
-                        style = MiuixTheme.textStyles.body1,
-                        color = colorScheme.primary,
-                        modifier = Modifier
-                            .clickable { onNavigate(Route.SstvGallery()) }
-                            .padding(horizontal = 8.dp, vertical = 6.dp),
-                    )
-                    Text(
-                        "设置",
-                        style = MiuixTheme.textStyles.body1,
-                        color = colorScheme.primary,
-                        modifier = Modifier
-                            .clickable { onNavigate(Route.SstvSettings) }
-                            .padding(horizontal = 8.dp, vertical = 6.dp),
-                    )
+                    TopBarAction("发射") { onNavigate(Route.SstvTx) }
+                    TopBarAction("图库") { onNavigate(Route.SstvGallery()) }
+                    TopBarAction("设置") { onNavigate(Route.SstvSettings) }
                 },
                 scrollBehavior = scrollBehavior,
             )
@@ -224,62 +215,51 @@ fun SstvMainScreenMiuix(
                 .scrollEndHaptic()
                 .padding(horizontal = 12.dp),
         ) {
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(12.dp))
 
-            // ── 图像预览 ──
+            // ── 卡 1：预览与操作 ──
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(12.dp)) {
-                    val aspect = uiState.mode?.let { it.linePixels.toFloat() / it.imageLines } ?: (4f / 3f)
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(aspect)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color.Black),
-                        contentAlignment = Alignment.Center,
+                    SstvPreview(
+                        aspect = uiState.mode?.let { it.linePixels.toFloat() / it.imageLines } ?: (4f / 3f),
+                        bitmap = uiState.bitmap,
+                        placeholder = "等待信号…\n把手机靠近电台，音量以不失真为准",
+                    )
+
+                    Spacer(Modifier.height(12.dp))
+                    // 状态行：模式与信号质量常看，直接摆在进度条上方
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        val bitmap = uiState.bitmap
-                        if (bitmap != null) {
-                            Image(
-                                bitmap = bitmap.asImageBitmap(),
-                                contentDescription = "SSTV 解码图像",
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Fit,
-                            )
+                        Text(
+                            text = uiState.mode?.displayName ?: "待识别",
+                            style = MiuixTheme.textStyles.body1,
+                            color = colorScheme.onBackground,
+                            modifier = Modifier.weight(1f),
+                        )
+                        val quality = if (uiState.phaseSpan > 0) {
+                            "${uiState.qualityLabel} · ${"%.0f".format(uiState.qualityDb)} dB"
                         } else {
-                            Text(
-                                text = "等待信号…\n把手机扬声器侧贴近电台，音量适中",
-                                style = MiuixTheme.textStyles.body1,
-                                color = Color.White,
-                            )
+                            "信号 —"
                         }
+                        Text(
+                            text = quality,
+                            style = MiuixTheme.textStyles.footnote1,
+                            color = colorScheme.onBackground,
+                        )
                     }
 
-                    Spacer(Modifier.height(10.dp))
-
-                    // 进度条（用简单的两段 Box 实现，避免依赖具体进度条组件）
-                    val progress = uiState.progress.coerceIn(0f, 1f)
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(6.dp)
-                            .clip(RoundedCornerShape(3.dp))
-                            .background(Color(0x33000000)),
-                    ) {
-                        if (progress > 0f) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth(progress)
-                                    .height(6.dp)
-                                    .background(colorScheme.primary),
-                            )
-                        }
-                    }
+                    Spacer(Modifier.height(6.dp))
+                    LinearProgressIndicator(
+                        progress = uiState.progress.coerceIn(0f, 1f),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
 
                     Spacer(Modifier.height(8.dp))
                     Text(
                         text = uiState.status,
-                        style = MiuixTheme.textStyles.body2,
+                        style = MiuixTheme.textStyles.footnote1,
                         color = colorScheme.onBackground,
                     )
                     uiState.importStatus?.let {
@@ -288,25 +268,154 @@ fun SstvMainScreenMiuix(
                     }
                     uiState.error?.let {
                         Spacer(Modifier.height(6.dp))
-                        Text(it, style = MiuixTheme.textStyles.body2, color = Color(0xFFD9534F))
+                        Text(it, style = MiuixTheme.textStyles.footnote1, color = colorScheme.error)
+                    }
+
+                    // 主操作：开始/停止接收独占一行（接收中最常点的按钮），其余两两一行
+                    Spacer(Modifier.height(12.dp))
+                    Button(
+                        onClick = { toggleReceiving() },
+                        modifier = Modifier.fillMaxWidth(),
+                        // 停止接收是次要动作：用普通按钮（主色只在「开始接收」时出现）
+                        colors = if (uiState.isReceiving) {
+                            ButtonDefaults.buttonColors()
+                        } else {
+                            ButtonDefaults.buttonColorsPrimary()
+                        },
+                    ) {
+                        Text(if (uiState.isReceiving) "停止接收" else "开始接收")
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Button(
+                            onClick = { importAudio.launch(arrayOf("audio/*", "application/octet-stream")) },
+                            modifier = Modifier.weight(1f),
+                            // 导入期间禁用而不是换配色：换配色仍可点，重复导入会被 ViewModel 静默忽略
+                            enabled = !uiState.importing,
+                        ) {
+                            Text(if (uiState.importing) "导入中…" else "导入录音")
+                        }
+                        Button(
+                            onClick = { viewModel.saveCurrent() },
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text(if (uiState.postProcessEnabled) "保存增强图" else "保存图像")
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        // 「保存原图」只在开着后处理时才有意义（否则与「保存图像」重复）
+                        if (uiState.postProcessEnabled) {
+                            Button(onClick = { viewModel.saveRaw() }, modifier = Modifier.weight(1f)) {
+                                Text("保存原图")
+                            }
+                        }
+                        Button(onClick = { viewModel.clearImage() }, modifier = Modifier.weight(1f)) {
+                            Text("清空")
+                        }
                     }
                 }
             }
 
             Spacer(Modifier.height(12.dp))
 
-            // ── 瀑布图（解调信号的频率-时间显示）──
-            if (uiState.waterfallEnabled) {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(12.dp)) {
+            // ── 卡 2：接收设置 ──
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "接收设置",
+                    style = MiuixTheme.textStyles.title4,
+                    color = colorScheme.onBackground,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp),
+                )
+
+                // 音源：两选一用单选，比并排两个按钮更贴合「当前是哪一个」
+                SstvRadioRow(
+                    title = "麦克风",
+                    summary = "手机对着电台扬声器；也可用音频线直连（更干净）",
+                    selected = !uiState.usesPlaybackCapture,
+                    onClick = { viewModel.useMicrophone() },
+                )
+                SstvRadioRow(
+                    title = "播放捕获",
+                    summary = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                        "需要 Android 10 及以上（可解码其它应用正在播放的音频）"
+                    } else {
+                        "解码其它应用正在播放的音频：先在别处播放录音或打开 WebSDR，再开始接收"
+                    },
+                    selected = uiState.usesPlaybackCapture,
+                    enabled = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q,
+                    onClick = { requestPlaybackCapture(context, viewModel, captureLauncher) },
+                )
+
+                HorizontalDivider(color = colorScheme.dividerLine)
+
+                // 模式：横向胶囊。「自动」恒在首位，选中即为 VIS 自动识别
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    Text(
+                        text = if (uiState.presetApplied) {
+                            "卫星预置模式，仅本次有效；选择任意模式即可取消"
+                        } else {
+                            "模式（默认自动识别 VIS）"
+                        },
+                        style = MiuixTheme.textStyles.footnote1,
+                        color = if (uiState.presetApplied) colorScheme.primary else colorScheme.onBackground,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        SstvChip("自动", uiState.manualModeName == null) { viewModel.setManualMode(null) }
+                        SstvMode.DECODABLE_MODES.forEach { mode ->
+                            SstvChip(mode.displayName, uiState.manualModeName == mode.name) {
+                                viewModel.setManualMode(mode)
+                            }
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = colorScheme.dividerLine)
+
+                // 开关：只留接收中会想调的两项，其余一次性配置放在设置页
+                SstvSwitchRow(
+                    title = "连续接收",
+                    summary = "收满一帧后保留模式与失谐量，自动接续下一帧（ISS 连发多张时用）",
+                    checked = uiState.continuous,
+                    onCheckedChange = { viewModel.setContinuous(it) },
+                )
+                SstvSwitchRow(
+                    title = "后处理",
+                    summary = "直方图拉伸 + 中值降噪 + 坏行修复，可在设置里分别开关",
+                    checked = uiState.postProcessEnabled,
+                    onCheckedChange = { viewModel.setPostProcessAll(it) },
+                )
+                SstvSwitchRow(
+                    title = "瀑布图",
+                    summary = "显示解调信号的频率-时间图，便于调谐与判断信号质量",
+                    checked = uiState.waterfallEnabled,
+                    onCheckedChange = { viewModel.setWaterfallEnabled(it) },
+                )
+
+                // 瀑布图只在开启时占位，避免卡片里留一块空白
+                if (uiState.waterfallEnabled) {
+                    HorizontalDivider(color = colorScheme.dividerLine)
+                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                         Text(
-                            "信号瀑布图",
-                            style = MiuixTheme.textStyles.title4,
+                            text = "信号瀑布图",
+                            style = MiuixTheme.textStyles.body1,
                             color = colorScheme.onBackground,
                         )
-                        Spacer(Modifier.height(4.dp))
+                        Spacer(Modifier.height(2.dp))
                         Text(
-                            "1200 Hz 冒青、1500 Hz 偏绿、2300 Hz 偏红。调谐时看那条同步线是否" +
+                            text = "1200 Hz 冒青、1500 Hz 偏绿、2300 Hz 偏红。调谐时看那条同步线是否" +
                                 "稳稳落在青色区；散成一片说明信噪比差。",
                             style = MiuixTheme.textStyles.footnote1,
                             color = colorScheme.onBackground,
@@ -316,7 +425,7 @@ fun SstvMainScreenMiuix(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(120.dp)
-                                .clip(RoundedCornerShape(6.dp))
+                                .clip(RoundedCornerShape(8.dp))
                                 .background(Color(0xFF101014)),
                             contentAlignment = Alignment.Center,
                         ) {
@@ -328,92 +437,69 @@ fun SstvMainScreenMiuix(
                                     modifier = Modifier.fillMaxSize(),
                                     // 不做插值：瀑布图是逐格数据，平滑会糊掉谱线粗细这一关键信息
                                     contentScale = ContentScale.FillBounds,
-                                    filterQuality = androidx.compose.ui.graphics.FilterQuality.None,
+                                    filterQuality = FilterQuality.None,
                                 )
                             } else {
                                 Text(
-                                    "开始接收后显示",
+                                    text = "开始接收后显示",
                                     style = MiuixTheme.textStyles.footnote1,
-                                    color = Color.White,
+                                    color = colorScheme.onBackground,
                                 )
                             }
                         }
                     }
                 }
 
-                Spacer(Modifier.height(12.dp))
-            }
+                HorizontalDivider(color = colorScheme.dividerLine)
 
-            // ── 控制按钮 ──
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = {
-                        if (uiState.isReceiving) {
-                            viewModel.stopReceiving()
-                        } else {
-                            val granted = ContextCompat.checkSelfPermission(
-                                context, Manifest.permission.RECORD_AUDIO,
-                            ) == PackageManager.PERMISSION_GRANTED
-                            if (granted) viewModel.startReceiving() else permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                // 接收明细：默认收起。单项 BasicComponent 排列的卡片本身就有分隔线，
+                // 这里再画一条只会得到两条相邻的线，因此收起态放在分隔线组里
+                BasicComponent(
+                    title = "接收明细",
+                    summary = "VIS 码、失谐补偿、行周期比、同步脉冲与噪声",
+                    endActions = {
+                        Text(
+                            text = if (detailsExpanded) "收起" else "展开",
+                            style = MiuixTheme.textStyles.body1,
+                            color = colorScheme.primary,
+                        )
+                    },
+                    onClick = { detailsExpanded = !detailsExpanded },
+                )
+                if (detailsExpanded) {
+                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        SstvInfoRow(
+                            "VIS 码",
+                            uiState.visCode?.let { "0x${it.toString(16).uppercase()}" } ?: "—",
+                        )
+                        SstvInfoRow("失谐补偿", "${uiState.hedrShiftHz.roundToInt()} Hz")
+                        SstvInfoRow("行周期比", "%.4f".format(uiState.slantRatio))
+                        SstvInfoRow("同步脉冲", "${uiState.syncPulseCount} 个")
+                        SstvInfoRow("接收进度", "${uiState.decodedLines} / ${uiState.totalLines} 行")
+                        if (uiState.phaseSpan > 0) {
+                            SstvInfoRow(
+                                "信号质量",
+                                "${uiState.qualityLabel}（${"%.0f".format(uiState.qualityDb)} dB，" +
+                                    "积分窗 ${uiState.phaseSpan} 样本）",
+                            )
                         }
-                    },
-                    modifier = Modifier.weight(1f),
-                    colors = if (uiState.isReceiving) {
-                        ButtonDefaults.buttonColors(
-                            color = Color.Transparent,
-                            contentColor = MiuixTheme.colorScheme.onSurfaceSecondary,
-                        )
-                    } else {
-                        ButtonDefaults.buttonColorsPrimary()
-                    },
-                ) {
-                    Text(if (uiState.isReceiving) "停止接收" else "开始接收")
-                }
-                Button(
-                    onClick = { importAudio.launch(arrayOf("audio/*", "application/octet-stream")) },
-                    modifier = Modifier.weight(1f),
-                    colors = if (uiState.importing) {
-                        ButtonDefaults.buttonColors(
-                            color = Color.Transparent,
-                            contentColor = MiuixTheme.colorScheme.onSurfaceSecondary,
-                        )
-                    } else {
-                        ButtonDefaults.buttonColorsPrimary()
-                    },
-                ) {
-                    Text(if (uiState.importing) "导入中…" else "导入录音")
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = { viewModel.saveCurrent() },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text(if (uiState.postProcessEnabled) "保存增强图" else "保存图像")
-                }
-                if (uiState.postProcessEnabled) {
-                    Button(
-                        onClick = { viewModel.saveRaw() },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text("保存原图")
+                        if (uiState.noiseHz > 0.0) {
+                            SstvInfoRow("频率噪声", "${"%.1f".format(uiState.noiseHz)} Hz")
+                        }
+                        if (uiState.continuous) {
+                            SstvInfoRow(
+                                "连续接收",
+                                "已完成 ${uiState.completedFrames} 帧（上限 ${uiState.maxFrames}）",
+                            )
+                        }
+                        uiState.savedFileName?.let { SstvInfoRow("已保存", it) }
                     }
                 }
-                Button(
-                    onClick = { viewModel.clearImage() },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("清空")
-                }
             }
 
-            Spacer(Modifier.height(12.dp))
-
-            // ── 盲扫候选（VIS 缺失时的兜底结果）──
+            // ── 盲扫候选（VIS 缺失时的兜底结果；没有结果就不占版面）──
             if (uiState.blindCandidates.isNotEmpty()) {
+                Spacer(Modifier.height(12.dp))
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text(
@@ -453,214 +539,11 @@ fun SstvMainScreenMiuix(
                                     colors = if (uiState.mode == candidate.mode) {
                                         ButtonDefaults.buttonColorsPrimary()
                                     } else {
-                                        ButtonDefaults.buttonColors(
-                                            color = Color.Transparent,
-                                            contentColor = MiuixTheme.colorScheme.onSurfaceSecondary,
-                                        )
+                                        ButtonDefaults.buttonColors()
                                     },
                                 ) {
                                     Text("重解")
                                 }
-                            }
-                        }
-                    }
-                }
-                Spacer(Modifier.height(12.dp))
-            }
-
-            // ── 接收参数与信号质量 ──
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text("接收参数", style = MiuixTheme.textStyles.title4, color = colorScheme.onBackground)
-                    Spacer(Modifier.height(8.dp))
-                    InfoRow("模式", uiState.mode?.displayName ?: "待识别")
-                    InfoRow(
-                        "VIS 码",
-                        uiState.visCode?.let { "0x${it.toString(16).uppercase()}" } ?: "—",
-                    )
-                    InfoRow("失谐补偿", "${uiState.hedrShiftHz.roundToInt()} Hz")
-                    InfoRow("行周期比", "%.4f".format(uiState.slantRatio))
-                    InfoRow("同步脉冲", "${uiState.syncPulseCount} 个")
-                    InfoRow("接收进度", "${uiState.decodedLines} / ${uiState.totalLines} 行")
-                    if (uiState.phaseSpan > 0) {
-                        InfoRow(
-                            "信号质量",
-                            "${uiState.qualityLabel}（${"%.0f".format(uiState.qualityDb)} dB，" +
-                                "积分窗 ${uiState.phaseSpan} 样本）",
-                        )
-                    }
-                    if (uiState.noiseHz > 0.0) {
-                        InfoRow("频率噪声", "${"%.1f".format(uiState.noiseHz)} Hz")
-                    }
-                    if (uiState.continuous) {
-                        InfoRow("连续接收", "已完成 ${uiState.completedFrames} 帧（上限 ${uiState.maxFrames}）")
-                    }
-                    uiState.savedFileName?.let { InfoRow("已保存", it) }
-                }
-            }
-
-            Spacer(Modifier.height(12.dp))
-
-            // ── 接收选项 ──
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text("接收选项", style = MiuixTheme.textStyles.title4, color = colorScheme.onBackground)
-                    Spacer(Modifier.height(6.dp))
-                    SwitchRow(
-                        title = "连续接收",
-                        summary = "收满一帧后保留模式与失谐量，自动接续下一帧（ISS 连发多张时用）",
-                        checked = uiState.continuous,
-                        onCheckedChange = { viewModel.setContinuous(it) },
-                    )
-                    SwitchRow(
-                        title = "后处理",
-                        summary = "直方图拉伸 + 中值降噪 + 坏行修复，可在设置里分别开关",
-                        checked = uiState.postProcessEnabled,
-                        onCheckedChange = { viewModel.setPostProcessAll(it) },
-                    )
-                    SwitchRow(
-                        title = "瀑布图",
-                        summary = "显示解调信号的频率-时间图，便于调谐与判断信号质量",
-                        checked = uiState.waterfallEnabled,
-                        onCheckedChange = { viewModel.setWaterfallEnabled(it) },
-                    )
-                    SwitchRow(
-                        title = "录制原始音频",
-                        summary = "把接收到的音频存成 WAV（带 VIS 头，可用「导入录音」重解；" +
-                            "一帧 PD-120 约 12 MB）",
-                        checked = uiState.recordAudio,
-                        onCheckedChange = { viewModel.setRecordAudio(it) },
-                    )
-                    SwitchRow(
-                        title = "像素级低通",
-                        summary = "零相位、截止于像素 Nyquist；慢模式（如 Scottie DX）降噪明显，" +
-                            "快模式基本无影响",
-                        checked = uiState.pixelNyquistFilter,
-                        onCheckedChange = { viewModel.setPixelNyquistFilter(it) },
-                    )
-
-                    Spacer(Modifier.height(8.dp))
-                    Text("音源", style = MiuixTheme.textStyles.body1, color = colorScheme.onBackground)
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        if (uiState.usesPlaybackCapture) {
-                            "播放捕获：解码其它应用正在播放的音频（Android 10+）"
-                        } else {
-                            "麦克风：手机对着电台扬声器；也可用音频线直连（更干净）"
-                        },
-                        style = MiuixTheme.textStyles.footnote1,
-                        color = colorScheme.onBackground,
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Button(
-                            onClick = { viewModel.useMicrophone() },
-                            modifier = Modifier.weight(1f),
-                            colors = if (!uiState.usesPlaybackCapture) {
-                                ButtonDefaults.buttonColorsPrimary()
-                            } else {
-                                ButtonDefaults.buttonColors(
-                                    color = Color.Transparent,
-                                    contentColor = MiuixTheme.colorScheme.onSurfaceSecondary,
-                                )
-                            },
-                        ) {
-                            Text("麦克风")
-                        }
-                        Button(
-                            onClick = {
-                                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-                                    viewModel.usePlaybackCapture(null)
-                                } else {
-                                    SstvCaptureService.start(context)
-                                    val manager = context
-                                        .getSystemService(Context.MEDIA_PROJECTION_SERVICE)
-                                        as? MediaProjectionManager
-                                    val intent = manager?.createScreenCaptureIntent()
-                                    if (intent != null) {
-                                        captureLauncher.launch(intent)
-                                    } else {
-                                        SstvCaptureService.stop(context)
-                                        viewModel.usePlaybackCapture(null)
-                                    }
-                                }
-                            },
-                            modifier = Modifier.weight(1f),
-                            colors = if (uiState.usesPlaybackCapture) {
-                                ButtonDefaults.buttonColorsPrimary()
-                            } else {
-                                ButtonDefaults.buttonColors(
-                                    color = Color.Transparent,
-                                    contentColor = MiuixTheme.colorScheme.onSurfaceSecondary,
-                                )
-                            },
-                        ) {
-                            Text("播放捕获")
-                        }
-                    }
-                    if (uiState.usesPlaybackCapture) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            "提示：先在其它应用里播放 SSTV 录音（或打开 WebSDR），再点「开始接收」。",
-                            style = MiuixTheme.textStyles.footnote1,
-                            color = colorScheme.primary,
-                        )
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(12.dp))
-
-            // ── 模式选择（VIS 失败时的兜底）──
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text("模式选择", style = MiuixTheme.textStyles.title4, color = colorScheme.onBackground)
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        if (uiState.presetApplied) {
-                            "当前为卫星预置模式，仅本次接收有效；选择任意模式即可取消"
-                        } else {
-                            "默认自动识别 VIS；弱信号下可手动锁定模式"
-                        },
-                        style = MiuixTheme.textStyles.body2,
-                        color = if (uiState.presetApplied) colorScheme.primary else colorScheme.onBackground,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Button(
-                            onClick = { viewModel.setManualMode(null) },
-                            colors = if (uiState.manualModeName == null) {
-                                ButtonDefaults.buttonColorsPrimary()
-                            } else {
-                                ButtonDefaults.buttonColors(
-                                    color = Color.Transparent,
-                                    contentColor = MiuixTheme.colorScheme.onSurfaceSecondary,
-                                )
-                            },
-                        ) {
-                            Text("自动")
-                        }
-                        SstvMode.DECODABLE_MODES.forEach { mode ->
-                            Button(
-                                onClick = { viewModel.setManualMode(mode) },
-                                colors = if (uiState.manualModeName == mode.name) {
-                                    ButtonDefaults.buttonColorsPrimary()
-                                } else {
-                                    ButtonDefaults.buttonColors(
-                                        color = Color.Transparent,
-                                        contentColor = MiuixTheme.colorScheme.onSurfaceSecondary,
-                                    )
-                                },
-                            ) {
-                                Text(mode.displayName)
                             }
                         }
                     }
@@ -672,33 +555,129 @@ fun SstvMainScreenMiuix(
     }
 }
 
-@Composable
-internal fun InfoRow(label: String, value: String) {
-    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-        Text(
-            text = label,
-            style = MiuixTheme.textStyles.body2,
-            color = colorScheme.onBackground,
-            modifier = Modifier.weight(1f),
-        )
-        Text(
-            text = value,
-            style = MiuixTheme.textStyles.body2,
-            color = colorScheme.onBackground,
-            modifier = Modifier.weight(1.4f),
-        )
+/**
+ * 发起「播放捕获」授权流程。
+ *
+ * 先起 mediaProjection 前台服务、再向系统要投影授权 —— 顺序不可颠倒，Android 14 起
+ * 要求调用 `getMediaProjection()` 时已有该类型的前台服务。Miuix / Material 两套共用。
+ */
+internal fun requestPlaybackCapture(
+    context: Context,
+    viewModel: SstvViewModel,
+    captureLauncher: ActivityResultLauncher<Intent>,
+) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+        viewModel.usePlaybackCapture(null)
+        return
+    }
+    SstvCaptureService.start(context)
+    val manager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as? MediaProjectionManager
+    val intent = manager?.createScreenCaptureIntent()
+    if (intent != null) {
+        captureLauncher.launch(intent)
+    } else {
+        SstvCaptureService.stop(context)
+        viewModel.usePlaybackCapture(null)
     }
 }
 
+/** 处理投影授权结果：成功则保存投影，失败则停掉前台服务并回退提示。 */
+internal fun handleCaptureResult(
+    context: Context,
+    viewModel: SstvViewModel,
+    resultCode: Int,
+    data: Intent?,
+) {
+    if (resultCode == Activity.RESULT_OK && data != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        val manager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as? MediaProjectionManager
+        val projection = manager?.let {
+            runCatching { it.getMediaProjection(resultCode, data) }.getOrNull()
+        }
+        viewModel.usePlaybackCapture(projection)
+        if (projection == null) SstvCaptureService.stop(context)
+    } else {
+        viewModel.usePlaybackCapture(null)
+        SstvCaptureService.stop(context)
+    }
+}
+
+/** 顶栏文字动作（发射 / 图库 / 设置）。 */
 @Composable
-internal fun SwitchRow(
+private fun TopBarAction(text: String, onClick: () -> Unit) {
+    Text(
+        text = text,
+        style = MiuixTheme.textStyles.body1,
+        color = colorScheme.primary,
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+    )
+}
+
+// ══════════════════════════════════════════════════════════════════
+// SSTV 页面共用的小组件（Miuix）
+// ══════════════════════════════════════════════════════════════════
+
+/**
+ * 图像预览区域：黑底 + 按模式宽高比。三处（主界面 / 发射 / 瀑布图以外的图像）共用。
+ *
+ * 传入的 `bitmap` 为 null 时显示 [placeholder]，字号小一号以免在窄屏上撑高画框。
+ */
+@Composable
+internal fun SstvPreview(
+    aspect: Float,
+    bitmap: android.graphics.Bitmap?,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .aspectRatio(aspect)
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color.Black),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap.asImageBitmap(),
+                contentDescription = "SSTV 图像",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Fit,
+            )
+        } else {
+            Text(
+                text = placeholder,
+                style = MiuixTheme.textStyles.footnote1,
+                color = Color.White,
+            )
+        }
+    }
+}
+
+/** 横向胶囊选择项：用于模式这类「多选一、数量多、不需要说明」的集合。 */
+@Composable
+internal fun SstvChip(text: String, selected: Boolean, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        colors = if (selected) ButtonDefaults.buttonColorsPrimary() else ButtonDefaults.buttonColors(),
+    ) {
+        Text(text)
+    }
+}
+
+/** 开关行：标题 + 说明 + 右侧开关（整行不响应点击，只有开关本身可点）。 */
+@Composable
+internal fun SstvSwitchRow(
     title: String,
     summary: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
@@ -708,4 +687,75 @@ internal fun SwitchRow(
         }
         Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
+}
+
+/**
+ * 单选行：整行可点，右侧显示「已选」。
+ *
+ * 不用 Miuix 的下拉/单选组件，是因为这里只有两个互斥选项（麦克风 / 播放捕获），
+ * 直接铺开比收进弹层更快 —— 用户切音源往往是临时起意。禁用态用于「播放捕获」
+ * 在 Android 10 以下不可用时。
+ */
+@Composable
+internal fun SstvRadioRow(
+    title: String,
+    summary: String,
+    selected: Boolean,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    BasicComponent(
+        title = title,
+        summary = summary,
+        titleColor = BasicComponentDefaults.titleColor(
+            color = if (!enabled) {
+                colorScheme.disabledOnSurface
+            } else if (selected) {
+                colorScheme.primary
+            } else {
+                colorScheme.onBackground
+            },
+        ),
+        onClick = if (enabled) onClick else null,
+        endActions = {
+            if (selected) {
+                Text("已选", style = MiuixTheme.textStyles.body1, color = colorScheme.primary)
+            }
+        },
+    )
+}
+
+/**
+ * 参数行：左标签右取值。
+ *
+ * 两列都允许换行（取值可能是文件名），但标签保持不收缩的观感 —— 用 1:1.6 的权重比例，
+ * 顺带让长文件名仍能完整显示。
+ */
+@Composable
+internal fun SstvInfoRow(label: String, value: String) {
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+        Text(
+            text = label,
+            style = MiuixTheme.textStyles.footnote1,
+            color = colorScheme.onBackground,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = value,
+            style = MiuixTheme.textStyles.footnote1,
+            color = colorScheme.onBackground,
+            modifier = Modifier.weight(1.6f),
+        )
+    }
+}
+
+/** 卡片内的小标题（与主页 / 设置页保持同一字号与边距）。 */
+@Composable
+internal fun SstvCardTitle(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text = text,
+        style = MiuixTheme.textStyles.title4,
+        color = colorScheme.onBackground,
+        modifier = modifier,
+    )
 }

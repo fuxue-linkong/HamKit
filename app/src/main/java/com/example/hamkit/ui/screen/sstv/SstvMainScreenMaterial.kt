@@ -1,10 +1,7 @@
 package com.example.hamkit.ui.screen.sstv
 
 import android.Manifest
-import android.app.Activity
-import android.content.Context
 import android.content.pm.PackageManager
-import android.media.projection.MediaProjectionManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -44,6 +41,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -55,10 +55,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.hamkit.data.sstv.SstvCaptureService
 import com.example.hamkit.data.sstv.SstvMode
 import com.example.hamkit.ui.appViewModel
-import com.example.hamkit.ui.component.material.SwitchItem
+import com.example.hamkit.ui.component.material.SegmentedColumn
+import com.example.hamkit.ui.component.material.SegmentedListItem
+import com.example.hamkit.ui.component.material.SegmentedRadioItem
+import com.example.hamkit.ui.component.material.SegmentedSwitchItem
 import com.example.hamkit.ui.navigation3.Route
 import com.example.hamkit.ui.viewmodel.SstvViewModel
 import kotlin.math.roundToInt
@@ -66,8 +68,9 @@ import kotlin.math.roundToInt
 /**
  * SSTV 接收主界面的 Material（Material 3）风格实现。
  *
- * 与 Miuix 版逐项对应：图像预览与进度、信号瀑布图、接收/导入控制、保存与清空、
- * 盲扫候选、接收参数与信号质量、接收选项、音源选择、模式选择。
+ * 与 Miuix 版逐项对应：预览与操作、接收设置（音源 / 模式 / 开关 / 瀑布图 / 明细）、
+ * 盲扫候选。版式规则也一致：明细默认收起、「保存原图」只在开启后处理时出现、
+ * 导入中禁用导入按钮。
  *
  * 前置逻辑（卫星预置、过境提醒直达、权限申请、录音导入、播放捕获）与 Miuix 版
  * 完全一致 —— 两套实现共享同一个 [SstvViewModel]，因此切换风格不会中断接收。
@@ -82,6 +85,8 @@ fun SstvMainScreenMaterial(
     val viewModel = appViewModel<SstvViewModel>()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    // 接收明细默认收起：常看的参数已放在预览卡的状态行里
+    var detailsExpanded by remember { mutableStateOf(false) }
 
     DisposableEffect(Unit) {
         onDispose { viewModel.clearPreset() }
@@ -120,21 +125,21 @@ fun SstvMainScreenMaterial(
     // 顺序不能颠倒 —— Android 14 起要求调用 getMediaProjection() 时已有该类型的前台服务
     val captureLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
-    ) { result ->
-        val data = result.data
-        if (result.resultCode == Activity.RESULT_OK && data != null &&
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
-        ) {
-            val manager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE)
-                as? MediaProjectionManager
-            val projection = manager?.let {
-                runCatching { it.getMediaProjection(result.resultCode, data) }.getOrNull()
-            }
-            viewModel.usePlaybackCapture(projection)
-            if (projection == null) SstvCaptureService.stop(context)
+    ) { result -> handleCaptureResult(context, viewModel, result.resultCode, result.data) }
+
+    /** 「开始/停止接收」：未授权时先弹系统授权。 */
+    fun toggleReceiving() {
+        if (uiState.isReceiving) {
+            viewModel.stopReceiving()
         } else {
-            viewModel.usePlaybackCapture(null)
-            SstvCaptureService.stop(context)
+            val granted = ContextCompat.checkSelfPermission(
+                context, Manifest.permission.RECORD_AUDIO,
+            ) == PackageManager.PERMISSION_GRANTED
+            if (granted) {
+                viewModel.startReceiving()
+            } else {
+                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            }
         }
     }
 
@@ -162,48 +167,50 @@ fun SstvMainScreenMaterial(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            // ── 图像预览 ──
+            // ── 卡 1：预览与操作 ──
             item {
-                SstvCard {
+                SstvCardMaterial {
                     val aspect = uiState.mode?.let { it.linePixels.toFloat() / it.imageLines } ?: (4f / 3f)
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(aspect)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color.Black),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        val bitmap = uiState.bitmap
-                        if (bitmap != null) {
-                            Image(
-                                bitmap = bitmap.asImageBitmap(),
-                                contentDescription = "SSTV 解码图像",
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Fit,
-                            )
-                        } else {
-                            Text(
-                                text = "等待信号…\n把手机扬声器侧贴近电台，音量适中",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = Color.White,
-                            )
-                        }
-                    }
+                    SstvPreviewMaterial(
+                        aspect = aspect,
+                        bitmap = uiState.bitmap,
+                        placeholder = "等待信号…\n把手机靠近电台，音量以不失真为准",
+                    )
 
                     Spacer(Modifier.height(12.dp))
+                    // 状态行：模式与信号质量常看，直接摆在进度条上方
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = uiState.mode?.displayName ?: "待识别",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            text = if (uiState.phaseSpan > 0) {
+                                "${uiState.qualityLabel} · ${"%.0f".format(uiState.qualityDb)} dB"
+                            } else {
+                                "信号 —"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
 
-                    val progress = uiState.progress.coerceIn(0f, 1f)
+                    Spacer(Modifier.height(8.dp))
                     LinearProgressIndicator(
-                        progress = { progress },
+                        progress = { uiState.progress.coerceIn(0f, 1f) },
                         modifier = Modifier.fillMaxWidth(),
                     )
 
                     Spacer(Modifier.height(8.dp))
                     Text(
                         text = uiState.status,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     uiState.importStatus?.let {
                         Spacer(Modifier.height(4.dp))
@@ -217,131 +224,278 @@ fun SstvMainScreenMaterial(
                         Spacer(Modifier.height(6.dp))
                         Text(
                             text = it,
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.error,
                         )
                     }
-                }
-            }
 
-            // ── 瀑布图（解调信号的频率-时间显示）──
-            if (uiState.waterfallEnabled) {
-                item {
-                    SstvCard {
-                        Text(
-                            text = "信号瀑布图",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = "1200 Hz 冒青、1500 Hz 偏绿、2300 Hz 偏红。调谐时看那条同步线是否" +
-                                "稳稳落在青色区；散成一片说明信噪比差。",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(120.dp)
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(Color(0xFF101014)),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            val scope = uiState.waterfall
-                            if (scope != null) {
-                                Image(
-                                    bitmap = scope.asImageBitmap(),
-                                    contentDescription = "信号瀑布图",
-                                    modifier = Modifier.fillMaxSize(),
-                                    // 不做插值：瀑布图是逐格数据，平滑会糊掉谱线粗细这一关键信息
-                                    contentScale = ContentScale.FillBounds,
-                                    filterQuality = FilterQuality.None,
-                                )
-                            } else {
-                                Text(
-                                    text = "开始接收后显示",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Color.White,
-                                )
-                            }
+                    // 主操作：开始/停止接收独占一行，其余两两一行
+                    Spacer(Modifier.height(12.dp))
+                    if (uiState.isReceiving) {
+                        OutlinedButton(onClick = { toggleReceiving() }, modifier = Modifier.fillMaxWidth()) {
+                            Text("停止接收")
+                        }
+                    } else {
+                        Button(onClick = { toggleReceiving() }, modifier = Modifier.fillMaxWidth()) {
+                            Text("开始接收")
                         }
                     }
-                }
-            }
-
-            // ── 控制按钮 ──
-            item {
-                Column {
+                    Spacer(Modifier.height(8.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Button(
-                            onClick = {
-                                if (uiState.isReceiving) {
-                                    viewModel.stopReceiving()
-                                } else {
-                                    val granted = ContextCompat.checkSelfPermission(
-                                        context, Manifest.permission.RECORD_AUDIO,
-                                    ) == PackageManager.PERMISSION_GRANTED
-                                    if (granted) {
-                                        viewModel.startReceiving()
-                                    } else {
-                                        permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                    }
-                                }
-                            },
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Text(if (uiState.isReceiving) "停止接收" else "开始接收")
-                        }
                         OutlinedButton(
-                            onClick = {
-                                importAudio.launch(arrayOf("audio/*", "application/octet-stream"))
-                            },
+                            onClick = { importAudio.launch(arrayOf("audio/*", "application/octet-stream")) },
                             modifier = Modifier.weight(1f),
+                            // 导入期间禁用而不是换配色：换配色仍可点，重复导入会被 ViewModel 静默忽略
                             enabled = !uiState.importing,
                         ) {
                             Text(if (uiState.importing) "导入中…" else "导入录音")
                         }
+                        OutlinedButton(onClick = { viewModel.saveCurrent() }, modifier = Modifier.weight(1f)) {
+                            Text(if (uiState.postProcessEnabled) "保存增强图" else "保存图像")
+                        }
                     }
-
                     Spacer(Modifier.height(8.dp))
-
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        OutlinedButton(
-                            onClick = { viewModel.saveCurrent() },
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Text(if (uiState.postProcessEnabled) "保存增强图" else "保存图像")
-                        }
+                        // 「保存原图」只在开着后处理时才有意义（否则与「保存图像」重复）
                         if (uiState.postProcessEnabled) {
-                            OutlinedButton(
-                                onClick = { viewModel.saveRaw() },
-                                modifier = Modifier.weight(1f),
-                            ) {
+                            OutlinedButton(onClick = { viewModel.saveRaw() }, modifier = Modifier.weight(1f)) {
                                 Text("保存原图")
                             }
                         }
-                        OutlinedButton(
-                            onClick = { viewModel.clearImage() },
-                            modifier = Modifier.weight(1f),
-                        ) {
+                        OutlinedButton(onClick = { viewModel.clearImage() }, modifier = Modifier.weight(1f)) {
                             Text("清空")
                         }
                     }
                 }
             }
 
-            // ── 盲扫候选（VIS 缺失时的兜底结果）──
+            // ── 卡 2：接收设置 ──
+            item {
+                Column {
+                    SstvCardMaterial(contentPadding = PaddingValues(vertical = 16.dp)) {
+                        Text(
+                            text = "接收设置",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        )
+                        Spacer(Modifier.height(8.dp))
+
+                        // 音源：两选一
+                        SegmentedColumn(
+                            title = "音源",
+                            content = buildList<@Composable () -> Unit> {
+                                add {
+                                    SegmentedRadioItem(
+                                        title = "麦克风",
+                                        summary = "手机对着电台扬声器；也可用音频线直连（更干净）",
+                                        selected = !uiState.usesPlaybackCapture,
+                                        onClick = { viewModel.useMicrophone() },
+                                    )
+                                }
+                                add {
+                                    SegmentedRadioItem(
+                                        title = "播放捕获",
+                                        summary = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                                            "需要 Android 10 及以上（可解码其它应用正在播放的音频）"
+                                        } else {
+                                            "解码其它应用正在播放的音频：先在别处播放录音或打开 WebSDR，再开始接收"
+                                        },
+                                        selected = uiState.usesPlaybackCapture,
+                                        enabled = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q,
+                                        onClick = {
+                                            requestPlaybackCapture(context, viewModel, captureLauncher)
+                                        },
+                                    )
+                                }
+                            },
+                        )
+
+                        Spacer(Modifier.height(16.dp))
+                        // 模式：横向胶囊，「自动」恒在首位
+                        Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                            Text(
+                                text = if (uiState.presetApplied) {
+                                    "卫星预置模式，仅本次有效；选择任意模式即可取消"
+                                } else {
+                                    "模式（默认自动识别 VIS）"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (uiState.presetApplied) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                FilterChip(
+                                    selected = uiState.manualModeName == null,
+                                    onClick = { viewModel.setManualMode(null) },
+                                    label = { Text("自动") },
+                                )
+                                SstvMode.DECODABLE_MODES.forEach { mode ->
+                                    FilterChip(
+                                        selected = uiState.manualModeName == mode.name,
+                                        onClick = { viewModel.setManualMode(mode) },
+                                        label = { Text(mode.displayName) },
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.height(16.dp))
+                        SegmentedColumn(
+                            title = "接收选项",
+                            content = listOf<@Composable () -> Unit>(
+                                {
+                                    SegmentedSwitchItem(
+                                        title = "连续接收",
+                                        summary = "收满一帧后保留模式与失谐量，自动接续下一帧（ISS 连发多张时用）",
+                                        checked = uiState.continuous,
+                                        onCheckedChange = { viewModel.setContinuous(it) },
+                                    )
+                                },
+                                {
+                                    SegmentedSwitchItem(
+                                        title = "后处理",
+                                        summary = "直方图拉伸 + 中值降噪 + 坏行修复，可在设置里分别开关",
+                                        checked = uiState.postProcessEnabled,
+                                        onCheckedChange = { viewModel.setPostProcessAll(it) },
+                                    )
+                                },
+                                {
+                                    SegmentedSwitchItem(
+                                        title = "瀑布图",
+                                        summary = "显示解调信号的频率-时间图，便于调谐与判断信号质量",
+                                        checked = uiState.waterfallEnabled,
+                                        onCheckedChange = { viewModel.setWaterfallEnabled(it) },
+                                    )
+                                },
+                            ),
+                        )
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+
+                    // 瀑布图只在开启时出现，避免卡片里留一块空白
+                    if (uiState.waterfallEnabled) {
+                        SstvCardMaterial {
+                            Text(
+                                text = "信号瀑布图",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = "1200 Hz 冒青、1500 Hz 偏绿、2300 Hz 偏红。调谐时看那条同步线是否" +
+                                    "稳稳落在青色区；散成一片说明信噪比差。",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(120.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xFF101014)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                val scope = uiState.waterfall
+                                if (scope != null) {
+                                    Image(
+                                        bitmap = scope.asImageBitmap(),
+                                        contentDescription = "信号瀑布图",
+                                        modifier = Modifier.fillMaxSize(),
+                                        // 不做插值：瀑布图是逐格数据，平滑会糊掉谱线粗细这一关键信息
+                                        contentScale = ContentScale.FillBounds,
+                                        filterQuality = FilterQuality.None,
+                                    )
+                                } else {
+                                    Text(
+                                        text = "开始接收后显示",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color.White,
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(16.dp))
+                    }
+
+                    // 接收明细：默认收起
+                    SstvCardMaterial(contentPadding = PaddingValues(vertical = 8.dp)) {
+                        SegmentedColumn(
+                            title = "接收明细",
+                            content = buildList<@Composable () -> Unit> {
+                                add {
+                                    SegmentedListItem(
+                                        onClick = { detailsExpanded = !detailsExpanded },
+                                        headlineContent = { Text("接收明细") },
+                                        supportingContent = {
+                                            Text("VIS 码、失谐补偿、行周期比、同步脉冲与噪声")
+                                        },
+                                        trailingContent = {
+                                            // 展开/收起用文字表达：省掉两个方向图标依赖，也更容易一眼看懂
+                                            Text(if (detailsExpanded) "收起" else "展开")
+                                        },
+                                    )
+                                }
+                            },
+                        )
+                        if (detailsExpanded) {
+                            Spacer(Modifier.height(8.dp))
+                            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                                SstvInfoRowMaterial(
+                                    "VIS 码",
+                                    uiState.visCode?.let { "0x${it.toString(16).uppercase()}" } ?: "—",
+                                )
+                                SstvInfoRowMaterial("失谐补偿", "${uiState.hedrShiftHz.roundToInt()} Hz")
+                                SstvInfoRowMaterial("行周期比", "%.4f".format(uiState.slantRatio))
+                                SstvInfoRowMaterial("同步脉冲", "${uiState.syncPulseCount} 个")
+                                SstvInfoRowMaterial(
+                                    "接收进度",
+                                    "${uiState.decodedLines} / ${uiState.totalLines} 行",
+                                )
+                                if (uiState.phaseSpan > 0) {
+                                    SstvInfoRowMaterial(
+                                        "信号质量",
+                                        "${uiState.qualityLabel}（${"%.0f".format(uiState.qualityDb)} dB，" +
+                                            "积分窗 ${uiState.phaseSpan} 样本）",
+                                    )
+                                }
+                                if (uiState.noiseHz > 0.0) {
+                                    SstvInfoRowMaterial("频率噪声", "${"%.1f".format(uiState.noiseHz)} Hz")
+                                }
+                                if (uiState.continuous) {
+                                    SstvInfoRowMaterial(
+                                        "连续接收",
+                                        "已完成 ${uiState.completedFrames} 帧（上限 ${uiState.maxFrames}）",
+                                    )
+                                }
+                                uiState.savedFileName?.let { SstvInfoRowMaterial("已保存", it) }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── 盲扫候选（VIS 缺失时的兜底结果；没有结果就不占版面）──
             if (uiState.blindCandidates.isNotEmpty()) {
                 item {
-                    SstvCard {
+                    SstvCardMaterial {
                         Text(
                             text = "盲扫候选",
                             style = MaterialTheme.typography.titleMedium,
@@ -394,254 +548,75 @@ fun SstvMainScreenMaterial(
                     }
                 }
             }
-
-            // ── 接收参数与信号质量 ──
-            item {
-                SstvCard {
-                    Text(
-                        text = "接收参数",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    SstvInfoRow("模式", uiState.mode?.displayName ?: "待识别")
-                    SstvInfoRow(
-                        "VIS 码",
-                        uiState.visCode?.let { "0x${it.toString(16).uppercase()}" } ?: "—",
-                    )
-                    SstvInfoRow("失谐补偿", "${uiState.hedrShiftHz.roundToInt()} Hz")
-                    SstvInfoRow("行周期比", "%.4f".format(uiState.slantRatio))
-                    SstvInfoRow("同步脉冲", "${uiState.syncPulseCount} 个")
-                    SstvInfoRow("接收进度", "${uiState.decodedLines} / ${uiState.totalLines} 行")
-                    if (uiState.phaseSpan > 0) {
-                        SstvInfoRow(
-                            "信号质量",
-                            "${uiState.qualityLabel}（${"%.0f".format(uiState.qualityDb)} dB，" +
-                                "积分窗 ${uiState.phaseSpan} 样本）",
-                        )
-                    }
-                    if (uiState.noiseHz > 0.0) {
-                        SstvInfoRow("频率噪声", "${"%.1f".format(uiState.noiseHz)} Hz")
-                    }
-                    if (uiState.continuous) {
-                        SstvInfoRow(
-                            "连续接收",
-                            "已完成 ${uiState.completedFrames} 帧（上限 ${uiState.maxFrames}）",
-                        )
-                    }
-                    uiState.savedFileName?.let { SstvInfoRow("已保存", it) }
-                }
-            }
-
-            // ── 接收选项 ──
-            item {
-                SstvCard {
-                    Text(
-                        text = "接收选项",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    SwitchItem(
-                        title = "连续接收",
-                        summary = "收满一帧后保留模式与失谐量，自动接续下一帧（ISS 连发多张时用）",
-                        checked = uiState.continuous,
-                        onCheckedChange = { viewModel.setContinuous(it) },
-                    )
-                    SwitchItem(
-                        title = "后处理",
-                        summary = "直方图拉伸 + 中值降噪 + 坏行修复，可在设置里分别开关",
-                        checked = uiState.postProcessEnabled,
-                        onCheckedChange = { viewModel.setPostProcessAll(it) },
-                    )
-                    SwitchItem(
-                        title = "瀑布图",
-                        summary = "显示解调信号的频率-时间图，便于调谐与判断信号质量",
-                        checked = uiState.waterfallEnabled,
-                        onCheckedChange = { viewModel.setWaterfallEnabled(it) },
-                    )
-                    SwitchItem(
-                        title = "录制原始音频",
-                        summary = "把接收到的音频存成 WAV（带 VIS 头，可用「导入录音」重解；" +
-                            "一帧 PD-120 约 12 MB）",
-                        checked = uiState.recordAudio,
-                        onCheckedChange = { viewModel.setRecordAudio(it) },
-                    )
-                    SwitchItem(
-                        title = "像素级低通",
-                        summary = "零相位、截止于像素 Nyquist；慢模式（如 Scottie DX）降噪明显，" +
-                            "快模式基本无影响",
-                        checked = uiState.pixelNyquistFilter,
-                        onCheckedChange = { viewModel.setPixelNyquistFilter(it) },
-                    )
-
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        text = "音源",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = if (uiState.usesPlaybackCapture) {
-                            "播放捕获：解码其它应用正在播放的音频（Android 10+）"
-                        } else {
-                            "麦克风：手机对着电台扬声器；也可用音频线直连（更干净）"
-                        },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        if (!uiState.usesPlaybackCapture) {
-                            Button(
-                                onClick = { viewModel.useMicrophone() },
-                                modifier = Modifier.weight(1f),
-                            ) {
-                                Text("麦克风")
-                            }
-                        } else {
-                            OutlinedButton(
-                                onClick = { viewModel.useMicrophone() },
-                                modifier = Modifier.weight(1f),
-                            ) {
-                                Text("麦克风")
-                            }
-                        }
-                        if (uiState.usesPlaybackCapture) {
-                            Button(
-                                onClick = { requestPlaybackCapture(context, viewModel, captureLauncher) },
-                                modifier = Modifier.weight(1f),
-                            ) {
-                                Text("播放捕获")
-                            }
-                        } else {
-                            OutlinedButton(
-                                onClick = { requestPlaybackCapture(context, viewModel, captureLauncher) },
-                                modifier = Modifier.weight(1f),
-                            ) {
-                                Text("播放捕获")
-                            }
-                        }
-                    }
-                    if (uiState.usesPlaybackCapture) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = "提示：先在其它应用里播放 SSTV 录音（或打开 WebSDR），再点「开始接收」。",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                }
-            }
-
-            // ── 模式选择（VIS 失败时的兜底）──
-            item {
-                SstvCard {
-                    Text(
-                        text = "模式选择",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = if (uiState.presetApplied) {
-                            "当前为卫星预置模式，仅本次接收有效；选择任意模式即可取消"
-                        } else {
-                            "默认自动识别 VIS；弱信号下可手动锁定模式"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (uiState.presetApplied) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        FilterChip(
-                            selected = uiState.manualModeName == null,
-                            onClick = { viewModel.setManualMode(null) },
-                            label = { Text("自动") },
-                        )
-                        SstvMode.DECODABLE_MODES.forEach { mode ->
-                            FilterChip(
-                                selected = uiState.manualModeName == mode.name,
-                                onClick = { viewModel.setManualMode(mode) },
-                                label = { Text(mode.displayName) },
-                            )
-                        }
-                    }
-                }
-            }
         }
     }
 }
 
-/**
- * 发起「播放捕获」授权流程。
- *
- * 与 Miuix 版同一段逻辑，抽成函数只是为了在 Material 版里两个按钮分支中复用：
- * 先起前台服务，再向系统要投影授权（顺序不可颠倒，见 Android 14 的前台服务要求）。
- */
-private fun requestPlaybackCapture(
-    context: Context,
-    viewModel: SstvViewModel,
-    captureLauncher: androidx.activity.result.ActivityResultLauncher<android.content.Intent>,
+/** 图像预览区域（Material 版）：黑底 + 按模式宽高比。 */
+@Composable
+private fun SstvPreviewMaterial(
+    aspect: Float,
+    bitmap: android.graphics.Bitmap?,
+    placeholder: String,
 ) {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-        viewModel.usePlaybackCapture(null)
-        return
-    }
-    SstvCaptureService.start(context)
-    val manager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as? MediaProjectionManager
-    val intent = manager?.createScreenCaptureIntent()
-    if (intent != null) {
-        captureLauncher.launch(intent)
-    } else {
-        SstvCaptureService.stop(context)
-        viewModel.usePlaybackCapture(null)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(aspect)
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color.Black),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap.asImageBitmap(),
+                contentDescription = "SSTV 图像",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Fit,
+            )
+        } else {
+            Text(
+                text = placeholder,
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.White,
+            )
+        }
     }
 }
 
-/** 统一的卡片外壳：Material 版所有分区都用同一套底色与圆角。 */
+/** 统一的卡片外壳：Material 版 SSTV 各页的所有分区都用同一套底色与圆角。 */
 @Composable
-private fun SstvCard(content: @Composable () -> Unit) {
+internal fun SstvCardMaterial(
+    contentPadding: PaddingValues = PaddingValues(16.dp),
+    content: @Composable () -> Unit,
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(contentPadding)) {
             content()
         }
     }
 }
 
-/** 参数行（Material 版）：左标签右取值，标签 1 份宽、取值 1.4 份宽。 */
+/** 参数行（Material 版）：左标签右取值，标签 1 份宽、取值 1.6 份宽（与 Miuix 版一致）。 */
 @Composable
-private fun SstvInfoRow(label: String, value: String) {
+private fun SstvInfoRowMaterial(label: String, value: String) {
     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
         Text(
             text = label,
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f),
         )
         Text(
             text = value,
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1.4f),
+            modifier = Modifier.weight(1.6f),
         )
     }
 }

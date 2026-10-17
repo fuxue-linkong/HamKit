@@ -135,13 +135,13 @@ fun HfFaxScreenMiuix(
                 Column(modifier = Modifier.padding(12.dp)) {
                     Text(uiState.status, style = MiuixTheme.textStyles.body1, color = colorScheme.onBackground)
                     Spacer(Modifier.height(6.dp))
-                    InfoRow("已接收", "${uiState.decodedLines} / ${uiState.maxLines} 行")
-                    InfoRow("行速率", "120 行/分（每行 0.5 秒）")
-                    InfoRow(
+                    SstvInfoRow("已接收", "${uiState.decodedLines} / ${uiState.maxLines} 行")
+                    SstvInfoRow("行速率", "120 行/分（每行 0.5 秒）")
+                    SstvInfoRow(
                         "白边对齐",
                         if (uiState.aligned) "已对齐（循环移位 ${uiState.shiftPixels} 列）" else "统计中…",
                     )
-                    InfoRow(
+                    SstvInfoRow(
                         "启动音",
                         when {
                             uiState.startToneDetected -> "已检测到（等待图像开始）"
@@ -149,8 +149,8 @@ fun HfFaxScreenMiuix(
                             else -> "已越过"
                         },
                     )
-                    uiState.measuredOffsetHz?.let { InfoRow("频偏估计", "${"%.0f".format(it)} Hz") }
-                    uiState.savedFileName?.let { InfoRow("已保存", it) }
+                    uiState.measuredOffsetHz?.let { SstvInfoRow("频偏估计", "${"%.0f".format(it)} Hz") }
+                    uiState.savedFileName?.let { SstvInfoRow("已保存", it) }
                     uiState.error?.let {
                         Spacer(Modifier.height(6.dp))
                         Text(it, style = MiuixTheme.textStyles.body2, color = Color(0xFFD9534F))
@@ -296,19 +296,19 @@ fun HfFaxScreenMiuix(
                         color = colorScheme.onBackground,
                     )
                     Spacer(Modifier.height(6.dp))
-                    SwitchRow(
+                    SstvSwitchRow(
                         title = "直方图拉伸",
                         summary = "把实际亮度范围拉满，改善灰蒙蒙的底图",
                         checked = uiState.postProcess.histogramStretch,
                         onCheckedChange = { viewModel.setHistogramStretch(it) },
                     )
-                    SwitchRow(
+                    SstvSwitchRow(
                         title = "中值降噪",
                         summary = "3×3 中值滤波去脉冲噪点（对传真图常见的细颗粒噪声有效）",
                         checked = uiState.postProcess.medianFilter,
                         onCheckedChange = { viewModel.setMedianFilter(it) },
                     )
-                    SwitchRow(
+                    SstvSwitchRow(
                         title = "坏行修复",
                         summary = "用上下相邻行插值补上丢失的整行",
                         checked = uiState.postProcess.repairBadLines,

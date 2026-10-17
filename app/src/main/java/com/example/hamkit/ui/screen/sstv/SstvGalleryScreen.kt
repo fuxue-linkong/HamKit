@@ -49,6 +49,9 @@ import com.example.hamkit.ui.LocalUiMode
 import com.example.hamkit.ui.UiMode
 import com.example.hamkit.ui.appViewModel
 import com.example.hamkit.ui.viewmodel.SstvViewModel
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
@@ -61,9 +64,6 @@ import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.window.WindowDialog
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
  * SSTV 图库：浏览、全屏查看、删除、分享、导出到相册。
@@ -158,13 +158,13 @@ fun SstvGalleryScreenMiuix(
                     text = if (uiState.gallery.isEmpty()) {
                         "还没有解码历史。接收或导入一段录音后，图像会自动出现在这里。"
                     } else {
-                        "共 ${uiState.gallery.size} 张 · ${formatBytes(uiState.galleryBytes)}" +
-                            "（应用私有目录，可分享或导出到相册）"
+                        "共 ${uiState.gallery.size} 张 · ${formatBytes(uiState.galleryBytes)}"
                     },
                     style = MiuixTheme.textStyles.body2,
                     color = colorScheme.onBackground,
                 )
-                uiState.status.takeIf { it.isNotBlank() }?.let {
+                // 最近一次操作结果（已保存 / 已删除…）只在有图时显示一行，避免常态占位
+                uiState.status.takeIf { uiState.gallery.isNotEmpty() && it.isNotBlank() }?.let {
                     Spacer(Modifier.height(4.dp))
                     Text(it, style = MiuixTheme.textStyles.footnote1, color = colorScheme.primary)
                 }
@@ -225,11 +225,12 @@ fun SstvGalleryScreenMiuix(
                                 )
                             }
                             Spacer(Modifier.height(6.dp))
+                            // 清空录音不可撤销：文案直接标成错误色，提醒这是破坏性操作
                             Button(
                                 onClick = { viewModel.clearRecordings() },
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
-                                Text("清空全部录音")
+                                Text("清空全部录音", color = colorScheme.error)
                             }
                         }
                     }
@@ -240,7 +241,7 @@ fun SstvGalleryScreenMiuix(
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text(
-                                "提示",
+                                "空图库",
                                 style = MiuixTheme.textStyles.title4,
                                 color = colorScheme.onBackground,
                             )
@@ -369,7 +370,7 @@ fun SstvGalleryScreenMiuix(
     }
 }
 
-/** 网格中的一格：缩略图 + 模式名 + 时间 + 增强标记。 */
+/** 网格中的一格：缩略图（右上角带删除）+ 模式名 + 时间 + 增强标记。 */
 @Composable
 private fun GalleryTile(
     entry: SstvImageStore.Entry,
@@ -383,27 +384,41 @@ private fun GalleryTile(
             .clickable(onClick = onClick),
     ) {
         Column(modifier = Modifier.padding(6.dp)) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(4f / 3f)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(Color(0x22000000)),
-                contentAlignment = Alignment.Center,
-            ) {
-                val bitmap = thumbnail
-                if (bitmap != null) {
-                    Image(
-                        bitmap = bitmap.asImageBitmap(),
-                        contentDescription = entry.modeName,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                    )
-                } else {
-                    Text(
-                        "载入中",
-                        style = MiuixTheme.textStyles.footnote1,
-                        color = colorScheme.onBackground,
+            // 删除按钮要盖在缩略图上，因此两者放进同一个 Box（右上角对齐）
+            Box {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(4f / 3f)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0x22000000)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    val bitmap = thumbnail
+                    if (bitmap != null) {
+                        Image(
+                            bitmap = bitmap.asImageBitmap(),
+                            contentDescription = entry.modeName,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+                    } else {
+                        Text(
+                            "载入中",
+                            style = MiuixTheme.textStyles.footnote1,
+                            color = colorScheme.onBackground,
+                        )
+                    }
+                }
+                // 删除放在缩略图右上角：原来每个格子底部都挂一个「删除」按钮，
+                // 三列网格下会把卡片撑高一截，且误触概率明显更高
+                if (onDelete != null) {
+                    TextButton(
+                        text = "删除",
+                        onClick = onDelete,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(2.dp),
                     )
                 }
             }
@@ -418,14 +433,6 @@ private fun GalleryTile(
                 style = MiuixTheme.textStyles.footnote1,
                 color = colorScheme.primary,
             )
-            if (onDelete != null) {
-                Spacer(Modifier.height(2.dp))
-                TextButton(
-                    text = "删除",
-                    onClick = onDelete,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
         }
     }
 }

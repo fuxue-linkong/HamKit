@@ -2,19 +2,15 @@ package com.example.hamkit.ui.screen.sstv
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.add
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,7 +19,6 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -31,12 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -50,7 +40,10 @@ import com.example.hamkit.ui.viewmodel.SstvViewModel
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.CardDefaults
+import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.LinearProgressIndicator
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
@@ -75,6 +68,10 @@ import top.yukonga.miuix.kmp.utils.scrollEndHaptic
  *
  * **合规**：SSTV 发射意味着电台要上电发射，必须持有相应操作资格并遵守《无线电管理
  * 条例》。因此本页默认不自动开始，且显著位置给出提示（与 FT8CN 的免责声明同一思路）。
+ *
+ * **版式（2026-10 整理）**：原来的四张卡（合规提示 / 图像 / 参数 / 控制）按「先看结果、
+ * 再设参数、最后动手」重排为三张：图像与控制合并（选完图紧接着就是发射按钮）、
+ * 参数独立、合规提示是静态长文本，挪到最下方并用错误色卡片强调。
  *
  * @param onNavigate 路由跳转（用于跳到图库选图）
  */
@@ -151,64 +148,33 @@ fun SstvTxScreenMiuix(
                 .scrollEndHaptic()
                 .padding(horizontal = 12.dp),
         ) {
-            Spacer(Modifier.height(8.dp))
-
-            // ── 合规提示（放在最上方，进入页面第一眼就能看到）──
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text(
-                        "发射前请确认",
-                        style = MiuixTheme.textStyles.title4,
-                        color = Color(0xFFD9534F),
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "• SSTV 发射会让电台实际发信，须持有相应操作资格并遵守当地无线电管理规定\n" +
-                            "• 请确认所用频率无人占用，功率与带宽符合执照许可\n" +
-                            "• 未持照时请只使用「导出 WAV」，用于本地自测或演示",
-                        style = MiuixTheme.textStyles.body2,
-                        color = colorScheme.onBackground,
-                    )
-                }
-            }
-
             Spacer(Modifier.height(12.dp))
 
-            // ── 图像预览 ──
+            // ── 卡 1：图像与发射控制 ──
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(12.dp)) {
-                    Text("待发射图像", style = MiuixTheme.textStyles.title4, color = colorScheme.onBackground)
-                    Spacer(Modifier.height(8.dp))
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(mode.linePixels.toFloat() / mode.imageLines)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color.Black),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        val preview = uiState.txPreview
-                        if (preview != null) {
-                            Image(
-                                bitmap = preview.asImageBitmap(),
-                                contentDescription = "待发射图像",
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Fit,
-                            )
-                        } else {
-                            Text(
-                                "尚未选择图片",
-                                style = MiuixTheme.textStyles.body1,
-                                color = Color.White,
-                            )
-                        }
-                    }
+                    SstvPreview(
+                        aspect = mode.linePixels.toFloat() / mode.imageLines,
+                        bitmap = uiState.txPreview,
+                        placeholder = "尚未选择图片",
+                    )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        uiState.txStatus,
-                        style = MiuixTheme.textStyles.body2,
+                        text = uiState.txStatus,
+                        style = MiuixTheme.textStyles.footnote1,
                         color = colorScheme.onBackground,
                     )
+                    // 一句说完「发什么、发多久」：源文件名 + 模式分辨率 + 单帧时长
+                    Text(
+                        text = listOfNotNull(
+                            uiState.txSourceLabel,
+                            "$mode ${mode.linePixels}×${mode.imageLines}",
+                            "单帧 ${"%.0f".format(scriptSeconds)} 秒（含 0.91 秒 VIS 头）",
+                        ).joinToString(" · "),
+                        style = MiuixTheme.textStyles.footnote1,
+                        color = colorScheme.primary,
+                    )
+
                     Spacer(Modifier.height(8.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -218,29 +184,69 @@ fun SstvTxScreenMiuix(
                             onClick = { pickImage.launch(arrayOf("image/*")) },
                             modifier = Modifier.weight(1f),
                         ) {
-                            Text("从相册选图")
+                            Text("相册选图")
                         }
                         Button(
                             onClick = { onNavigate(Route.SstvGallery(pickForTx = true)) },
                             modifier = Modifier.weight(1f),
                         ) {
-                            Text("从图库选图")
+                            Text("图库选图")
                         }
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+                    HorizontalDivider(color = colorScheme.dividerLine)
+                    Spacer(Modifier.height(12.dp))
+
+                    LinearProgressIndicator(
+                        progress = uiState.txProgress.coerceIn(0f, 1f),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "进度 ${(uiState.txProgress.coerceIn(0f, 1f) * 100).toInt()}%",
+                        style = MiuixTheme.textStyles.footnote1,
+                        color = colorScheme.onBackground,
+                    )
+
+                    // 主操作：开始/停止独占一行，导出 WAV 次之
+                    Spacer(Modifier.height(10.dp))
+                    Button(
+                        onClick = { if (uiState.txPlaying) viewModel.stopTx() else viewModel.startTx() },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = if (uiState.txPlaying) {
+                            ButtonDefaults.buttonColors()
+                        } else {
+                            ButtonDefaults.buttonColorsPrimary()
+                        },
+                    ) {
+                        Text(if (uiState.txPlaying) "停止发射" else "开始发射")
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            createWav.launch(
+                                "SSTV_${mode.displayName.replace(' ', '_')}_" +
+                                    System.currentTimeMillis().toString().takeLast(6) + ".wav",
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("导出 WAV")
                     }
                 }
             }
 
             Spacer(Modifier.height(12.dp))
 
-            // ── 发射参数 ──
+            // ── 卡 2：发射参数 ──
             Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text("发射参数", style = MiuixTheme.textStyles.title4, color = colorScheme.onBackground)
-                    Spacer(Modifier.height(4.dp))
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                    SstvCardTitle("发射参数")
+                    Spacer(Modifier.height(8.dp))
                     Text(
-                        "单帧时长 ${"%.0f".format(scriptSeconds)} 秒（含 0.91 秒 VIS 头）" +
-                            " · 分辨率 ${mode.linePixels}×${mode.imageLines}",
-                        style = MiuixTheme.textStyles.body2,
+                        "模式",
+                        style = MiuixTheme.textStyles.footnote1,
                         color = colorScheme.onBackground,
                     )
                     Spacer(Modifier.height(8.dp))
@@ -248,120 +254,66 @@ fun SstvTxScreenMiuix(
                         modifier = Modifier
                             .fillMaxWidth()
                             .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         SstvMode.DECODABLE_MODES.forEach { candidate ->
-                            Button(
-                                onClick = { viewModel.setTxMode(candidate) },
-                                colors = if (uiState.txModeName == candidate.name) {
-                                    ButtonDefaults.buttonColorsPrimary()
-                                } else {
-                                    ButtonDefaults.buttonColors(
-                                        color = Color.Transparent,
-                                        contentColor = MiuixTheme.colorScheme.onSurfaceSecondary,
-                                    )
-                                },
-                            ) {
-                                Text(candidate.displayName)
+                            SstvChip(candidate.displayName, uiState.txModeName == candidate.name) {
+                                viewModel.setTxMode(candidate)
                             }
                         }
                     }
-                    Spacer(Modifier.height(8.dp))
-                    SwitchRow(
-                        title = "包含 VIS 头",
-                        summary = "关闭后对方需手动锁定模式；只有自测时才建议关闭",
-                        checked = uiState.txIncludeVis,
-                        onCheckedChange = { viewModel.setTxIncludeVis(it) },
+                }
+
+                HorizontalDivider(color = colorScheme.dividerLine)
+
+                SstvSwitchRow(
+                    title = "包含 VIS 头",
+                    summary = "关闭后对方需手动锁定模式；只有自测时才建议关闭",
+                    checked = uiState.txIncludeVis,
+                    onCheckedChange = { viewModel.setTxIncludeVis(it) },
+                )
+                SstvSwitchRow(
+                    title = "叠加呼号",
+                    summary = "在右下角写上前缀/呼号，便于对方确认来源",
+                    checked = uiState.txOverlayCallsign,
+                    onCheckedChange = { viewModel.setTxOverlayCallsign(it) },
+                )
+                if (uiState.txOverlayCallsign) {
+                    TextField(
+                        value = uiState.callsign,
+                        onValueChange = { viewModel.setCallsign(it) },
+                        label = "呼号（如 BG5XXX）",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
                     )
-                    SwitchRow(
-                        title = "叠加呼号",
-                        summary = "在右下角写上前缀/呼号，便于对方确认来源",
-                        checked = uiState.txOverlayCallsign,
-                        onCheckedChange = { viewModel.setTxOverlayCallsign(it) },
-                    )
-                    if (uiState.txOverlayCallsign) {
-                        Spacer(Modifier.height(6.dp))
-                        TextField(
-                            value = uiState.callsign,
-                            onValueChange = { viewModel.setCallsign(it) },
-                            label = "呼号（如 BG5XXX）",
-                            modifier = Modifier.fillMaxWidth(),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
-                        )
-                    }
                 }
             }
 
             Spacer(Modifier.height(12.dp))
 
-            // ── 发射控制 ──
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text("发射", style = MiuixTheme.textStyles.title4, color = colorScheme.onBackground)
-                    Spacer(Modifier.height(8.dp))
-
-                    // 进度条（与接收页同样的两段 Box 实现）
-                    val progress = uiState.txProgress.coerceIn(0f, 1f)
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(6.dp)
-                            .clip(RoundedCornerShape(3.dp))
-                            .background(Color(0x33000000)),
-                    ) {
-                        if (progress > 0f) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth(progress)
-                                    .height(6.dp)
-                                    .background(colorScheme.primary),
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
+            // ── 卡 3：合规与操作要点（静态文字，放在最下方不挡主流程）──
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.defaultColors(color = colorScheme.errorContainer),
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        "进度 ${(progress * 100).toInt()}%",
-                        style = MiuixTheme.textStyles.body2,
-                        color = colorScheme.onBackground,
+                        "发射前请确认",
+                        style = MiuixTheme.textStyles.title4,
+                        color = colorScheme.onErrorContainer,
                     )
-                    Spacer(Modifier.height(10.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Button(
-                            onClick = { if (uiState.txPlaying) viewModel.stopTx() else viewModel.startTx() },
-                            modifier = Modifier.weight(1f),
-                            colors = if (uiState.txPlaying) {
-                                ButtonDefaults.buttonColors(
-                                    color = Color.Transparent,
-                                    contentColor = MiuixTheme.colorScheme.onSurfaceSecondary,
-                                )
-                            } else {
-                                ButtonDefaults.buttonColorsPrimary()
-                            },
-                        ) {
-                            Text(if (uiState.txPlaying) "停止发射" else "开始发射")
-                        }
-                        Button(
-                            onClick = {
-                                createWav.launch(
-                                    "SSTV_${mode.displayName.replace(' ', '_')}_" +
-                                        System.currentTimeMillis().toString().takeLast(6) + ".wav",
-                                )
-                            },
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Text("导出 WAV")
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(6.dp))
                     Text(
-                        "• 直接播放：手机扬声器对准电台话筒，音量以不失真为准\n" +
+                        "• SSTV 发射会让电台实际发信，须持有相应操作资格并遵守当地无线电管理规定\n" +
+                            "• 请确认所用频率无人占用，功率与带宽符合执照许可\n" +
+                            "• 未持照时请只使用「导出 WAV」，用于本地自测或演示\n" +
+                            "• 直接播放：手机扬声器对准电台话筒，音量以不失真为准\n" +
                             "• 导出 WAV：用音频线接电台 LINE IN / 数据口，能显著改善对方收到的画质\n" +
                             "• 最长模式单帧接近 5 分钟，发射期间请保持屏幕唤醒",
                         style = MiuixTheme.textStyles.footnote1,
-                        color = colorScheme.onBackground,
+                        color = colorScheme.onErrorContainer,
                     )
                 }
             }

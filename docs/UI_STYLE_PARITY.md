@@ -126,3 +126,65 @@ SSTV、HF Fax、APRS、FT8、QSO 日志、提醒列表。
 - [ ] 两套实现的按钮、开关、列表项、对话框一一对应，行为等价
 - [ ] `:app:compileDebugKotlin` 通过
 - [ ] 若要真机确认：在设置里切换「界面风格」，逐页翻一遍两种风格
+
+## 七、SSTV 界面整理（2026-10）
+
+> 范围：`ui/screen/sstv/` 下 SSTV 的主界面、设置页、发射页（图库另有一处局部调整）。
+
+### 起点问题
+
+| 问题 | 表现 |
+|---|---|
+| 卡片过多 | 主界面 5 张卡、设置页 5 张卡、发射页 4 张卡，一屏只能看到一两组内容 |
+| 参数占版面 | 「接收参数」一次列 10 行，其中 VIS/失谐/行周期比是调试参数，日常不需要 |
+| 设置项重复 | 「连续接收」在主界面与设置页各有一个开关；「后处理」是设置页三个子项的**全选**，语义与细项重复 |
+| 冗余操作 | 「清空图库」同时存在于设置页与图库页；图库格子里每格挂一个「删除」文字按钮 |
+| 组件不统一 | 模式选择用了三种形态（Miuix 一排按钮 / Material FilterChip / 设置页一列按钮）；文字按钮、说明文字、参数行的样式各写各的 |
+
+### 整理后的结构
+
+**主界面**（`SstvMainScreen`）：预览卡 + 接收设置卡 + 按需出现的盲扫卡。
+
+- 预览卡：画框 → 「模式 + 信号质量」状态行 → 进度条 → 状态文案 → 按钮组。
+  主操作（开始/停止接收）独占一行，其余两两一行；「保存原图」只在开启后处理时出现。
+- 接收设置卡：音源（二选一单选行）→ 模式（横向胶囊，「自动」恒在首位）→
+  开关（连续接收 / 后处理 / 瀑布图）→ 瀑布图（仅在开启时占位）→ 接收明细（**默认收起**，
+  常看的模式与质量已提升到预览卡）。
+
+**设置页**（`SstvSettingsScreen`）：接收行为 / 图像后处理 / 模式锁定 / 图库与发射 / 使用提示。
+
+- 去掉了与主界面重复的「连续接收」「后处理」总开关，只保留细项；
+  「最大帧数」改为「连续接收上限」下拉，在 Miuix 版与 Material 版都是下拉（不再一边按钮一边分段列表）。
+- 「图库与发射」由四个大按钮改为可点行（Miuix `ArrowPreference` / Material `SegmentedListItem`），
+  删除「清空图库」以外的重复入口；清空图库仅保留在设置页，主界面不再有。
+- 各分区统一「标题 + 说明 + 设置行」的结构，标题样式与全局设置页一致。
+
+**发射页**（`SstvTxScreen`）：图像与控制合卡、参数独立、合规提示移到底部。
+
+- 画框 → 状态 → 源文件名 + 分辨率 + 单帧时长（一行讲完）→ 选图 → 进度 → 发射/导出。
+- 合规提示从页首移到页尾并用错误色卡片强调（静态长文本不再占用首屏）。
+
+**图库**（`SstvGalleryScreen`）：格子里的「删除」移到缩略图右上角浮层；最近一次操作结果
+只在有图时显示一行。
+
+### 共用组件（避免两套实现各写一遍）
+
+| 组件 | 位置 | 用途 |
+|---|---|---|
+| `SstvPreview` / `SstvPreviewMaterial` | 主界面文件内 | 黑底、按模式宽高比的画框 |
+| `SstvChip` | `SstvMainScreen.kt` | 模式横向胶囊（Miuix 按钮 / Material FilterChip） |
+| `SstvSwitchRow` | `SstvMainScreen.kt` | 标题 + 说明 + 右侧开关（主界面 / 设置页 / 发射页 / HF Fax 共用） |
+| `SstvRadioRow` | `SstvMainScreen.kt` | 二选一单选行（音源） |
+| `SstvInfoRow` | `SstvMainScreen.kt` | 参数行（1:1.6 权重，长文件名可换行） |
+| `SstvCardMaterial` | `SstvMainScreenMaterial.kt` | Material 版卡片外壳（`internal`，跨文件共用） |
+| `modeSummary(mode)` | `SstvSettingsScreen.kt` | 模式的一行说明，两套界面文案一致 |
+| `requestPlaybackCapture` / `handleCaptureResult` | `SstvMainScreen.kt` | 播放捕获授权流程，两套共用 |
+
+> HF Fax 原先调用的是主界面文件里的 `InfoRow`/`SwitchRow`，这两个名字改成了 `Sstv` 前缀
+> 以避免与其他模块的同名组件冲突，HF Fax 已同步改为调用新名字。
+
+### 验收
+
+- `:app:compileDebugKotlin` 通过；对外函数签名（`SstvMainScreen` / `SstvSettingsScreen` /
+  `SstvTxScreen` / `SstvGalleryScreen`）与调用方均未改动。
+- 两套实现的 `uiState.*` 访问集合保持一致（主界面两侧均只读写同一组状态）。

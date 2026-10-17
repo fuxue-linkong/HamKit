@@ -32,21 +32,25 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.data.sstv.SstvMode
 import com.example.hamkit.ui.appViewModel
 import com.example.hamkit.ui.component.material.SegmentedColumn
+import com.example.hamkit.ui.component.material.SegmentedDropdownItem
 import com.example.hamkit.ui.component.material.SegmentedListItem
 import com.example.hamkit.ui.component.material.SegmentedRadioItem
 import com.example.hamkit.ui.component.material.SegmentedSwitchItem
 import com.example.hamkit.ui.navigation3.Route
 import com.example.hamkit.ui.viewmodel.SstvViewModel
 
+/** 连续接收可选的最大帧数（与 [SstvSettingsScreenMiuix] 的下拉项一一对应）。 */
+private val MAX_FRAME_OPTIONS = listOf(2, 3, 5, 10)
+
 /**
  * SSTV 设置的 Material（Material 3）风格实现。
  *
- * 与 Miuix 版逐项对应：接收行为 / 图像后处理 / 模式锁定 / 图库与发射 / 使用提示。
- * 行为完全一致，差别只在组件与配色 —— 两套实现共享同一个 [SstvViewModel]，
- * 因此切换界面风格不会丢设置或接收状态。
+ * 与 Miuix 版逐项对应：接收行为（含「连续接收上限」）、图像后处理、模式锁定、
+ * 图库与发射、使用提示。**与主界面的分工也一致**：主界面放「接收中会想改」的开关，
+ * 本页只提供它们的细项，不重复「连续接收」「后处理」总开关。
  *
- * 模式锁定有 19 个选项，这里用分段单选列表而不是 Miuix 版的一列按钮：
- * Material 的列表项自带选中态与触感反馈，长列表下比按钮堆叠更易读。
+ * 模式锁定有 19 个选项，这里用分段单选列表而不是一列按钮：Material 的列表项自带
+ * 选中态与触感反馈，长列表下比按钮堆叠更易读。
  */
 @Composable
 fun SstvSettingsScreenMaterial(
@@ -57,6 +61,7 @@ fun SstvSettingsScreenMaterial(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     // 图库数量由 ViewModel 在协程中统计（文件 IO 不落在主线程）
     val galleryCount = uiState.galleryCount
+    // 清空是破坏性操作：点「清空」前必须先过一道确认框（与 Miuix 版一致）
     var confirmClear by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -80,64 +85,57 @@ fun SstvSettingsScreenMaterial(
         ) {
             // ── 接收行为 ──
             item {
-                SegmentedColumn(
+                SstvSectionHeaderMaterial(
                     title = "接收行为",
-                    content = listOf<@Composable () -> Unit>(
-                        {
-                            SegmentedSwitchItem(
-                                title = "实时预览",
-                                summary = "接收过程中逐行刷新画面；关闭可省电，收满仍会显示图像",
-                                checked = uiState.livePreview,
-                                onCheckedChange = { viewModel.setLivePreview(it) },
-                            )
-                        },
-                        {
-                            SegmentedSwitchItem(
-                                title = "自动保存",
-                                summary = "整帧接收完成后自动存入图库",
-                                checked = uiState.autoSave,
-                                onCheckedChange = { viewModel.setAutoSave(it) },
-                            )
-                        },
-                        {
-                            SegmentedSwitchItem(
-                                title = "连续接收",
-                                summary = "收满一帧后保留模式与失谐量、自动接续下一帧（ISS 连发多张时用）",
-                                checked = uiState.continuous,
-                                onCheckedChange = { viewModel.setContinuous(it) },
-                            )
-                        },
-                        {
-                            SegmentedSwitchItem(
-                                title = "弱信号自适应积分窗",
-                                summary = "按实测信噪比调整积分长度：弱信号多平均（细节略糊），强信号不变",
-                                checked = uiState.adaptiveSpan,
-                                onCheckedChange = { viewModel.setAdaptiveSpan(it) },
-                            )
-                        },
-                        {
-                            SegmentedSwitchItem(
-                                title = "VIS 失败时盲扫",
-                                summary = "导入录音时若 VIS 头缺失，按行同步间隔反推模式后再解码",
-                                checked = uiState.blindScanOnFailure,
-                                onCheckedChange = { viewModel.setBlindScanOnFailure(it) },
-                            )
-                        },
-                    ),
-                )
-            }
-
-            // 最大帧数只在连续接收开启时有意义 —— 与 Miuix 版一致，关闭时整块隐藏
-            if (uiState.continuous) {
-                item {
+                    summary = "自动保存与实时预览在接收期间生效；「连续接收」在主界面上切换。",
+                ) {
                     SegmentedColumn(
-                        title = "最大帧数",
-                        content = listOf(2, 3, 5, 10).map { frames ->
-                            {
-                                SegmentedRadioItem(
-                                    title = "$frames 张",
-                                    selected = uiState.maxFrames == frames,
-                                    onClick = { viewModel.setMaxFrames(frames) },
+                        content = buildList<@Composable () -> Unit> {
+                            add {
+                                SegmentedSwitchItem(
+                                    title = "实时预览",
+                                    summary = "接收过程中逐行刷新画面；关闭可省电，收满仍会显示图像",
+                                    checked = uiState.livePreview,
+                                    onCheckedChange = { viewModel.setLivePreview(it) },
+                                )
+                            }
+                            add {
+                                SegmentedSwitchItem(
+                                    title = "自动保存",
+                                    summary = "整帧接收完成后自动存入图库",
+                                    checked = uiState.autoSave,
+                                    onCheckedChange = { viewModel.setAutoSave(it) },
+                                )
+                            }
+                            // 最大帧数只在连续接收开启时才有意义 —— 关闭时整行隐藏
+                            if (uiState.continuous) {
+                                add {
+                                    SegmentedDropdownItem(
+                                        title = "连续接收上限",
+                                        summary = "收满这么多帧后停止",
+                                        items = MAX_FRAME_OPTIONS.map { "$it 帧" },
+                                        selectedIndex = MAX_FRAME_OPTIONS.indexOf(uiState.maxFrames)
+                                            .coerceAtLeast(0),
+                                        onItemSelected = { index ->
+                                            MAX_FRAME_OPTIONS.getOrNull(index)?.let { viewModel.setMaxFrames(it) }
+                                        },
+                                    )
+                                }
+                            }
+                            add {
+                                SegmentedSwitchItem(
+                                    title = "弱信号自适应积分窗",
+                                    summary = "按实测信噪比调整积分长度：弱信号多平均（细节略糊），强信号不变",
+                                    checked = uiState.adaptiveSpan,
+                                    onCheckedChange = { viewModel.setAdaptiveSpan(it) },
+                                )
+                            }
+                            add {
+                                SegmentedSwitchItem(
+                                    title = "VIS 失败时盲扫",
+                                    summary = "导入录音时若 VIS 头缺失，按行同步间隔反推模式后再解码",
+                                    checked = uiState.blindScanOnFailure,
+                                    onCheckedChange = { viewModel.setBlindScanOnFailure(it) },
                                 )
                             }
                         },
@@ -147,9 +145,12 @@ fun SstvSettingsScreenMaterial(
 
             // ── 图像后处理 ──
             item {
-                Column {
+                SstvSectionHeaderMaterial(
+                    title = "图像后处理",
+                    summary = "处理不可逆，因此默认全关。开启后主界面仍可用「保存原图」保留" +
+                        "未经处理的结果；总开关在主界面。",
+                ) {
                     SegmentedColumn(
-                        title = "图像后处理",
                         content = listOf<@Composable () -> Unit>(
                             {
                                 SegmentedSwitchItem(
@@ -177,45 +178,39 @@ fun SstvSettingsScreenMaterial(
                             },
                         ),
                     )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = "处理不可逆，因此默认全关。开启后主界面仍可用「保存原图」保留未经处理的结果。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.outline,
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                    )
                 }
             }
 
             // ── 模式锁定 ──
             item {
-                SegmentedColumn(
+                SstvSectionHeaderMaterial(
                     title = "模式锁定",
-                    content = buildList<@Composable () -> Unit> {
-                        add {
-                            SegmentedRadioItem(
-                                title = "自动识别（推荐）",
-                                summary = "由 VIS 头自动判定模式",
-                                selected = uiState.manualModeName == null,
-                                onClick = { viewModel.setManualMode(null) },
-                            )
-                        }
-                        SstvMode.DECODABLE_MODES.forEach { mode ->
+                    summary = "默认由 VIS 头自动识别。弱信号下识别失败时可在此手动锁定，" +
+                        "共 ${SstvMode.DECODABLE_MODES.size} 种模式；主界面顶部也有同一个开关。",
+                ) {
+                    SegmentedColumn(
+                        content = buildList<@Composable () -> Unit> {
                             add {
                                 SegmentedRadioItem(
-                                    title = mode.displayName,
-                                    summary = buildString {
-                                        append("${mode.linePixels}×${mode.imageLines}")
-                                        append("  ·  ${"%.0f".format(mode.frameSeconds)} s")
-                                        if (mode.isMonochrome) append("  ·  黑白")
-                                    },
-                                    selected = uiState.manualModeName == mode.name,
-                                    onClick = { viewModel.setManualMode(mode) },
+                                    title = "自动识别",
+                                    summary = "推荐，由 VIS 头自动判定",
+                                    selected = uiState.manualModeName == null,
+                                    onClick = { viewModel.setManualMode(null) },
                                 )
                             }
-                        }
-                    },
-                )
+                            SstvMode.DECODABLE_MODES.forEach { mode ->
+                                add {
+                                    SegmentedRadioItem(
+                                        title = mode.displayName,
+                                        summary = modeSummary(mode),
+                                        selected = uiState.manualModeName == mode.name,
+                                        onClick = { viewModel.setManualMode(mode) },
+                                    )
+                                }
+                            }
+                        },
+                    )
+                }
             }
 
             // ── 图库与发射 ──
@@ -236,12 +231,14 @@ fun SstvSettingsScreenMaterial(
                             SegmentedListItem(
                                 onClick = { onNavigate(Route.SstvTx) },
                                 headlineContent = { Text("打开发射页") },
+                                supportingContent = { Text("选图 → 编码成 SSTV 音频 → 播放或导出 WAV") },
                             )
                         },
                         {
                             SegmentedListItem(
                                 onClick = { onNavigate(Route.HfFax) },
-                                headlineContent = { Text("打开 HF Fax（天气传真）") },
+                                headlineContent = { Text("HF Fax（天气传真）") },
+                                supportingContent = { Text("120 行/分的灰度气象图接收，与 SSTV 是独立通路") },
                             )
                         },
                         {
@@ -250,6 +247,7 @@ fun SstvSettingsScreenMaterial(
                                 headlineContent = {
                                     Text("清空图库", color = MaterialTheme.colorScheme.error)
                                 },
+                                supportingContent = { Text("删除全部已保存图像，不可撤销") },
                             )
                         },
                     ),
@@ -278,7 +276,7 @@ fun SstvSettingsScreenMaterial(
                                 "• 若 VIS 识别失败：可手动锁定模式，或用「导入录音」走盲扫判定\n" +
                                 "• 支持 PD / Robot / Martin / Scottie 四族共 ${SstvMode.DECODABLE_MODES.size} 种模式" +
                                 "（含 PD-50/90/160/290 与 Robot B/W 黑白族）\n" +
-                                "• 最长模式 PD-290 单帧约 289 秒，连续接收的上限见「最大帧数」\n" +
+                                "• 最长模式 PD-290 单帧约 289 秒，连续接收的上限见「连续接收上限」\n" +
                                 "• 发射须持相应操作资格；未持照请只用「导出 WAV」自测\n" +
                                 "• 图库在应用私有目录，卸载即清除，重要图像请导出到相册",
                             style = MaterialTheme.typography.bodySmall,
@@ -311,5 +309,36 @@ fun SstvSettingsScreenMaterial(
                 }
             },
         )
+    }
+}
+
+/**
+ * 分区的「标题 + 说明」头部（Material 版，对应 Miuix 版设置页的 SstvSectionHeader）。
+ *
+ * 标题用 `titleSmall + primary`，与 [SegmentedColumn] 自带的标题样式一致，
+ * 让「有卡片壳」与「无卡片壳」的分区看起来是同一套。
+ */
+@Composable
+private fun SstvSectionHeaderMaterial(
+    title: String,
+    summary: String? = null,
+    content: @Composable () -> Unit,
+) {
+    Column {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(start = 16.dp, bottom = 8.dp),
+        )
+        if (summary != null) {
+            Text(
+                text = summary,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+            )
+        }
+        content()
     }
 }
