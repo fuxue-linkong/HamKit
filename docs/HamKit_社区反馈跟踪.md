@@ -413,7 +413,7 @@
 | HK-REQ-003（只读模式） | 已实现（AVD 验证只读可收不可发） | 同上（`AprsConfig.isReadOnly` / `effectivePasscode` + ViewModel 四条注入路径拦截） |
 | HK-REQ-004（持照声明） | 已实现（AVD 验证弹窗与持久化） | `AprsSettingsStore.licenseConfirmed` + `AprsMainScreen.AprsLicenseConfirmDialog` + `AprsViewModel.requestConnect/confirmLicenseAndConnect` |
 
-> 本跟踪表与 `HamKit_社区反馈_CSV/` 下四个 CSV 保持同步；CSV 由 `scripts/sync_feedback_csv.py`（该目录按 `.gitignore` 本地化）从本 Markdown 单向导出，Markdown 为唯一真源：
+> 本跟踪表与同目录（`docs/`）下 `HamKit_社区反馈_CSV/` 的四个 CSV 保持同步；CSV 由 `scripts/sync_feedback_csv.py`（该目录按 `.gitignore` 本地化）从本 Markdown 单向导出，Markdown 为唯一真源：
 > `python scripts/sync_feedback_csv.py`
 
 **验证结果**
