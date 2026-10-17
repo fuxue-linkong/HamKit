@@ -201,10 +201,22 @@ fun SstvMainScreenMaterial(
                     }
 
                     Spacer(Modifier.height(8.dp))
-                    LinearProgressIndicator(
-                        progress = { uiState.progress.coerceIn(0f, 1f) },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    if (uiState.persistent && uiState.isReceiving) {
+                        // 持续接收没有「一帧」，进度条会误导用户 —— 换成实时行数
+                        Text(
+                            text = buildString {
+                                append("已解 ${uiState.rollingRows} 行")
+                                if (uiState.rollingScrolled) append("（画面只保留最近一段）")
+                            },
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    } else {
+                        LinearProgressIndicator(
+                            progress = { uiState.progress.coerceIn(0f, 1f) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
 
                     Spacer(Modifier.height(8.dp))
                     Text(
@@ -361,6 +373,24 @@ fun SstvMainScreenMaterial(
                             content = listOf<@Composable () -> Unit>(
                                 {
                                     SegmentedSwitchItem(
+                                        title = "持续接收",
+                                        summary = "不需要 VIS 头、不等帧边界，从任意时刻开始解，" +
+                                            "画面像卷纸一样不断延长（需先锁定模式）",
+                                        checked = uiState.persistent,
+                                        onCheckedChange = { viewModel.setPersistent(it) },
+                                    )
+                                },
+                                {
+                                    SegmentedSwitchItem(
+                                        title = "跨帧融合",
+                                        summary = "同一张图被重复发送时，筛选并配准后合并多次结果" +
+                                            "（实测有增益，但不是倍数级）",
+                                        checked = uiState.fusionEnabled,
+                                        onCheckedChange = { viewModel.setFusionEnabled(it) },
+                                    )
+                                },
+                                {
+                                    SegmentedSwitchItem(
                                         title = "连续接收",
                                         summary = "收满一帧后保留模式与失谐量，自动接续下一帧（ISS 连发多张时用）",
                                         checked = uiState.continuous,
@@ -478,6 +508,24 @@ fun SstvMainScreenMaterial(
                                 }
                                 if (uiState.noiseHz > 0.0) {
                                     SstvInfoRowMaterial("频率噪声", "${"%.1f".format(uiState.noiseHz)} Hz")
+                                }
+                                if (uiState.rollingRows > 0) {
+                                    SstvInfoRowMaterial("持续接收", "已解 ${uiState.rollingRows} 行")
+                                }
+                                if (uiState.fusionFrames > 0) {
+                                    SstvInfoRowMaterial("融合素材", "${uiState.fusionFrames} 段图像")
+                                }
+                                if (uiState.fusionUsedFrames > 0) {
+                                    SstvInfoRowMaterial(
+                                        "融合结果",
+                                        "${uiState.fusionUsedFrames} 帧合并，实测 " +
+                                            "+${"%.1f".format(uiState.fusionGainDb)} dB" +
+                                            if (uiState.fusionRejected > 0) {
+                                                "（筛掉 ${uiState.fusionRejected} 帧）"
+                                            } else {
+                                                ""
+                                            },
+                                    )
                                 }
                                 if (uiState.continuous) {
                                     SstvInfoRowMaterial(

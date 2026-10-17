@@ -52,6 +52,27 @@ class SstvSettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_CONTINUOUS, false)
         set(value) = prefs.edit().putBoolean(KEY_CONTINUOUS, value).apply()
 
+    /**
+     * 持续接收（SSTV 三期 R1）：不要求 VIS 头、不等帧边界，从任意时刻起一直解，
+     * 预览像「卷纸」一样不断向下延长。
+     *
+     * 与 [continuous] 的区别：连续接收是「一帧接一帧地收」，仍以帧为单位保存；
+     * 持续接收是「一直收」，没有帧的概念，退出时才把整段（或最近若干帧）落盘。
+     * 默认关闭：它会持续占用麦克风与 CPU，属于用户显式开启的模式。
+     */
+    var persistent: Boolean
+        get() = prefs.getBoolean(KEY_PERSISTENT, false)
+        set(value) = prefs.edit().putBoolean(KEY_PERSISTENT, value).apply()
+
+    /**
+     * 跨帧高质量融合（R2/Q5）：持续接收中把**同一张图的多次传输**筛选、配准后合并。
+     *
+     * 默认开启：它不改变实时路径，只在出图时挑出更好的那份；关闭可省一点 CPU。
+     */
+    var fusionEnabled: Boolean
+        get() = prefs.getBoolean(KEY_FUSION, true)
+        set(value) = prefs.edit().putBoolean(KEY_FUSION, value).apply()
+
     /** 连续接收的最大帧数（内存与时长保护）。 */
     var maxFrames: Int
         get() = prefs.getInt(KEY_MAX_FRAMES, SstvRecorder.DEFAULT_MAX_FRAMES)
@@ -172,6 +193,8 @@ class SstvSettingsStore(context: Context) {
         private const val KEY_LIVE_PREVIEW = "live_preview"
         private const val KEY_CONTINUOUS = "continuous"
         private const val KEY_MAX_FRAMES = "max_frames"
+        private const val KEY_PERSISTENT = "persistent_receive"
+        private const val KEY_FUSION = "frame_fusion"
         private const val KEY_ADAPTIVE_SPAN = "adaptive_span"
         private const val KEY_BLIND_SCAN = "blind_scan"
         private const val KEY_PIXEL_FILTER = "pixel_nyquist_filter"

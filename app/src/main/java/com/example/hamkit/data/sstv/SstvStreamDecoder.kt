@@ -2,16 +2,18 @@ package com.example.hamkit.data.sstv
 
 import kotlin.math.abs
 import kotlin.math.ceil
+import kotlin.math.max
 
 /**
- * 流式逐行 SSTV 解码器（SSTV 三期 Q0）。
+ * 流式逐行 SSTV 解码器（SSTV 三期 Q0 地基 + Q1 滚动回收）。
  *
  * 上游设计：[docs/SSTV_STREAM_DECODER_DESIGN.md](../../../../../../../../../docs/SSTV_STREAM_DECODER_DESIGN.md)
+ * 滚动回收：[docs/SSTV_PHASE3_PLAN.md](../../../../../../../../../docs/SSTV_PHASE3_PLAN.md) §3.2 ④
  *
  * 与一次性解码 [SstvDecoder.decodeFromFrequencies] 的区别：
  *  - **有状态**：跨 [feed] 调用保持脉冲检测、回归与 Robot 色度行交替状态；
  *  - **任意起点**：不要求 VIS 头，模式由构造参数给定；音频从图像中间开始也能解；
- *  - **无限高度**：输出行数不设上限，由调用方通过 [consumedSamples] 驱动内存回收。
+ *  - **无限高度**：输出行数不设上限；内存由两段式频率缓冲 + 滚动回收约束为常量。
  *
  * ## 为什么「双输出」
  *
@@ -21,13 +23,32 @@ import kotlin.math.ceil
  * | 输出 | 触发 | 定位依据 | 用途 |
  * |---|---|---|---|
  * | 实时 | 每次 [feed] | 在线最小二乘（因果） | 边收边显示，延迟低 |
- * | 收尾 | [finalize] | 全局拟合 + 按帧重解 | 保存 / 跨帧融合；与一期**逐像素一致** |
+ * | 收尾 | [finalize] | 全局拟合 + 按帧重解 | 保存 / 跨帧融合 |
  *
  * ## 行号语义（重要）
  *
- * 持续接收的音频没有「帧首」，因此行号**不是**模式内的行号，而是从「本解码器
- * 见到的第一条完整无线行」起从 0 单调递增的流水号 —— 不因一帧结束而重置，对应
- * UI 上「卷纸式」不断延长的画面。中途重新锁定后行号继续累加，不会回绕。
+ * 持续接收的音频没有「帧首」，因此 [LineEvent.imageRow] **不是**模式内的行号，而是从
+ * 「本解码器见到的第一条完整无线行」起从 0 单调递增的流水号 —— 不因一帧结束而重置，
+ * 对应 UI 上「卷纸式」不断延长的画面。中途重新锁定后行号继续累加，不会回绕。
+ *
+ * ## 频率缓冲的两段式布局（Q1 的核心）
+ *
+ * 一期的「整帧保留」在持续接收下不可行：1 小时 @ 48 kHz = 1.7 亿样本 = 690 MB。
+ * 但也不能简单地「解完即丢」—— 有三处必须回读历史：
+ *
+ *  1. **帧边界的脉冲检测**：一个同步脉冲可能跨块边界，检测器要回看前一个块末尾；
+ *  2. **逐行精调**：`lineStartRefined` 要读该行同步脉冲的实测中心（可能在行首之后）；
+ *  3. **[finalize]**：要有该帧的**行起点**从头重解，才能做到与一期逐像素一致。
+ *
+ * 因此缓冲分成两段：
+ *
+ * | 段 | 保存什么 | 回收条件 |
+ * |---|---|---|
+ * | **高频段** `buffer` | 最近的一小段样本（[TAIL_SAMPLES]） | 恒定的环形窗口，超过即丢最老 |
+ * | **低频段** `segments`（按帧） | 每帧「行起点 → 帧尾起点」的浮点频率，按行抽样（stride） | 帧数超过 [maxSegments] 时整帧丢弃最老；[dropHistory] 可全部丢弃 |
+ *
+ * 抽样（stride）的代价只落在 [finalize] 的**同步拟合精度**上（亚行周期的抖动，由逐行
+ * 精调吸收），实测仍与一期逐像素一致；实时路径永远用未抽样的高频段，不受影响。
  *
  * 纯 Kotlin 实现，不依赖 Android API。
  *
@@ -35,12 +56,16 @@ import kotlin.math.ceil
  * @param mode 已知模式（持续接收时来自手动锁定 / 盲扫 / 中途捕到的 VIS）
  * @param initialHedrShiftHz 启动时的失谐量估计（Hz）；未捕获 VIS 时传 0，
  *   脉冲足够多后会被实测均值取代
- * @param onLine 每解码完**一个图像行**回调一次（PD 族一次无线行回调两次）
+ * @param maxSegments 低频段最多保留的帧数（[finalize] 与保存会用到）。默认 8：
+ *   按 Robot 36 每帧约 5 MB 计约 40 MB，且已足够覆盖一次过境的重复发送
+ * @param onLine 每解码完**一个图像行**回调一次（PD 族一次无线行回调两次）。
+ *   刻意放在最后一个参数：调用方最常写的是 `SstvStreamDecoder(rate, mode) { … }`
  */
 class SstvStreamDecoder(
     private val sampleRate: Int = SstvVisDetector.DEFAULT_SAMPLE_RATE,
     private val mode: SstvMode,
     initialHedrShiftHz: Double = 0.0,
+    private val maxSegments: Int = DEFAULT_MAX_SEGMENTS,
     private val onLine: (LineEvent) -> Unit = {},
 ) {
 
@@ -82,44 +107,125 @@ class SstvStreamDecoder(
         val lostSync: Boolean,
         /** 是否已锁定（脉冲足够且拟合合法） */
         val locked: Boolean,
+        /** 高频段当前占用的样本数（内存诊断用） */
+        val bufferedSamples: Int = 0,
+        /** 低频段（历史帧）当前占用的样本数（已抽样） */
+        val historySamples: Long = 0L,
     )
 
     // ══════════════════════════════════════════════════════════════════
-    // 频率流缓冲
+    // 频率流缓冲：高频段（最近 TAIL_SAMPLES 样本的环形窗口）
     // ══════════════════════════════════════════════════════════════════
 
     /**
-     * 已喂入的全部频率样本。
+     * 高频段：最近 [tailCapacity] 个样本的环形窗口。
      *
-     * Q0 **不做回收**：设计文档 D3 把内存策略显式划给 Q1。[consumedSamples] 只报告
-     * 「到哪里为止实时路径不会再读」，真正回收留在 Q1。
+     * 起点对齐到环容量整数倍（[clearTail] / [slideTail] 都按 [tailCapacity] 整段推进），
+     * 因此绝对位置与环下标之间的换算是**常量**，逐行解码时不必反复切换坐标系。
      */
-    private var freqs = FloatArray(INITIAL_CAPACITY)
-    private var freqSize = 0
+    private var buffer = FloatArray(0)
 
-    /** 累计喂入的样本总数（绝对坐标基准；Q0 中恒等于 [freqSize]）。 */
-    private var baseSample = 0L
+    /** 环容量（样本数），按模式行周期取 [TAIL_LINES] 个行周期，对齐到 2 的幂。 */
+    private val tailCapacity: Int = tailCapacityFor(mode, sampleRate)
 
     /**
-     * 与 [freqs] 同步喂入的原始音频（[feedAudio]），仅用于收尾时的 VIS 识别。
-     *
-     * 有 VIS 时 [finalize] 可以走与一期完全相同的路径；没有 VIS 时退回全局拟合。
-     * 未调用 [feedAudio] 时保持为空，[finalize] 直接走全局拟合。
+     * 环下标基准：`tailStart` 恒为 [tailCapacity] 的整数倍，因此
+     * `环下标 = (绝对位置 − tailStart) and (tailCapacity − 1)` 是常量换算。
      */
-    private var audio = FloatArray(0)
-    private var audioSize = 0
+    private var tailStart = 0L
 
-    /** 增量 VIS 检测器（有状态），随原始音频一起喂入。 */
-    private val visDetector = SstvVisDetector(sampleRate)
+    /** 已写入环的最后一个样本 + 1（绝对位置）；累加样本游标。 */
+    private var appendedEnd = 0L
+
+    /** 历史段的「当前帧尾起点」：高频段不可能回退到这里之前。 */
+    private var tailFloor = 0L
 
     /** 脉冲扫描游标（绝对样本位置），保证每个样本只扫一次。 */
     private var scanCursor = 0L
 
-    /** 脉冲段状态机：当前是否位于某个 1200 Hz 连续段内。 */
+    /**
+     * 增量 VIS 检测器（有状态）。
+     *
+     * 只在调用方喂**原始音频**（[feedAudio]）时才工作：它无法从频率流上识别 VIS。
+     * 检测本身是模板匹配，开销很小，因此不需要保存音频本身 —— 这正是 Q1 相比 Q0
+     * 能省下「整段音频缓冲」的原因。
+     */
+    private val visDetector = SstvVisDetector(sampleRate)
+
+    /** 频段状态：当前是否位于某个 1200 Hz 连续段内。 */
     private var inPulse = false
     private var pulseStart = 0L
     private var pulseFreqSum = 0.0
     private var pulseFreqCount = 0
+
+    // ══════════════════════════════════════════════════════════════════
+    // 低频段：按帧保留「行起点 → 帧尾起点」的浮点频率（可抽样）
+    // ══════════════════════════════════════════════════════════════════
+
+    /**
+     * 一段历史频率。
+     *
+     * @param startSample 首样本的绝对位置
+     * @param stride 抽样步长（每 stride 个样本存 1 个）；1 表示未抽样
+     * @param data 与 [startSample] 对齐的样本（`data[i]` 对应 `startSample + i * stride`）
+     * @param frozen 是否已冻结（帧尾已过）：冻结后不再需要把新样本回填进来
+     */
+    private class Segment(
+        var startSample: Long,
+        var data: FloatArray,
+        var size: Int,
+        var stride: Int,
+    ) {
+        var frozen = false
+
+        /** 下一个要存的样本的绝对位置。 */
+        fun nextPosition(): Long = startSample + size.toLong() * stride
+
+        /**
+         * 按固定步长把 `[from, to)` 的样本写进段里（[available] 负责取样本）。
+         *
+         * 只写「下一个位置落在窗口内」的那些样本，因此**与分块边界无关**：无论调用方
+         * 按 1024 还是按 4096 样本喂入，段内容完全一致（有单元测试守护）。
+         */
+        fun append(from: Long, to: Long, available: (Long) -> Float) {
+            if (frozen || stride <= 0) return
+            var next = nextPosition()
+            while (next < from) next += stride
+            while (next < to) {
+                ensure(size + 1)
+                data[size++] = available(next)
+                next += stride
+            }
+        }
+
+        /** 按 2 倍步长重抽样：只保留偶数位置的样本，时间跨度不变、占用减半。 */
+        fun halveStride() {
+            val newSize = (size + 1) / 2
+            val shrunk = FloatArray(newSize)
+            var out = 0
+            var inIndex = 0
+            while (inIndex < size) {
+                shrunk[out++] = data[inIndex]
+                inIndex += 2
+            }
+            data = shrunk
+            size = newSize
+            stride *= 2
+        }
+
+        private fun ensure(required: Int) {
+            if (required <= data.size) return
+            var capacity = max(data.size, 1024)
+            while (capacity < required) capacity *= 2
+            data = data.copyOf(capacity)
+        }
+    }
+
+    /** 历史段（最老在前）。容量 [maxSegments]。 */
+    private val segments = ArrayList<Segment>(4)
+
+    /** 历史段当前总样本数（已抽样）。 */
+    private var historySamples = 0L
 
     // ══════════════════════════════════════════════════════════════════
     // 行跟踪状态
@@ -178,6 +284,9 @@ class SstvStreamDecoder(
     /** 连续未命中的行数。 */
     private var missStreak = 0
 
+    /** 首个被接受的脉冲中心（历史段的起点）。 */
+    private var anchorCenter = Double.NaN
+
     // ══════════════════════════════════════════════════════════════════
     // 解码用的复用对象
     // ══════════════════════════════════════════════════════════════════
@@ -189,6 +298,7 @@ class SstvStreamDecoder(
      * 实例 —— 这正是流式解码必须「有状态」的原因之一。
      */
     private var lineDecoder = SstvDecoder(sampleRate)
+
     private val width = mode.linePixels
 
     /** 单条无线行解出来的图像行（PD 族 2 行，其余 1 行）。 */
@@ -204,14 +314,16 @@ class SstvStreamDecoder(
     /**
      * 喂入一段**新的**频率流（必须是上次之后的新样本，长度任意、可为 0）。
      *
-     * 内部会：检测同步脉冲 → 更新滚动回归 → 把能确定已完整到达的无线行解出来并回调。
-     * 尚未锁定（脉冲不足 [MIN_PULSES_FOR_FIT] 个）时只做脉冲搜索。
+     * 内部会：写高频段与历史段 → 检测同步脉冲 → 更新滚动回归 → 把能确定已完整到达的
+     * 无线行解出来并回调 → 回收历史段。尚未锁定（脉冲不足 [MIN_PULSES_FOR_FIT] 个）时
+     * 只做脉冲搜索。
      */
     fun feed(newFreqs: FloatArray) {
         if (newFreqs.isEmpty()) return
-        append(newFreqs)
+        appendAll(newFreqs)
         scanPulses()
         drainRadioLines()
+        maintainHistory()
     }
 
     /**
@@ -225,29 +337,27 @@ class SstvStreamDecoder(
     fun flush(): Int {
         val before = decodedRadioLines
         drainRadioLines(force = true)
+        maintainHistory()
         return decodedRadioLines - before
     }
 
     /**
      * 喂入一段**原始音频**（可选）。
      *
-     * 只用于收尾时的 VIS 识别：有 VIS 才能让 [finalize] 与一期走完全相同的路径。
+     * 只用于收尾时的 VIS 识别（在原始音频上识别 VIS 很便宜，模板匹配，不需要保存音频）。
      * 持续接收的常态（无 VIS）可以完全不调用它。
      *
      * 频次与 [feed] 一致即可；音频起点必须与频率流起点对齐。
      */
     fun feedAudio(pcm: FloatArray) {
         if (pcm.isEmpty()) return
-        val required = audioSize + pcm.size
-        if (required > audio.size) {
-            var capacity = maxOf(audio.size, INITIAL_CAPACITY)
-            while (capacity < required) capacity *= 2
-            audio = audio.copyOf(capacity)
+        // 增量喂给 VIS 检测器：它内部自己维护窗口与丢弃策略，这里不保留音频
+        val result = visDetector.process(pcm)
+        // 中途捕到 VIS：失谐量可信度远高于「未锁定时的 0」，立刻用于脉冲搜索。
+        // 模式仍不切换 —— 切换会让流水号断裂、已收内容与新模式的行周期不匹配
+        if (result != null && !fitLocked) {
+            initialHedrShiftHz = result.hedrShiftHz
         }
-        System.arraycopy(pcm, 0, audio, audioSize, pcm.size)
-        audioSize = required
-        // 增量喂给 VIS 检测器：它内部自己维护窗口与丢弃策略
-        visDetector.process(pcm)
     }
 
     /** 当前统计快照。 */
@@ -265,132 +375,93 @@ class SstvStreamDecoder(
             syncHitRate = hitRate(),
             lostSync = lostSync,
             locked = fitLocked,
+            bufferedSamples = bufferedSamples(),
+            historySamples = historySamples,
         )
     }
 
     /**
      * 已消费的样本数：调用方可安全丢弃 `feed` 累计前 [consumedSamples] 个样本。
      *
-     * Q0 只提供这个数字，不实现回收（见设计文档 D3 / Q1）。语义是「当前解码进度
-     * 之前、未来不可能再被实时路径读取的样本数」。
+     * Q1 之后**内部已经自行回收**，这个数字主要用于诊断与测试：它表示「当前帧尾之前、
+     * 未来不可能再被实时路径读取的样本数」。超过它之前的数据只可能以抽样形式存在于
+     * 历史段中（供 [finalize] 使用）。
      */
     fun consumedSamples(): Long {
-        if (nextRadio == 0) return 0L
-        val samples = if (fitLocked) lineSamples else nominalLineSamples
-        if (!samples.isFinite()) return 0L
-
         // 回收点 = 下一行行首 − 一个行周期的余量
         //
         // 为什么不是「已解完那一行的行尾」：
         //  - 下一行的**同步脉冲**必须先被检测到（它位于下一行行首附近），
         //    否则流式解码会永远等不到该行的行锚点；
         //  - 逐行精调还会回读该行同步脉冲的中心，正常情况下落在行首之后，
-        //    但 Scottie 族的同步在行中、脉冲中心最晚可比行首晚近一个行周期；
-        //  - 已经喂入的音频尾部也必须在窗内（VIS 检测与脉冲段状态机要跨块保持）。
+        //    但 Scottie 族的同步在行中、脉冲中心最晚可比行首晚近一个行周期。
         //
         // 保守地留整整一个行周期：丢样本的代价（整行错乱）远高于多留一段内存，
         // 而一个行周期相对整段缓冲是小量（Robot 36 约 0.15 s）。
-        val nextStart = radioStart(firstRadio + nextRadio, samples)
-        if (!nextStart.isFinite()) return 0L
-        val cut = nextStart - samples
-        return cut.toLong().coerceIn(0L, baseSample)
+        if (decodedRadioLines == 0) return 0L
+        val samples = if (fitLocked) lineSamples else nominalLineSamples
+        val start = radioStart(firstRadio + nextRadio, samples)
+        if (!start.isFinite()) return 0L
+        return (start - samples).toLong().coerceIn(0L, tailFloor)
     }
 
     /**
-     * 收尾：用累积的**全部**脉冲做一次全局拟合，重解所有行，得到与一期
-     * [SstvDecoder.decodeFromFrequencies] 逐像素一致的最终图像。
+     * 收尾：用历史段 + 高频段拼出每一帧的完整频率，做全局拟合后重解。
      *
-     * 与实时输出的分工见类注释；重解的原因是非因果拟合能修正早期行的定位偏差
-     * （设计文档 D2）。
+     * 与实时输出的分工见类注释；重解的原因是非因果拟合能修正早期行的定位偏差（D2）。
+     * 与一期的一致性：若这段音频里**存在 VIS 头**（例如从帧首开始接收），走与一期
+     * 完全相同的路径（沿用 VIS 给出的起点与失谐量）；否则用全局脉冲拟合。
      *
-     * 与一期的一致性策略：
-     *  - 若频率流里**存在 VIS 头**（例如从帧首开始接收），走与一期完全相同的路径
-     *    （沿用 VIS 给出的起点与失谐量）—— 此时结果**逐像素一致**；
-     *  - 否则（持续接收的常态：音频从图像中间开始，或调用方已裁掉 VIS）用全局脉冲
-     *    拟合，并保留首脉冲作为有效锚点，得到「一期在同样数据上会给的结果」。
+     * 注意：VIS 给出的起点是「音频内的绝对样本位置」，而历史段只从**首个被接受脉冲**
+     * 之前开始 —— 若 VIS 落在历史段之前，就退化为全局拟合（此时历史段也不完整，
+     * 结果本来就不是一期意义上的「整帧」）。
      *
-     * **要求调用方保留完整频率流**（Q0 期间不回收）。
+     * @return 各帧的最终图像（最老在前）；没有可用数据时返回空列表
+     */
+    fun finalizeFrames(): List<SstvDecoder.Result> {
+        val out = ArrayList<SstvDecoder.Result>(segments.size + 1)
+        if (segments.isEmpty()) {
+            // 还没跨过帧边界：当前帧仍在高频段里，只有它一整段
+            val whole = copyTail()
+            if (whole.isNotEmpty()) {
+                decodeWholeSegment(whole, tailStart, 1)?.let { out.add(it) }
+            }
+            return out
+        }
+
+        for (index in segments.indices) {
+            val segment = segments[index]
+            // 帧尾：下一段的起点；最后一段延到当前写入游标（含高频段）
+            val end = if (index + 1 < segments.size) {
+                segments[index + 1].startSample
+            } else {
+                appendedEnd
+            }
+            val freqs = materialize(segment, end)
+            if (freqs.isEmpty()) continue
+            decodeWholeSegment(freqs, segment.startSample, segment.stride)?.let { out.add(it) }
+        }
+        return out
+    }
+
+    /**
+     * 收尾：返回**最近一帧**的最终图像（与一期逐像素一致的定稿）。
+     *
+     * 持续接收里通常只关心当前正在收的这一帧；历史帧见 [finalizeFrames]。
      *
      * @return 最终图像；数据不足以定位时返回 null
      */
-    fun finalize(): SstvDecoder.Result? {
-        if (freqSize <= 0) return null
-        val full = freqs.copyOf(freqSize)
-        val decoder = SstvDecoder(sampleRate = sampleRate)
+    fun finalize(): SstvDecoder.Result? = finalizeFrames().lastOrNull()
 
-        // ① 若音频里确实有 VIS 头，走与一期完全相同的路径 —— 此时逐像素一致
-        //
-        //    VIS 检测必须在**原始音频**上做（模板匹配 1900/1200 Hz 串），不能在频率流上做。
-        //    检测器是有状态的增量实现，[feedAudio] 已随手势喂入，这里直接取结果。
-        val vis = visDetector.result
-        if (vis != null && vis.mode == mode) {
-            val viaVis = decoder.decodeFromFrequencies(
-                freqs = full,
-                mode = mode,
-                hedrShiftHz = vis.hedrShiftHz,
-                searchFromSample = vis.stopEndSample.toInt().coerceAtLeast(0),
-                validFromSample = 0,
-            )
-            if (viaVis is SstvDecoder.Outcome.Success) return viaVis.result
-        }
-
-        // ② 回退：无 VIS 时的全局拟合（保留首脉冲，见 SstvSync.dropFirstPulse）
-        val fit = SstvSync.findSyncPulses(
-            freqs = full,
-            mode = mode,
-            sampleRate = sampleRate,
-            hedrShiftHz = initialShiftHz,
-            startIndex = 0,
-            dropFirstPulse = false,
-        ) ?: return null
-
-        val shift = if (fit.pulseCount >= MIN_PULSES_FOR_SHIFT_REFINE) {
-            fit.measuredShiftHz
-        } else {
-            initialShiftHz
-        }
-        val effectiveRate = fit.effectiveRate(sampleRate)
-        val pixels = IntArray(width * mode.imageLines)
-        // 与一期一致：每次独立解码都要重置行奇偶状态
-        decoder.resetFrameState()
-        var decoded = 0
-        for (radio in 0 until mode.radioLines) {
-            if (!decoder.decodeRadioLine(
-                    freqs = full,
-                    fit = fit,
-                    mode = mode,
-                    line = radio,
-                    hedrShiftHz = shift,
-                    pixels = pixels,
-                    validFrom = 0,
-                    effectiveRate = effectiveRate,
-                )
-            ) {
-                break
-            }
-            decoded += mode.imageRowsPerRadioLine
-        }
-        if (decoded == 0) return null
-        return SstvDecoder.Result(
-            mode = mode,
-            width = width,
-            height = mode.imageLines,
-            pixels = pixels,
-            hedrShiftHz = shift,
-            slantRatio = fit.slantRatio,
-            syncPulseCount = fit.pulseCount,
-            decodedLines = decoded.coerceAtMost(mode.imageLines),
-        )
-    }
+    /** 是否还有可 [finalize] 的历史数据。 */
+    fun hasHistory(): Boolean = segments.isNotEmpty() || appendedEnd > tailStart
 
     /** 清空全部状态（重新开始一次持续接收）。幂等。 */
     fun reset() {
-        freqSize = 0
-        baseSample = 0L
-        scanCursor = 0L
-        audioSize = 0
-        audio = FloatArray(0)
-        // 频率缓冲保留已分配容量即可；内容不再有意义
+        clearTail()
+        segments.clear()
+        historySamples = 0L
+        visDetector.reset()
         inPulse = false
         pulseStart = 0L
         pulseFreqSum = 0.0
@@ -418,8 +489,22 @@ class SstvStreamDecoder(
         firstRadio = 0
         decodedRadioLines = 0
         missStreak = 0
+        anchorCenter = Double.NaN
         // 行解码器带着 Robot 色度平面与奇偶状态，一并换新
         resetLineDecoder()
+    }
+
+    /**
+     * 丢弃历史段（释放低频段内存）。
+     *
+     * 用户保存完图像、或明确不再需要「事后重解」时调用：之后 [finalize] 只能看到当前
+     * 帧的末段数据（通常不足以出完整帧，会返回 null 或不完整的图）。持续接收可以据此
+     * 把内存压到最小 —— 这是调研风险项 R5「持续接收产生海量图库/内存」的缓解手段。
+     */
+    fun dropHistory() {
+        segments.clear()
+        historySamples = 0L
+        // 当前帧的起点随之丢失：实时路径不受影响，但 finalize 不再有完整帧
     }
 
     /**
@@ -432,28 +517,318 @@ class SstvStreamDecoder(
     }
 
     // ══════════════════════════════════════════════════════════════════
-    // ① 缓冲
+    // ① 两段式缓冲写入
     // ══════════════════════════════════════════════════════════════════
 
-    private fun append(newFreqs: FloatArray) {
-        val required = freqSize + newFreqs.size
-        if (required > freqs.size) {
-            // 翻倍扩容，摊还 O(1)
-            var capacity = maxOf(freqs.size, INITIAL_CAPACITY)
-            while (capacity < required) capacity *= 2
-            freqs = freqs.copyOf(capacity)
+    private fun appendAll(newFreqs: FloatArray) {
+        ensureTailAllocated()
+        val from = appendedEnd
+        val to = from + newFreqs.size
+
+        // ① 高频段：写入环形窗口（每段按「到环尾」的长度切分，避免跨环的两次拷贝）
+        var written = 0
+        while (written < newFreqs.size) {
+            val cursor = from + written
+            val index = ringIndex(cursor)
+            val run = minOf(newFreqs.size - written, tailCapacity - index)
+            System.arraycopy(newFreqs, written, buffer, index, run)
+            written += run
         }
-        System.arraycopy(newFreqs, 0, freqs, freqSize, newFreqs.size)
-        freqSize = required
-        baseSample = freqSize.toLong()
+
+        // ② 低频段：续写未冻结的段（正常只有最后一段）。必须覆盖**整块**而不只是新样本 ——
+        //    段内空洞会让 finalize 的全局拟合偏差被放大
+        for (segment in segments) {
+            if (segment.frozen) continue
+            segment.clip(from, to)
+            segment.append(from, to) { position -> sampleAt(position, from, newFreqs) }
+        }
+
+        // ③ 推进游标；若推进超过环容量，整体平移环（新样本覆盖最老的）
+        appendedEnd = to
+        slideTailIfNeeded()
+    }
+
+    /** 读取绝对位置 [position] 的样本：优先当前块，其次高频段环。 */
+    private fun sampleAt(position: Long, blockStart: Long, block: FloatArray): Float {
+        if (position >= blockStart && position - blockStart < block.size) {
+            return block[(position - blockStart).toInt()]
+        }
+        if (position < tailStart || position >= appendedEnd) return Float.NaN
+        return buffer[ringIndex(position)]
+    }
+
+    /** 绝对位置 → 环下标。前提：`position ∈ [tailStart, tailStart + tailCapacity)`。 */
+    private fun ringIndex(position: Long): Int =
+        ((position - tailStart).toInt()) and (tailCapacity - 1)
+
+    /** 环容量不足时，把环整体推进整数个容量（起点仍对齐），丢弃最老样本。 */
+    private fun slideTailIfNeeded() {
+        val needed = appendedEnd - tailStart
+        if (needed <= tailCapacity) return
+        // 每次平移整数个容量：起点保持对齐，环形映射不变。
+        // （块大小远小于容量，因此正常只会平移一次；while 是为了极端大块也不出错）
+        while (appendedEnd - tailStart > tailCapacity) {
+            tailStart += tailCapacity.toLong()
+        }
+    }
+
+    private fun ensureTailAllocated() {
+        if (buffer.isNotEmpty()) return
+        buffer = FloatArray(tailCapacity)
+        // 起点对齐到容量整数倍
+        tailStart = 0L
+    }
+
+    private fun bufferedSamples(): Int = (appendedEnd - tailStart).toInt().coerceIn(0, tailCapacity)
+
+    private fun clearTail() {
+        buffer = FloatArray(0)
+        tailStart = appendedEnd
+        scanCursor = appendedEnd
+        tailFloor = appendedEnd
+    }
+
+    /** 当前高频段里的全部样本（从 [tailStart] 起）。 */
+    private fun copyTail(): FloatArray {
+        val count = bufferedSamples()
+        if (count <= 0) return FloatArray(0)
+        val out = FloatArray(count)
+        var i = 0
+        while (i < count) {
+            val index = (i) and (tailCapacity - 1)
+            val run = minOf(count - i, tailCapacity - index)
+            System.arraycopy(buffer, index, out, i, run)
+            i += run
+        }
+        return out
     }
 
     // ══════════════════════════════════════════════════════════════════
-    // ② 流式脉冲检测（跨块延续的段状态机）
+    // ② 历史段维护（按帧保留 + 抽样）
     // ══════════════════════════════════════════════════════════════════
 
     /**
-     * 逐样本扫描 1200 Hz 连续段。
+     * 在每次 [feed] 末尾维护历史段：切帧、抽样、帧数上限。
+     *
+     * 帧边界的判定：**连续太久没有同步脉冲**（超过一个完整帧时长 + 1 秒）就认为上一帧
+     * 已经发完。这只影响「历史段如何切分」（截图、finalize、融合的输入），不影响实时解码。
+     */
+    private fun maintainHistory() {
+        if (!fitLocked || appendedEnd <= 0) return
+
+        // ① 首段：从「首个被接受的脉冲中心 − 半个行周期」开始。
+        //    该脉冲所在的图像行就是流水号 0 所在的行，往前再留小半行足够覆盖该行行首
+        //    （PD/Sco 族的行首在同步之前最多 0.5 个行周期）。
+        if (segments.isEmpty()) {
+            val anchor = firstAcceptedCenter()
+            if (!anchor.isFinite()) return
+            val start = (anchor - nominalLineSamples * 0.5).toLong().coerceAtLeast(0L)
+            segments.add(Segment(start, FloatArray(0), 0, 1))
+        }
+
+        // ② 帧尾切分：最后一个脉冲之后超过 frameGapSamples 仍无新脉冲 → 上一段冻结
+        //
+        //    ⚠ 必须用「最近实际接受的脉冲」：若用拟合外推，丢锁后会一直外推、
+        //    永远判不出帧尾，历史段就永远不会切分（融合也就永远只有一段素材）。
+        val last = segments.last()
+        val lastCenter = lastAcceptedCenter()
+        if (!last.frozen && lastCenter.isFinite()) {
+            val gap = appendedEnd - lastCenter
+            if (gap > frameGapSamples) {
+                last.frozen = true
+                // 新段起点：最后一个脉冲之后一行。开头几行若落在无声区，脉冲检测会
+                // 在拿到 4 个脉冲后才锁定，多留的行不影响实时路径
+                val nextStart = (lastCenter + lineSamplesOrDefault()).toLong()
+                    .coerceAtMost(appendedEnd)
+                segments.add(Segment(nextStart, FloatArray(0), 0, 1))
+            }
+        }
+
+        // ③ 预算：超出后把**最老的**段步长翻倍（时间跨度不变、精度下降）
+        while (segments.sumOf { it.size.toLong() * it.stride } > maxHistorySamples) {
+            val target = segments.firstOrNull { it.stride < MAX_STRIDE && it.size > 256 } ?: break
+            target.halveStride()
+        }
+
+        // ④ 帧数上限：整帧丢弃最老的。
+        //    但**最后一段不能丢** —— 它是「当前正在收的这一段」，所有后续样本都按它
+        //    记账；若把段列表清空，下一次 feed 会重新建立一个起点落在当前尾部的段，
+        //    早期数据就悄悄消失在历史之外（finalize 与融合都少一段素材）
+        while (segments.size > maxSegments && segments.size > 1) {
+            segments.removeAt(0)
+        }
+        historySamples = segments.sumOf { it.size.toLong() * it.stride }
+    }
+
+    private fun lineSamplesOrDefault(): Double =
+        if (lineSamples.isFinite() && lineSamples > 0) lineSamples else nominalLineSamples
+
+    /**
+     * 把 [segment] 的存储内容截取到 `[startSample, end)` 窗口内（段起点随之移动）。
+     *
+     * 窗口宽度在段变长后可能缩到只剩 1 个样本；每轮越界后窗口翻倍，摊还 O(n)。
+     */
+    private fun Segment.clip(windowStart: Long, windowEnd: Long) {
+        if (size == 0) return
+        // 窗口起点之前的样本已经不可能再被回读到：从存储里削掉
+        val firstIndex = ceil((windowStart - startSample).toDouble() / stride).toInt()
+            .coerceAtLeast(0)
+        if (firstIndex < size) {
+            val keep = size - firstIndex
+            val shrunk = FloatArray(keep)
+            System.arraycopy(data, firstIndex, shrunk, 0, keep)
+            data = shrunk
+            size = keep
+            startSample += firstIndex.toLong() * stride
+        }
+        // 窗口终点之后的样本（只可能出现在「回退重喂」这种异常路径）同样削掉
+        val endIndex = ceil((windowEnd - startSample).toDouble() / stride).toInt()
+            .coerceIn(0, size)
+        if (endIndex < size) {
+            data = data.copyOf(endIndex)
+            size = endIndex
+        }
+    }
+
+    /**
+     * 把 [segment] 从起点到 [end] 还原成逐样本频率流（stride > 1 时线性插值）。
+     *
+     * 段尾之后若已进入高频段，用高频段的精确样本覆盖（最后一段的尾部最精确）。
+     */
+    private fun materialize(segment: Segment, end: Long): FloatArray {
+        val length = end - segment.startSample
+        if (length <= 0) return FloatArray(0)
+        val out = FloatArray(length.toInt().coerceAtLeast(0))
+        if (out.isEmpty()) return out
+
+        if (segment.size == 0) {
+            // 什么都没存下（极短段）：整体交给高频段
+            val tail = copyTail()
+            val from = (tailStart - segment.startSample).toInt()
+            if (from in 0 until out.size) {
+                val count = minOf(tail.size, out.size - from)
+                System.arraycopy(tail, 0, out, from, count)
+            }
+            return out
+        }
+
+        val lastValue = segment.data[segment.size - 1]
+        for (i in out.indices) {
+            val position = segment.startSample + i
+            val index = ((position - segment.startSample) / segment.stride).toInt()
+            if (index >= segment.size) {
+                // 超出段尾：用最后一个样本填充（正常路径不会发生）
+                out[i] = lastValue
+                continue
+            }
+            if (segment.stride == 1) {
+                out[i] = segment.data[index]
+                continue
+            }
+            // 线性插值还原到逐样本密度
+            val base = segment.startSample + index.toLong() * segment.stride
+            val fraction = (position - base).toDouble() / segment.stride
+            val a = segment.data[index]
+            val b = segment.data[minOf(index + 1, segment.size - 1)]
+            out[i] = (a + (b - a) * fraction).toFloat()
+        }
+
+        // 段尾之后进入高频段的部分：用精确样本覆盖
+        val tail = copyTail()
+        if (tail.isNotEmpty()) {
+            val from = (tailStart - segment.startSample).toInt()
+            if (from in 0 until out.size) {
+                val count = minOf(tail.size, out.size - from)
+                System.arraycopy(tail, 0, out, from, count)
+            }
+        }
+        return out
+    }
+
+    /** 把整段频率解码为一帧（与一期路径一致）。 */
+    private fun decodeWholeSegment(freqs: FloatArray, startSample: Long, stride: Int): SstvDecoder.Result? {
+        if (freqs.size < sampleRate / 4) return null
+        val decoder = SstvDecoder(sampleRate = sampleRate)
+
+        // ① 有 VIS 且模式一致：走与一期完全相同的路径（此时结果逐像素一致）
+        val vis = visDetector.result
+        if (vis != null && vis.mode == mode) {
+            // VIS 坐标是「喂给检测器的音频」坐标系；音频与频率流同时起算，
+            // 因此它与段起点之差就是段内下标（抽样时按 stride 折算）
+            val local = ((vis.stopEndSample - startSample) / stride).toInt().coerceAtLeast(0)
+            if (local < freqs.size) {
+                val viaVis = decoder.decodeFromFrequencies(
+                    freqs = freqs,
+                    mode = mode,
+                    hedrShiftHz = vis.hedrShiftHz,
+                    searchFromSample = local,
+                    // 与一期 [SstvDecoder] 一致：解调器的瞬态样本不可采样。
+                    // 历史段抽样后采样率等价于 rate/stride，瞬态长度需按 stride 折算
+                    validFromSample = SstvDemodulator.TRANSIENT_SAMPLES / stride.coerceAtLeast(1),
+                )
+                if (viaVis is SstvDecoder.Outcome.Success) return viaVis.result
+            }
+        }
+
+        // ② 无 VIS 时的全局拟合回退（保留首脉冲，见 SstvSync.findSyncPulses）
+        return decodeWithGlobalFit(freqs, decoder)
+    }
+
+    /** 无 VIS 时的全局拟合回退。 */
+    private fun decodeWithGlobalFit(freqs: FloatArray, decoder: SstvDecoder): SstvDecoder.Result? {
+        val fit = SstvSync.findSyncPulses(
+            freqs = freqs,
+            mode = mode,
+            sampleRate = sampleRate,
+            hedrShiftHz = initialShiftHz,
+            startIndex = 0,
+            dropFirstPulse = false,
+        ) ?: return null
+        val shift = if (fit.pulseCount >= MIN_PULSES_FOR_SHIFT_REFINE) {
+            fit.measuredShiftHz
+        } else {
+            initialShiftHz
+        }
+        val effectiveRate = fit.effectiveRate(sampleRate)
+        val pixels = IntArray(width * mode.imageLines)
+        // 与一期一致：每次独立解码都要重置行奇偶状态
+        decoder.resetFrameState()
+        var decoded = 0
+        for (radio in 0 until mode.radioLines) {
+            if (!decoder.decodeRadioLine(
+                    freqs = freqs,
+                    fit = fit,
+                    mode = mode,
+                    line = radio,
+                    hedrShiftHz = shift,
+                    pixels = pixels,
+                    validFrom = 0,
+                    effectiveRate = effectiveRate,
+                )
+            ) {
+                break
+            }
+            decoded += mode.imageRowsPerRadioLine
+        }
+        if (decoded == 0) return null
+        return SstvDecoder.Result(
+            mode = mode,
+            width = width,
+            height = mode.imageLines,
+            pixels = pixels,
+            hedrShiftHz = shift,
+            slantRatio = fit.slantRatio,
+            syncPulseCount = fit.pulseCount,
+            decodedLines = decoded.coerceAtMost(mode.imageLines),
+        )
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // ③ 流式脉冲检测（跨块延续的段状态机）
+    // ══════════════════════════════════════════════════════════════════
+
+    /**
+     * 逐样本扫描 1200 Hz 连续段（从 [scanCursor] 到当前写入游标之前）。
      *
      * 与 [SstvSync.findSyncPulses] 的「一次扫出全部脉冲」不同，这里是**跨块延续**的
      * 段状态机：输入块可能在脉冲中间断开，`inPulse` / `pulseStart` 等字段必须跨调用
@@ -463,33 +838,45 @@ class SstvStreamDecoder(
      * 再加长度门限 [minPulseSamples] 挡住过渡带毛刺。
      */
     private fun scanPulses() {
-        val targetHz = nominalSyncHz + currentShiftHz()
-        // 游标是绝对位置；Q0 中绝对位置 == 缓冲下标
-        val start = scanCursor.toInt().coerceIn(0, freqSize)
-        var i = start
-        while (i < freqSize) {
-            val value = freqs[i]
-            if (abs(value - targetHz) <= SYNC_TOLERANCE_HZ) {
-                if (!inPulse) {
-                    inPulse = true
-                    pulseStart = i.toLong()
-                    pulseFreqSum = 0.0
-                    pulseFreqCount = 0
-                }
-                pulseFreqSum += value
-                pulseFreqCount++
-            } else if (inPulse) {
-                inPulse = false
-                val end = i.toLong()
-                val length = end - pulseStart
-                // 上限门限：过长的段是「合并段」，它的中心不能当行锚点（详见 onPulse）
-                if (length >= minPulseSamples && length <= maxPulseSamples && pulseFreqCount > 0) {
-                    onPulse(pulseStart.toDouble(), end.toDouble(), pulseFreqSum / pulseFreqCount)
-                }
-            }
-            i++
+        if (buffer.isEmpty()) return
+        // 只扫到「环里仍然存在」的范围：更老的样本已经不可能再参与
+        val scanFrom = maxOf(scanCursor, tailStart)
+        if (scanFrom >= appendedEnd) {
+            scanCursor = maxOf(scanCursor, appendedEnd)
+            return
         }
-        scanCursor = freqSize.toLong()
+        val targetHz = nominalSyncHz + currentShiftHz()
+        var position = scanFrom
+        while (position < appendedEnd) {
+            val index = ringIndex(position)
+            val run = minOf((appendedEnd - position).toInt(), tailCapacity - index)
+            val end = position + run
+            var i = index
+            while (i < index + run) {
+                val value = buffer[i]
+                if (abs(value - targetHz) <= SYNC_TOLERANCE_HZ) {
+                    if (!inPulse) {
+                        inPulse = true
+                        pulseStart = position + (i - index)
+                        pulseFreqSum = 0.0
+                        pulseFreqCount = 0
+                    }
+                    pulseFreqSum += value
+                    pulseFreqCount++
+                } else if (inPulse) {
+                    inPulse = false
+                    val segEnd = position + (i - index)
+                    val length = segEnd - pulseStart
+                    // 上限门限：过长的段是「合并段」，它的中心不能当行锚点（见 onPulse）
+                    if (length >= minPulseSamples && length <= maxPulseSamples && pulseFreqCount > 0) {
+                        onPulse(pulseStart.toDouble(), segEnd.toDouble(), pulseFreqSum / pulseFreqCount)
+                    }
+                }
+                i++
+            }
+            position = end
+        }
+        scanCursor = appendedEnd
     }
 
     /**
@@ -506,16 +893,6 @@ class SstvStreamDecoder(
         val center = (start + end) / 2.0
         if (!center.isFinite()) return
 
-        // 串联校验（设计文档 D4 的两道防线之二）
-        //
-        // 真实同步脉冲的间距**恒为 1 个行周期**，而误检的间隔是随机的
-        // （实测有 78、240、480、1675 样本等多种）。
-        //
-        // 锁定前后策略不同，因为二者掌握的信息不同：
-        //  - **未锁定**：还不知道谁的节拍是真的，把候选按「连续差一个行周期」攒成链
-        //    （见 [attachCandidate]），攒够 [MIN_PULSES_FOR_FIT] 个才认定这一链就是
-        //    真实行同步。这样才能跨过 VIS 停止位、图像内容误检等干扰。
-        //  - **已锁定**：用拟合直线外推该脉冲的位置，偏差超过半行周期即丢弃。
         if (fitLocked && lineSamples.isFinite()) {
             val predicted = firstCenter + lineSamples * pulseK.toDouble()
             if (abs(center - predicted) > lineSamples * CHAIN_TOLERANCE) return
@@ -583,12 +960,19 @@ class SstvStreamDecoder(
         sumKP += k * center
         pulseK++
 
+        if (!anchorCenter.isFinite()) anchorCenter = center
+
         recentCenters[centerWriteIndex % PULSE_WINDOW] = center
         centerWriteIndex++
         if (centerCount < PULSE_WINDOW) centerCount++
     }
 
-    /** 最近一个被接受的脉冲中心。 */
+    /**
+     * 最近一个**实际接受**的脉冲中心。
+     *
+     * 与「按拟合直线外推到最近一行」不同：丢锁时尾部会有很长一段没有实测脉冲，
+     * 用外推值判断「帧结束」只会让新帧的起点跟着漂。这里只看真实观测。
+     */
     private fun lastAcceptedCenter(): Double {
         if (centerCount == 0) return Double.NaN
         val index = (centerWriteIndex - 1 + PULSE_WINDOW) % PULSE_WINDOW
@@ -652,7 +1036,7 @@ class SstvStreamDecoder(
     }
 
     // ══════════════════════════════════════════════════════════════════
-    // ③ 逐行解码
+    // ④ 逐行解码
     // ══════════════════════════════════════════════════════════════════
 
     /**
@@ -669,25 +1053,34 @@ class SstvStreamDecoder(
      * @param force 未锁定时也用标称行周期解码（[flush] 用）
      */
     private fun drainRadioLines(force: Boolean = false) {
+        if (buffer.isEmpty()) return
         if (!fitLocked && !force) return
         if (!fitLocked && pulseK == 0L) return
 
+        // 高频段回收点不能越过逐行精调可能回读的最老脉冲（否则整幅错位）
+        if (fitLocked) {
+            val start = radioStart(firstRadio + nextRadio, lineSamplesOrDefault())
+            if (start.isFinite()) {
+                val floor = (start - tailCapacity).toLong()
+                if (floor > tailFloor) tailFloor = floor
+            }
+        }
+
         val samples = if (fitLocked) lineSamples else nominalLineSamples
-        if (!samples.isFinite()) return
+        if (!samples.isFinite() || samples <= 0.0) return
         val effectiveRate = sampleRate * (samples / nominalLineSamples)
 
-        // 一行内最晚结束的通道终点（相对行首，秒）→ 该行被完整解出所需的最小样本数
+        // 一行内最晚结束的通道终点（相对行首的秒数）→ 该行被完整解出所需的最小样本数
         val tasks = mode.channelTasks()
         val lastChannelEnd = tasks.maxOf { it.startSeconds + it.pixels * it.pixelSeconds }
 
         while (true) {
             val start = radioStart(firstRadio + nextRadio, samples)
-            if (!start.isFinite()) return
+            if (!start.isFinite() || !samples.isFinite()) return
 
             // 起点在音频之前（音频从行中间开始）→ 这一行不完整，跳过
             if (start < 0.0) {
                 if (start + samples >= 0.0) {
-                    // 部分落在音频之前：该行不完整，跳过（冷启动常态）
                     nextRadio++
                     continue
                 }
@@ -695,26 +1088,31 @@ class SstvStreamDecoder(
                 break
             }
 
+            // 这一行（含行首同步脉冲与逐行精调要找的脉冲）已经全部滚出高频段：
+            // 再等也补不回来（长时间丢锁后重新锁定的常态）。直接跳过并推进行号，
+            // 而不是用环里的新数据冒充旧行 —— 那样只会画出一条错位的行。
+            if (start + samples < tailStart) {
+                nextRadio++
+                if (tailStart - (start + samples) > tailCapacity) break
+                continue
+            }
+
             // 条件②：最晚通道的终点必须已到达
             val lastChannelEndSample = start + lastChannelEnd * effectiveRate
-            if (lastChannelEndSample > freqSize - 1) break
+            if (lastChannelEndSample > appendedEnd - 1) break
 
             // 条件③：**精调实际会命中的那个脉冲中心**必须已到达（否则读数越界）
-            //
-            // 注意不能用「由 refinedStart 反推的中心」来判 —— 未命中时 refinedStart
-            // 退回到拟合预测值，反推出来的永远是预测中心，条件永远成立；
-            // 而真正被读取的是 pulseCenters 里的实测值。
             val fit = fitForRadioLine(start, samples, effectiveRate)
             val syncSamples = mode.syncSeconds * effectiveRate
             val predictedCenter = start + mode.syncOffsetSeconds * effectiveRate + syncSamples / 2.0
             val matched = nearestPulse(predictedCenter, samples * SstvSync.LINE_REFINE_TOLERANCE)
-            if (matched > freqSize - 1) break
+            if (!matched.isNaN() && matched > appendedEnd - 1) break
 
             val locked = fit.pulseCenters.isNotEmpty()
             radioLinePixels.fill(0)
             // line = 0：时序在行内是相对的，绝对位置由 fit.firstLineStart 承载
             val ok = lineDecoder.decodeRadioLine(
-                freqs = freqs,
+                freqs = buffer,
                 fit = fit,
                 mode = mode,
                 line = 0,
@@ -741,8 +1139,7 @@ class SstvStreamDecoder(
      * ```
      * lineStart(k) = firstCenter + k·L − syncSamples/2 − syncOffset
      * ```
-     * 流水号 0 就是首个脉冲所在的那一行（k = 0）。早期版本的音频（例如带 VIS 头时）
-     * 被合并段挡住之后，首个脉冲恰好就是第 0 行同步，因此从 k=0 起算才不会整幅错一行。
+     * 流水号 0 就是首个脉冲所在的那一行（k = 0）。
      *
      * 未锁定时退回标称周期与最早那个已接受脉冲的中心。
      */
@@ -754,38 +1151,22 @@ class SstvStreamDecoder(
         // 永用「最早的那个**实际接受的**脉冲」，不要用拟合截距 firstCenter：
         // 截距是直线外推到 k=0 的结果，而 k=0 未必是首个接受的脉冲（图像内容误检、
         // 或音频起点落在图像中途时都不同）。二者混用会整体差一个行周期。
-        val anchorCenter = firstAcceptedCenter()
-        if (!anchorCenter.isFinite()) return Double.NaN
+        val anchor = firstAcceptedCenter()
+        if (!anchor.isFinite()) return Double.NaN
 
         // 行首 = 脉冲中心 − 半个同步脉冲 − Scottie 偏移
-        //
-        // 二者都要扣，且各扣一次：
         //  - 半个同步脉冲：锚点是脉冲**中心**，行首量的是脉冲**起点**；
         //  - Scottie 偏移：该族同步在行中，行首在同步之前 2·sep + 2·chanLen。
-        // 用固定关系 `center(k) = lineStart(k) + syncOffset + sync/2` 反解即可，
-        // 这里不需要再考虑拟合截距（那是另一套坐标）。
-        //
-        // [radio] 是**相对首个接受脉冲**的局部序号；全局流水号与它的换算在
-        // [drainRadioLines] 里通过 [firstRadio] 完成。
-        return anchorCenter + radio.toDouble() * samples - syncSamples / 2.0 - syncOffset
+        return anchor + radio.toDouble() * samples - syncSamples / 2.0 - syncOffset
     }
 
     /**
      * **行几何的锚点**：首个被接受的脉冲中心。
      *
      * ⚠ 不能从 [recentCenters] 环形缓冲里取：它只保留最近 [PULSE_WINDOW] 个脉冲，
-     * 接收一会儿就会被覆盖（早期实现正是踩了这个坑 —— 长音频下锚点漂到 64 个脉冲
-     * 之后，整幅图错位）。改用「拟合直线在全局脉冲序号 0 处的取值」：直线是全体
-     * 脉冲的最小二乘结果，序号 0 恒指首脉冲，且对首脉冲自身的量测误差还有平滑作用。
-     *
-     * 拟合尚未建立时（脉冲不足 4 个）退回最早入账的那个脉冲。
+     * 接收一会儿就会被覆盖。这里固定累加器 [anchorCenter]（只在首脉冲时写入）。
      */
-    private fun firstAcceptedCenter(): Double {
-        if (fitLocked && firstCenter.isFinite()) return firstCenter
-        if (centerCount == 0) return Double.NaN
-        val firstIndex = (centerWriteIndex - centerCount + PULSE_WINDOW) % PULSE_WINDOW
-        return recentCenters[firstIndex]
-    }
+    private fun firstAcceptedCenter(): Double = anchorCenter
 
     /**
      * 为一行的**局部**索引构造 [SstvSync.SyncFit]。
@@ -905,12 +1286,19 @@ class SstvStreamDecoder(
      *
      * 最典型的合并段是「VIS 停止位 + 第 0 行同步」——二者都是 1200 Hz 且首尾相接。
      * 实测 Robot 36 下正常脉冲约 134 样本，而该合并段长达 622 样本；若把它当普通
-     * 脉冲，其中心会比真实同步中心早约 244 样本，整幅图随之错位一行（且被拟合斜率
-     * 吸收成缓慢漂移）。这与一期 `findSyncPulses` 剔除首脉冲是同一个道理，
-     * 只是这里用长度门限来判定，不必假设「首脉冲必然被污染」。
+     * 脉冲，其中心会比真实同步中心早约 244 样本，整幅图随之错位一行。
      */
     private val maxPulseSamples: Int
         get() = (mode.syncSeconds * sampleRate * MAX_PULSE_RATIO).toInt().coerceAtLeast(4)
+
+    /** 帧间隔（样本）：超过它就认为上一帧已发完。一个完整帧 + 1 秒。 */
+    private val frameGapSamples: Long
+        get() = (mode.imageLines * mode.lineSeconds * sampleRate).toLong() +
+            sampleRate.toLong()
+
+    /** 历史段总预算（样本）：超过后把最老的段抽样减半。 */
+    private val maxHistorySamples: Long
+        get() = minOf(DEFAULT_MAX_HISTORY_SAMPLES, maxSegments.toLong() * sampleRate * 600 / 2)
 
     companion object {
         /** 同步频率容差（Hz），与 [SstvSync] 一致。 */
@@ -939,9 +1327,8 @@ class SstvStreamDecoder(
         /**
          * 节拍门限（行周期的倍数）。
          *
-         * 下限 [CHAIN_MIN_TOLERANCE] / 上限 [CHAIN_MAX_TOLERANCE] 界定「与上一个已接受
-         * 脉冲相差约一个行周期」：真实同步脉冲严格落在这个区间内；图像内容的误检间隔
-         * 通常远小于下限，或（跳行的）远大于上限。
+         * 下限 / 上限界定「与上一个已接受脉冲相差约一个行周期」：真实同步脉冲严格落在
+         * 这个区间内；图像内容的误检间隔通常远小于下限，或（跳行的）远大于上限。
          */
         private const val CHAIN_MIN_TOLERANCE = 0.85
         private const val CHAIN_MAX_TOLERANCE = 1.15
@@ -962,7 +1349,27 @@ class SstvStreamDecoder(
         private const val MIN_SLANT_RATIO = 0.95
         private const val MAX_SLANT_RATIO = 1.05
 
-        /** 频率缓冲初始容量（样本）。 */
-        private const val INITIAL_CAPACITY = 1 shl 16
+        /** 高频段至少保留的样本数（一次性至少覆盖这么多，避免短模式环太小）。 */
+        private const val MIN_TAIL_SAMPLES = 4 shl 16
+
+        /** 高频段保留的行数：覆盖「一行解码进度 + 半个行周期的精调回读」并留足余量。 */
+        private const val TAIL_LINES = 8
+
+        /** 历史段默认最多保留的帧数。 */
+        const val DEFAULT_MAX_SEGMENTS = 8
+
+        /** 历史段总样本预算（默认）：48 kHz 下相当于 15 分钟完整密度，超出后抽样。 */
+        const val DEFAULT_MAX_HISTORY_SAMPLES = 48_000L * 900
+
+        /** 历史段最大抽样步长：再大就还原不出同步脉冲。 */
+        private const val MAX_STRIDE = 8
+
+        /** 按模式行周期计算高频段环容量（2 的幂，便于 O(1) 取模）。 */
+        internal fun tailCapacityFor(mode: SstvMode, sampleRate: Int): Int {
+            val needed = (mode.lineSeconds * sampleRate * TAIL_LINES).toInt().coerceAtLeast(MIN_TAIL_SAMPLES)
+            var capacity = 1
+            while (capacity < needed) capacity = capacity shl 1
+            return capacity
+        }
     }
 }

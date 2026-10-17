@@ -126,7 +126,7 @@ fun SstvSettingsScreenMiuix(
             Card(modifier = Modifier.fillMaxWidth()) {
                 SstvSectionHeader(
                     title = "接收行为",
-                    summary = "自动保存与实时预览在接收期间生效；「连续接收」在主界面上切换。",
+                    summary = "自动保存与实时预览在接收期间生效；「持续接收」「连续接收」在主界面上切换。",
                 )
                 SstvSwitchRow(
                     title = "实时预览",

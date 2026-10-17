@@ -250,10 +250,23 @@ fun SstvMainScreenMiuix(
                     }
 
                     Spacer(Modifier.height(6.dp))
-                    LinearProgressIndicator(
-                        progress = uiState.progress.coerceIn(0f, 1f),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    if (uiState.persistent && uiState.isReceiving) {
+                        // 持续接收没有「一帧」的概念，进度条会把用户引向错误预期 ——
+                        // 换成实时的行数与滚动状态说明
+                        Text(
+                            text = buildString {
+                                append("已解 ${uiState.rollingRows} 行")
+                                if (uiState.rollingScrolled) append("（画面只保留最近一段）")
+                            },
+                            style = MiuixTheme.textStyles.footnote1,
+                            color = colorScheme.primary,
+                        )
+                    } else {
+                        LinearProgressIndicator(
+                            progress = uiState.progress.coerceIn(0f, 1f),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
 
                     Spacer(Modifier.height(8.dp))
                     Text(
@@ -385,6 +398,18 @@ fun SstvMainScreenMiuix(
 
                 // 开关：只留接收中会想调的两项，其余一次性配置放在设置页
                 SstvSwitchRow(
+                    title = "持续接收",
+                    summary = "不需要 VIS 头、不等帧边界，从任意时刻开始解，画面像卷纸一样不断延长（需先锁定模式）",
+                    checked = uiState.persistent,
+                    onCheckedChange = { viewModel.setPersistent(it) },
+                )
+                SstvSwitchRow(
+                    title = "跨帧融合",
+                    summary = "同一张图被重复发送时，筛选并配准后合并多次结果（实测有增益，但不是倍数级）",
+                    checked = uiState.fusionEnabled,
+                    onCheckedChange = { viewModel.setFusionEnabled(it) },
+                )
+                SstvSwitchRow(
                     title = "连续接收",
                     summary = "收满一帧后保留模式与失谐量，自动接续下一帧（ISS 连发多张时用）",
                     checked = uiState.continuous,
@@ -489,6 +514,19 @@ fun SstvMainScreenMiuix(
                             SstvInfoRow(
                                 "连续接收",
                                 "已完成 ${uiState.completedFrames} 帧（上限 ${uiState.maxFrames}）",
+                            )
+                        }
+                        if (uiState.rollingRows > 0) {
+                            SstvInfoRow("持续接收", "已解 ${uiState.rollingRows} 行")
+                        }
+                        if (uiState.fusionFrames > 0) {
+                            SstvInfoRow("融合素材", "${uiState.fusionFrames} 段图像")
+                        }
+                        if (uiState.fusionUsedFrames > 0) {
+                            SstvInfoRow(
+                                "融合结果",
+                                "${uiState.fusionUsedFrames} 帧合并，实测 +${"%.1f".format(uiState.fusionGainDb)} dB" +
+                                    if (uiState.fusionRejected > 0) "（筛掉 ${uiState.fusionRejected} 帧）" else "",
                             )
                         }
                         uiState.savedFileName?.let { SstvInfoRow("已保存", it) }
