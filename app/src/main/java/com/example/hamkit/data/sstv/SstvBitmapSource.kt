@@ -11,6 +11,7 @@ import android.graphics.Typeface
 import android.net.Uri
 import java.io.File
 import kotlin.math.max
+import kotlin.math.roundToInt
 
 /**
  * Android 侧的图像输入装配：把「用户选的图片」变成编码器能吃的 [SstvImageSource]。
@@ -54,28 +55,64 @@ object SstvBitmapSource {
         load(mode, callsign) { runCatching { file.readBytes() }.getOrNull() }
 
     /**
+     * 装载结果。
+     *
+     * @param source 编码器用的图像源（已裁成模式宽高比、已按模式分辨率缩放）
+     * @param originalWidth 源图（裁剪前）宽度，用于提示用户「被裁了多少」
+     * @param originalHeight 源图（裁剪前）高度
+     */
+    data class LoadedImage(
+        val source: SstvImageSource,
+        val originalWidth: Int,
+        val originalHeight: Int,
+    ) {
+        /** 源图是否被裁过（源比例与目标比例不一致即会裁）。 */
+        val cropped: Boolean
+            get() = source.width != originalWidth || source.height != originalHeight
+    }
+
+    /**
      * 带失败原因版本：UI 需要把「为什么载入失败」显示给用户，而不是一律「图片载入失败」。
      *
      * 注意 [runCatching] 会吞掉 `OutOfMemoryError` 之外的异常并把 message 原样上抛，
      * 调用方据此拼出「图片载入失败：<原因>」。
      *
-     * @return 成功给出 [Result.Success]，失败给出可读的中文原因
+     * @return 成功给出 [LoadedImage]（含源图原始尺寸），失败给出可读的中文原因
      */
-    fun loadOrError(file: File, mode: SstvMode, callsign: String? = null): Result<SstvImageSource> =
+    fun loadOrError(file: File, mode: SstvMode, callsign: String? = null): Result<LoadedImage> =
         runCatching {
             require(file.isFile && file.length() > 0) { "所选的图片文件为空或已被移除，请重新选择" }
             // 只读一次：SstvBitmapSource 的重载都基于字节数组，避免重复打开数据源
             val bytes = file.readBytes()
-            decodeScaled(bytes, mode.linePixels, mode.imageLines)
+            // 一次读出源图尺寸，既用于失败判定，也用于「是否被裁剪」的提示
+            val bounds = decodableSize(bytes)
                 ?: error("无法识别该图片格式（支持 JPEG / PNG / WebP / GIF / BMP / HEIF），请换一张试试")
-        }.map { bitmap ->
-            // 解码得到的 Bitmap 由这里负责回收：叠加呼号会产出新位图，两者都不能泄漏
-            val withOverlay = if (callsign.isNullOrBlank()) bitmap else overlayCallsign(bitmap, callsign)
-            val source = fromBitmap(withOverlay)
-            if (withOverlay !== bitmap) withOverlay.recycle()
-            bitmap.recycle()
-            source
+            // decodeScaled 内部按模式宽高比自动裁剪，再缩放到模式分辨率
+            val bitmap = decodeScaled(bytes, mode.linePixels, mode.imageLines, bounds)
+                ?: error("无法完成图片适配（可能是文件已损坏或内存不足），请换一张试试")
+            LoadedImage(
+                source = bitmap.toSource(callsign),
+                originalWidth = bounds.outWidth,
+                originalHeight = bounds.outHeight,
+            )
         }
+
+    /** 读出图片原始尺寸（只解析文件头，不解码像素）。 */
+    private fun decodableSize(bytes: ByteArray): BitmapFactory.Options? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        return bounds.takeIf { it.outWidth > 0 && it.outHeight > 0 }
+    }
+
+    /** 位图 → 图像源（可选叠加呼号），并负责回收中间位图。 */
+    private fun Bitmap.toSource(callsign: String?): SstvImageSource {
+        // 解码得到的 Bitmap 由这里负责回收：叠加呼号会产出新位图，两者都不能泄漏
+        val withOverlay = if (callsign.isNullOrBlank()) this else overlayCallsign(this, callsign)
+        val source = fromBitmap(withOverlay)
+        if (withOverlay !== this) withOverlay.recycle()
+        recycle()
+        return source
+    }
 
     /** 为看图预览等场景提供「只解码不叠加」的公开入口（失败返回 null）。 */
     fun decodeForPreview(file: File, maxWidth: Int, maxHeight: Int): Bitmap? = runCatching {
@@ -88,12 +125,9 @@ object SstvBitmapSource {
         readBytes: () -> ByteArray?,
     ): SstvImageSource? = runCatching {
         val bytes = readBytes() ?: return@runCatching null
+        // decodeScaled 会按模式宽高比自动裁剪，再缩放到模式分辨率
         val bitmap = decodeScaled(bytes, mode.linePixels, mode.imageLines) ?: return@runCatching null
-        val withOverlay = if (callsign.isNullOrBlank()) bitmap else overlayCallsign(bitmap, callsign)
-        val source = fromBitmap(withOverlay)
-        if (withOverlay !== bitmap) withOverlay.recycle()
-        bitmap.recycle()
-        source
+        bitmap.toSource(callsign)
     }.getOrNull()
 
     /**
@@ -158,17 +192,26 @@ object SstvBitmapSource {
     }
 
     /**
-     * 按目标尺寸解码（2 的幂次降采样 + 精确缩放）。
+     * 按目标尺寸解码并做**等比裁剪**适配（自动裁剪）。
      *
      * 两步走是内存与画质的折中：`inSampleSize` 只能取 2 的幂，若只用它，缩放结果会在
      * 目标尺寸的 1–2 倍之间浮动；再补一次 `createScaledBitmap` 才能精确落到模式分辨率。
      *
+     * **关键（自动裁剪）**：旧实现直接 `createScaledBitmap` 到目标宽高，源图只要不是
+     * 模式比例（如 16:9 手机照片发 PD-120 的 640×496）就会被**横向拉伸变形**。
+     * 现在先按目标宽高比居中裁掉多余部分，再缩放 —— 画面不变形，代价是裁掉一圈边缘。
+     *
      * 改为从字节数组解码（`decodeByteArray`）而不是流：一张图只解析一份内存缓冲，
      * 既不重复打开数据源，也避开了 provider 流不可回退的问题。
      */
-    private fun decodeScaled(bytes: ByteArray, targetWidth: Int, targetHeight: Int): Bitmap? = runCatching {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    private fun decodeScaled(
+        bytes: ByteArray,
+        targetWidth: Int,
+        targetHeight: Int,
+        knownBounds: BitmapFactory.Options? = null,
+    ): Bitmap? = runCatching {
+        val bounds = knownBounds ?: BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        if (knownBounds == null) BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
 
         val options = BitmapFactory.Options().apply {
@@ -183,11 +226,31 @@ object SstvBitmapSource {
         val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
             ?: return@runCatching null
 
-        if (decoded.width == targetWidth && decoded.height == targetHeight) {
-            decoded
+        // ① 先裁成目标宽高比：比较「源图比例」与「目标比例」，
+        //    源图更宽就裁左右，更高就裁上下，居中裁以保证主体不丢
+        val targetRatio = targetWidth.toFloat() / targetHeight
+        val sourceRatio = decoded.width.toFloat() / decoded.height
+        val cropped = if (sourceRatio > targetRatio) {
+            // 源更宽：裁掉左右，保留高度
+            val newWidth = max(1, (decoded.height * targetRatio).roundToInt())
+            val left = (decoded.width - newWidth) / 2
+            Bitmap.createBitmap(decoded, left, 0, newWidth, decoded.height)
+        } else if (sourceRatio < targetRatio) {
+            // 源更高：裁掉上下，保留宽度
+            val newHeight = max(1, (decoded.width / targetRatio).roundToInt())
+            val top = (decoded.height - newHeight) / 2
+            Bitmap.createBitmap(decoded, 0, top, decoded.width, newHeight)
         } else {
-            val scaled = Bitmap.createScaledBitmap(decoded, targetWidth, targetHeight, true)
-            if (scaled !== decoded) decoded.recycle()
+            decoded
+        }
+        if (cropped !== decoded) decoded.recycle()
+
+        // ② 再精确缩放到模式分辨率（此时比例已一致，不会变形）
+        if (cropped.width == targetWidth && cropped.height == targetHeight) {
+            cropped
+        } else {
+            val scaled = Bitmap.createScaledBitmap(cropped, targetWidth, targetHeight, true)
+            if (scaled !== cropped) cropped.recycle()
             scaled
         }
     }.getOrNull()

@@ -1942,8 +1942,8 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
             val outcome = withContext(Dispatchers.IO) {
                 SstvBitmapSource.loadOrError(origin, mode, callsign)
             }
-            val result = outcome.getOrNull()
-            if (result == null) {
+            val loaded = outcome.getOrNull()
+            if (loaded == null) {
                 txSource = null
                 val reason = outcome.exceptionOrNull()?.message ?: "未知原因"
                 _uiState.update {
@@ -1951,6 +1951,7 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 return@launch
             }
+            val result = loaded.source
             txSource = result
             val preview = withContext(Dispatchers.Default) {
                 val pixels = IntArray(result.width * result.height)
@@ -1962,12 +1963,19 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
                 SstvImageStore.toBitmap(pixels, result.width, result.height)
             }
             val seconds = mode.frameSeconds + SstvEncoder.VIS_TOTAL_SECONDS
+            // 源图比例与模式比例不一致时会被居中裁掉一圈，明确告知用户裁了多少
+            val cropNote = if (loaded.cropped) {
+                "；已按 ${mode.displayName} 比例自动裁剪原图 " +
+                    "${loaded.originalWidth}×${loaded.originalHeight}"
+            } else {
+                ""
+            }
             _uiState.update {
                 it.copy(
                     txPreview = preview,
                     txSourceLabel = origin.name,
                     txStatus = "已载入 ${result.width}×${result.height}，按 ${mode.displayName} 发射约 " +
-                        "${"%.0f".format(seconds)} 秒",
+                        "${"%.0f".format(seconds)} 秒$cropNote",
                 )
             }
         }
