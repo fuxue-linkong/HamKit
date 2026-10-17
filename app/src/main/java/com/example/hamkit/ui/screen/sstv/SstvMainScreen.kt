@@ -54,7 +54,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.hamkit.data.sstv.SstvCaptureService
 import com.example.hamkit.data.sstv.SstvMode
 import com.example.hamkit.data.sstv.SstvRecorder
 import com.example.hamkit.ui.LocalUiMode
@@ -163,8 +162,8 @@ fun SstvMainScreenMiuix(
         ActivityResultContracts.OpenDocument(),
     ) { uri -> uri?.let { viewModel.importAudio(it) } }
 
-    // 播放捕获（Android 10+）：先起 mediaProjection 前台服务，再向系统要投影授权。
-    // 顺序不能颠倒 —— Android 14 起要求调用 getMediaProjection() 时已有该类型的前台服务
+    // 播放捕获（Android 10+）：先向系统要投影授权，拿到 RESULT_OK 后才起 mediaProjection
+    // 前台服务并取投影 —— 顺序不能反，部分厂商 ROM 在无有效授权时启动该类型前台服务会崩溃
     val captureLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result -> handleCaptureResult(context, viewModel, result.resultCode, result.data) }
@@ -558,8 +557,13 @@ fun SstvMainScreenMiuix(
 /**
  * 发起「播放捕获」授权流程。
  *
- * 先起 mediaProjection 前台服务、再向系统要投影授权 —— 顺序不可颠倒，Android 14 起
- * 要求调用 `getMediaProjection()` 时已有该类型的前台服务。Miuix / Material 两套共用。
+ * **顺序**：先向系统要投影授权（用户点「开始共享」），授权成功后在
+ * [handleCaptureResult] 里才启动 mediaProjection 前台服务，最后取投影。
+ *
+ * 之所以不是「先起服务、再要授权」：AOSP 只要求在取投影前有该前台服务，但国产 ROM
+ * （MIUI / HyperOS 等）在启动 mediaProjection 前台服务时会额外校验投影 token
+ * （`CAPTURE_VIDEO_OUTPUT` / `project_media`），无授权即抛 `SecurityException` 并崩溃进程。
+ * 先授权后起服务可同时满足两边。Miuix / Material 两套共用。
  */
 internal fun requestPlaybackCapture(
     context: Context,
@@ -567,38 +571,32 @@ internal fun requestPlaybackCapture(
     captureLauncher: ActivityResultLauncher<Intent>,
 ) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-        viewModel.usePlaybackCapture(null)
+        // 低于 Android 10 根本没有播放捕获能力，直接走「未授权」分支
+        viewModel.usePlaybackCapture(Activity.RESULT_CANCELED, null)
         return
     }
-    SstvCaptureService.start(context)
     val manager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as? MediaProjectionManager
     val intent = manager?.createScreenCaptureIntent()
     if (intent != null) {
+        // 起点就是授权弹窗：拿到 RESULT_OK 后由 handleCaptureResult 接着起服务+取投影
         captureLauncher.launch(intent)
     } else {
-        SstvCaptureService.stop(context)
-        viewModel.usePlaybackCapture(null)
+        viewModel.usePlaybackCapture(Activity.RESULT_CANCELED, null)
     }
 }
 
-/** 处理投影授权结果：成功则保存投影，失败则停掉前台服务并回退提示。 */
+/**
+ * 处理投影授权结果：**成功分支才启动前台服务**，再由 ViewModel 取投影并切换音源；
+ * 失败分支不会启动服务（避免厂商 ROM 因「无授权启动 mediaProjection FGS」而崩溃）。
+ */
 internal fun handleCaptureResult(
     context: Context,
     viewModel: SstvViewModel,
     resultCode: Int,
     data: Intent?,
 ) {
-    if (resultCode == Activity.RESULT_OK && data != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-        val manager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as? MediaProjectionManager
-        val projection = manager?.let {
-            runCatching { it.getMediaProjection(resultCode, data) }.getOrNull()
-        }
-        viewModel.usePlaybackCapture(projection)
-        if (projection == null) SstvCaptureService.stop(context)
-    } else {
-        viewModel.usePlaybackCapture(null)
-        SstvCaptureService.stop(context)
-    }
+    // 启动前台服务 + 取投影 + 失败回退都在 ViewModel 内完成，UI 只转交授权结果
+    viewModel.usePlaybackCapture(resultCode, data)
 }
 
 /** 顶栏文字动作（发射 / 图库 / 设置）。 */

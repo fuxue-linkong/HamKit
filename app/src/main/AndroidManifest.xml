@@ -21,6 +21,8 @@
       SSTV 播放捕获（Android 10+）：解码其它应用正在播放的音频需要 MediaProjection，
       而 Android 14 起要求调用 getMediaProjection() 之前已有一个
       foregroundServiceType="mediaProjection" 的前台服务在运行。
+      注意：服务必须在拿到授权之后才启动 —— 部分厂商 ROM 会额外校验投影 token
+      （CAPTURE_VIDEO_OUTPUT / project_media），无授权启动该类型前台服务会崩溃。
     -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
 

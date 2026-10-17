@@ -1,8 +1,12 @@
 package com.example.hamkit.ui.viewmodel
 
+import android.app.Activity
 import android.app.Application
+import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.media.projection.MediaProjection
+import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -266,15 +270,58 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * 授权结果交进来（Android 10+ 播放捕获）。
      *
-     * 调用方必须**先**启动 `SstvCaptureService`（前台服务类型 mediaProjection），
-     * 再取投影 —— 这是 Android 14 起的硬性顺序，否则 `getMediaProjection()` 抛
-     * `SecurityException`。本方法只负责保存投影并切到播放捕获音源。
+     * **顺序**：调用方必须**先**通过 `createScreenCaptureIntent()` 拿到用户授权，
+     * 再调用本方法；本方法内部才启动 `SstvCaptureService`，最后取投影。
+     *
+     * 为什么不是「先起服务、再要授权」：AOSP 只要求取投影前有该类型前台服务，但国产
+     * ROM（MIUI / HyperOS 等）会额外校验 `CAPTURE_VIDEO_OUTPUT` / `project_media`，
+     * 在尚无有效授权时启动 mediaProjection 前台服务会抛 `SecurityException` 并**崩溃进程**。
+     * 「先授权、后起服务」同时满足两边。
+     *
+     * @param resultCode `Activity.RESULT_OK` 表示用户已同意录屏（播放捕获）授权
+     * @param data 授权返回的 Intent（含投影 token），取消时为 null
      */
-    fun usePlaybackCapture(projection: MediaProjection?) {
-        if (projection == null) {
+    fun usePlaybackCapture(resultCode: Int, data: Intent?) {
+        val context = getApplication<Application>()
+        val granted = resultCode == Activity.RESULT_OK && data != null &&
+            android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q
+        if (!granted) {
+            finishPlaybackCapture()
             _uiState.update { it.copy(status = "播放捕获授权失败或已取消") }
             return
         }
+        // 1) 先起前台服务：拿到授权后启动才能通过厂商 ROM 的校验
+        SstvCaptureService.setStartFailureListener { error ->
+            // 前台服务被系统/ROM 拦下：不崩溃，但这里**不能**再调 stop() —— 服务刚要起来
+            // 就被停掉，会和它自己 onStartCommand 里的 stopSelf() 打架。只释放本地状态。
+            SstvCaptureService.setStartFailureListener(null)
+            mediaProjection?.let { runCatching { it.stop() } }
+            mediaProjection = null
+            settingsStore.audioSourceKind = SstvSettingsStore.AUDIO_SOURCE_MIC
+            _uiState.update {
+                it.copy(
+                    audioSourceKind = SstvSettingsStore.AUDIO_SOURCE_MIC,
+                    playbackAuthorized = false,
+                    status = "播放捕获启动失败（${error.message?.take(80) ?: "前台服务被拦截"}），已回退麦克风",
+                )
+            }
+        }
+        if (!SstvCaptureService.start(context)) {
+            finishPlaybackCapture()
+            _uiState.update { it.copy(status = "播放捕获不可用：缺少前台服务权限，请在系统设置中允许") }
+            return
+        }
+        // 2) 再取投影：此时前台服务已在前台，满足 Android 14+ 的顺序要求
+        val manager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as? MediaProjectionManager
+        val projection = manager?.let {
+            runCatching { it.getMediaProjection(resultCode, data) }.getOrNull()
+        }
+        if (projection == null) {
+            finishPlaybackCapture()
+            _uiState.update { it.copy(status = "播放捕获授权失败或已取消") }
+            return
+        }
+        SstvCaptureService.setStartFailureListener(null)
         mediaProjection?.let { runCatching { it.stop() } }
         mediaProjection = projection
         settingsStore.audioSourceKind = SstvSettingsStore.AUDIO_SOURCE_PLAYBACK
@@ -287,18 +334,25 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** 切回麦克风音源，并释放播放捕获的投影。 */
-    fun useMicrophone() {
+    /** 放弃本次播放捕获：释放投影、摘掉监听、停掉前台服务（所有失败分支共用）。 */
+    private fun finishPlaybackCapture() {
+        SstvCaptureService.setStartFailureListener(null)
+        SstvCaptureService.stop(getApplication())
         mediaProjection?.let { runCatching { it.stop() } }
         mediaProjection = null
-        SstvCaptureService.stop(getApplication())
         settingsStore.audioSourceKind = SstvSettingsStore.AUDIO_SOURCE_MIC
         _uiState.update {
             it.copy(
                 audioSourceKind = SstvSettingsStore.AUDIO_SOURCE_MIC,
-                status = "音源已切换为麦克风",
+                playbackAuthorized = false,
             )
         }
+    }
+
+    /** 切回麦克风音源，并释放播放捕获的投影。 */
+    fun useMicrophone() {
+        finishPlaybackCapture()
+        _uiState.update { it.copy(status = "音源已切换为麦克风") }
     }
 
     /** 构造本次接收使用的音源（见 [SstvAudioSource]）。 */

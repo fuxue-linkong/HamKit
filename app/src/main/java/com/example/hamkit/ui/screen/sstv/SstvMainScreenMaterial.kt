@@ -121,8 +121,8 @@ fun SstvMainScreenMaterial(
         ActivityResultContracts.OpenDocument(),
     ) { uri -> uri?.let { viewModel.importAudio(it) } }
 
-    // 播放捕获（Android 10+）：先起 mediaProjection 前台服务，再向系统要投影授权。
-    // 顺序不能颠倒 —— Android 14 起要求调用 getMediaProjection() 时已有该类型的前台服务
+    // 播放捕获（Android 10+）：先向系统要投影授权，拿到 RESULT_OK 后才起 mediaProjection
+    // 前台服务并取投影 —— 顺序不能反，部分厂商 ROM 在无有效授权时启动该类型前台服务会崩溃
     val captureLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result -> handleCaptureResult(context, viewModel, result.resultCode, result.data) }

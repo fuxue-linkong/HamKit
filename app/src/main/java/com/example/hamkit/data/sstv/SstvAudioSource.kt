@@ -140,6 +140,11 @@ class MicrophoneAudioSource(private val context: Context) : SstvAudioSource {
  *     `foregroundServiceType="mediaProjection"` 的前台服务在运行，否则抛
  *     `SecurityException`。见 `SstvCaptureService` 与 `AndroidManifest.xml`。
  *
+ *  注意两条的**实际执行顺序**是「先授权 → 再起前台服务 → 最后取投影」：
+ *  部分厂商 ROM（MIUI / HyperOS 等）在启动 mediaProjection 前台服务时会额外校验
+ *  投影 token（`CAPTURE_VIDEO_OUTPUT` / `project_media`），无授权即崩溃；而 AOSP
+ *  只关心取投影前服务是否已在前台，所以这个顺序两边都满足。
+ *
  * 另外被捕获的应用可以声明 `allowAudioPlaybackCapture=false` 拒绝被录，
  * 这种情况下本音源只会读到静音 —— 这是平台行为，不是缺陷。
  */
