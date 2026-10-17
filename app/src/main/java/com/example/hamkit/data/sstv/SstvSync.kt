@@ -151,31 +151,53 @@ object SstvSync {
         }
         if (candidates.size < MIN_PULSES_FOR_FIT) return null
 
-        // 2. 贪心串联：按标称行周期预测下一脉冲位置，在容差窗内取最近候选，
-        //    避免把图像内容中的偶然 1200 Hz 附近波动串进来。
-        val chain = ArrayList<Pulse>()
-        var current = candidates.first()
-        chain.add(current)
-        var searchFrom = 1
-        while (true) {
-            val expected = current.center + nominalLineSamples
-            val tolerance = nominalLineSamples * PULSE_CHAIN_TOLERANCE
-            var best: Pulse? = null
-            var bestDistance = Double.MAX_VALUE
-            for (idx in searchFrom until candidates.size) {
-                val candidate = candidates[idx]
-                val distance = kotlin.math.abs(candidate.center - expected)
-                if (distance <= tolerance && distance < bestDistance) {
-                    best = candidate
-                    bestDistance = distance
-                }
-                // 候选已明显超出预测窗，后续更不可能命中
-                if (candidate.center - expected > tolerance) break
+        // 2. 串联：取**最长**的等间距脉冲串，而不是从第一个候选硬串下去。
+        //
+        //    早期实现只从 candidates.first() 开始贪心：只要首个候选是野值（VIS 前的
+        //    频率过渡、图像内容里偶发的 1200 Hz 波动），下一次预测就落空、链长为 1，
+        //    于是直接判成「未检测到足够的行同步脉冲」—— 整段音频连同其中十几个
+        //    完整帧一起被丢弃（实测：连续接收 10 分钟后的 finalize 永远返回 null）。
+        //
+        //    改为动态规划：每个候选只需找它之后「一个行周期」附近最近的候选作为后继，
+        //    再做二分定位，总复杂度 O(n log n)。这样即使首候选是野值，也能从真正的
+        //    脉冲串开始拟合；漏检一个脉冲只是把链切成两段，取较长的那段即可。
+        val n = candidates.size
+        val centers = DoubleArray(n) { candidates[it].center }
+        val next = IntArray(n) { -1 }
+        val length = IntArray(n) { 1 }
+        val tolerance = nominalLineSamples * PULSE_CHAIN_TOLERANCE
+        for (i in n - 1 downTo 0) {
+            val expected = centers[i] + nominalLineSamples
+            // 二分定位窗口左端：第一个 center >= expected - tolerance
+            var left = i + 1
+            var right = n
+            while (left < right) {
+                val mid = (left + right) ushr 1
+                if (centers[mid] < expected - tolerance) left = mid + 1 else right = mid
             }
-            if (best == null) break
-            chain.add(best)
-            searchFrom = candidates.indexOf(best) + 1
-            current = best
+            var bestDistance = Double.MAX_VALUE
+            var found = -1
+            var index = left
+            while (index < n && centers[index] <= expected + tolerance) {
+                val distance = kotlin.math.abs(centers[index] - expected)
+                if (distance < bestDistance) {
+                    bestDistance = distance
+                    found = index
+                }
+                index++
+            }
+            if (found >= 0) {
+                next[i] = found
+                length[i] = length[found] + 1
+            }
+        }
+        var bestStart = 0
+        for (i in 1 until n) if (length[i] > length[bestStart]) bestStart = i
+        val chain = ArrayList<Pulse>(length[bestStart])
+        var cursor = bestStart
+        while (cursor >= 0) {
+            chain.add(candidates[cursor])
+            cursor = next[cursor]
         }
         if (chain.size < MIN_PULSES_FOR_FIT) return null
 

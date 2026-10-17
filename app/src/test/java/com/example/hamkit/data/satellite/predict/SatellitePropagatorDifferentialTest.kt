@@ -1,4 +1,4 @@
-﻿package com.example.hamkit.data.satellite.predict
+package com.example.hamkit.data.satellite.predict
 
 import com.github.amsacode.predict4java.GroundStationPosition
 import com.github.amsacode.predict4java.PassPredictor
@@ -66,6 +66,16 @@ class SatellitePropagatorDifferentialTest {
     private val lon = 116.4074
     private val altM = 50.0
 
+    // ── 差分采样的时间基准 ──
+    //
+    // 必须钉在 TLE 历元，而不是 System.currentTimeMillis()：差分测试比较的是两个
+    // **实现**（自研 vs predict4java）在同一组元素上的传播结果，用当前时间等于把
+    // 「TLE 老化」引入误差 —— 两个实现的外推速率略有差异，沿迹误差会随 TLE 年龄
+    // 线性累积（实测 GEO 经度差 0.011°/天）。固定用 now 的用例在 TLE 刚拉取时是绿的，
+    // 约一两个月后就会越界变红，属于典型的时间炸弹。
+    private val issEpochMs = issTle.epoch.toEpochMilli()
+    private val geoEpochMs = geoTle.epoch.toEpochMilli()
+
     // ── LEO / SGP4 差分 ──
 
     @Test
@@ -75,7 +85,7 @@ class SatellitePropagatorDifferentialTest {
 
         var checked = 0
         for (offsetMinutes in 0..480 step 30) {
-            val ms = System.currentTimeMillis() + offsetMinutes * 60_000L
+            val ms = issEpochMs + offsetMinutes * 60_000L
             val m = mine.getPosition(ms)
             val r = ref.getSatPos(Date(ms))
             if (m == null || r == null) continue
@@ -109,7 +119,7 @@ class SatellitePropagatorDifferentialTest {
 
         var checked = 0
         for (offsetMinutes in 0..240 step 60) {
-            val ms = System.currentTimeMillis() + offsetMinutes * 60_000L
+            val ms = issEpochMs + offsetMinutes * 60_000L
             val m = mine.getPosition(ms)
             val r = ref.getSatPos(Date(ms))
             if (m == null || r == null) continue
@@ -126,7 +136,7 @@ class SatellitePropagatorDifferentialTest {
         val mine = SatellitePropagator(issTle, lat, lon, altM)
         val ref = PassPredictor(issTleP4j, GroundStationPosition(lat, lon, altM))
         for (offsetMinutes in 0..240 step 60) {
-            val ms = System.currentTimeMillis() + offsetMinutes * 60_000L
+            val ms = issEpochMs + offsetMinutes * 60_000L
             val m = mine.getPosition(ms)
             val r = ref.getSatPos(Date(ms))
             if (m == null || r == null) continue
@@ -144,7 +154,7 @@ class SatellitePropagatorDifferentialTest {
 
         var checked = 0
         for (offsetMinutes in 0..1440 step 120) {
-            val ms = System.currentTimeMillis() + offsetMinutes * 60_000L
+            val ms = geoEpochMs + offsetMinutes * 60_000L
             val m = mine.getPosition(ms)
             val r = ref.getSatPos(Date(ms))
             if (m == null || r == null) continue
@@ -174,7 +184,7 @@ class SatellitePropagatorDifferentialTest {
         val mine = SatellitePropagator(geoTle, lat, lon, altM)
         val ref = PassPredictor(geoTleP4j, GroundStationPosition(lat, lon, altM))
         for (offsetMinutes in 0..1440 step 240) {
-            val ms = System.currentTimeMillis() + offsetMinutes * 60_000L
+            val ms = geoEpochMs + offsetMinutes * 60_000L
             val m = mine.getPosition(ms)
             val r = ref.getSatPos(Date(ms))
             if (m == null || r == null) continue

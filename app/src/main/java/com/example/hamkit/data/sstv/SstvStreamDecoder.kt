@@ -3,6 +3,7 @@ package com.example.hamkit.data.sstv
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.max
+import kotlin.math.round
 
 /**
  * 流式逐行 SSTV 解码器（SSTV 三期 Q0 地基 + Q1 滚动回收）。
@@ -287,6 +288,14 @@ class SstvStreamDecoder(
     /** 首个被接受的脉冲中心（历史段的起点）。 */
     private var anchorCenter = Double.NaN
 
+    /**
+     * 最近一个被接受脉冲的**行格点序号**（锁定期校验用，见 [onPulse]）。
+     *
+     * 与 [pulseK] 不同：它取的是「脉冲中心相对拟合直线落在第几个行周期」，
+     * 因此允许跳号（漏检），只要求严格单调递增。
+     */
+    private var lastAcceptedLine = Long.MIN_VALUE
+
     // ══════════════════════════════════════════════════════════════════
     // 解码用的复用对象
     // ══════════════════════════════════════════════════════════════════
@@ -320,10 +329,27 @@ class SstvStreamDecoder(
      */
     fun feed(newFreqs: FloatArray) {
         if (newFreqs.isEmpty()) return
-        appendAll(newFreqs)
-        scanPulses()
-        drainRadioLines()
-        maintainHistory()
+        // 内部按「不超过半个环容量」切块处理。
+        //
+        // 为什么必须切块：脉冲扫描发生在样本写入环之后，而环只保留最近 tailCapacity
+        // 个样本。调用方一次喂入整帧（导入录音、单元测试都会这样）时，大块写入会先
+        // 把前半段覆盖掉，扫描就只看得到尾部几秒的脉冲 —— 实时输出因此丢掉绝大部分
+        // 行（整帧只剩二三十行），而最终图像却看起来「像那么回事」，很难察觉。
+        // 切块后每块的样本在下一块写入前就完成扫描，历史段也按同一粒度回填。
+        var offset = 0
+        while (offset < newFreqs.size) {
+            val count = minOf(maxFeedChunk, newFreqs.size - offset)
+            val block = if (count == newFreqs.size) {
+                newFreqs
+            } else {
+                newFreqs.copyOfRange(offset, offset + count)
+            }
+            appendAll(block)
+            scanPulses()
+            drainRadioLines()
+            maintainHistory()
+            offset += count
+        }
     }
 
     /**
@@ -492,6 +518,7 @@ class SstvStreamDecoder(
         decodedRadioLines = 0
         missStreak = 0
         anchorCenter = Double.NaN
+        lastAcceptedLine = Long.MIN_VALUE
         // 行解码器带着 Robot 色度平面与奇偶状态，一并换新
         resetLineDecoder()
     }
@@ -539,6 +566,13 @@ class SstvStreamDecoder(
 
         // ② 低频段：续写未冻结的段（正常只有最后一段）。必须覆盖**整块**而不只是新样本 ——
         //    段内空洞会让 finalize 的全局拟合偏差被放大
+        //
+        //    首段必须在**本块回填之前**建立：段一旦存在，下面的循环就会把整块样本写进
+        //    段里。若等到锁定后（maintainHistory）再建，这批样本早已只存在于环里（甚至
+        //    已被环覆盖），段从空开始 —— 单次大块喂入时 finalize 只能看到尾部几秒。
+        if (segments.isEmpty()) {
+            segments.add(Segment(from, FloatArray(0), 0, 1))
+        }
         for (segment in segments) {
             if (segment.frozen) continue
             segment.clip(from, to)
@@ -591,16 +625,23 @@ class SstvStreamDecoder(
     }
 
     /** 当前高频段里的全部样本（从 [tailStart] 起）。 */
-    private fun copyTail(): FloatArray {
-        val count = bufferedSamples()
-        if (count <= 0) return FloatArray(0)
+    private fun copyTail(): FloatArray = copyRange(tailStart, appendedEnd)
+
+    /**
+     * 把绝对位置区间 `[from, to)` 从环形缓冲复制成线性数组。
+     *
+     * 调用方必须保证区间落在环内（`from >= tailStart`、`to <= appendedEnd`）。
+     */
+    private fun copyRange(from: Long, to: Long): FloatArray {
+        val count = (to - from).toInt().coerceAtLeast(0)
+        if (count == 0) return FloatArray(0)
         val out = FloatArray(count)
-        var i = 0
-        while (i < count) {
-            val index = (i) and (tailCapacity - 1)
-            val run = minOf(count - i, tailCapacity - index)
-            System.arraycopy(buffer, index, out, i, run)
-            i += run
+        var written = 0
+        while (written < count) {
+            val index = ringIndex(from + written)
+            val run = minOf(count - written, tailCapacity - index)
+            System.arraycopy(buffer, index, out, written, run)
+            written += run
         }
         return out
     }
@@ -617,16 +658,9 @@ class SstvStreamDecoder(
      */
     private fun maintainHistory() {
         if (!fitLocked || appendedEnd <= 0) return
-
-        // ① 首段：从「首个被接受的脉冲中心 − 半个行周期」开始。
-        //    该脉冲所在的图像行就是流水号 0 所在的行，往前再留小半行足够覆盖该行行首
-        //    （PD/Sco 族的行首在同步之前最多 0.5 个行周期）。
-        if (segments.isEmpty()) {
-            val anchor = firstAcceptedCenter()
-            if (!anchor.isFinite()) return
-            val start = (anchor - nominalLineSamples * 0.5).toLong().coerceAtLeast(0L)
-            segments.add(Segment(start, FloatArray(0), 0, 1))
-        }
+        // ① 首段由 [appendAll] 在首个样本写入时建立（从流起点开始）。这里不再建段：
+        //    等到锁定后再建，那批样本已经只存在于环里、甚至被覆盖，段会是空的。
+        if (segments.isEmpty()) return
 
         // ② 帧尾切分：最后一个脉冲之后超过 frameGapSamples 仍无新脉冲 → 上一段冻结
         //
@@ -705,12 +739,7 @@ class SstvStreamDecoder(
 
         if (segment.size == 0) {
             // 什么都没存下（极短段）：整体交给高频段
-            val tail = copyTail()
-            val from = (tailStart - segment.startSample).toInt()
-            if (from in 0 until out.size) {
-                val count = minOf(tail.size, out.size - from)
-                System.arraycopy(tail, 0, out, from, count)
-            }
+            overlapTail(segment.startSample, out)
             return out
         }
 
@@ -736,15 +765,30 @@ class SstvStreamDecoder(
         }
 
         // 段尾之后进入高频段的部分：用精确样本覆盖
-        val tail = copyTail()
-        if (tail.isNotEmpty()) {
-            val from = (tailStart - segment.startSample).toInt()
-            if (from in 0 until out.size) {
-                val count = minOf(tail.size, out.size - from)
-                System.arraycopy(tail, 0, out, from, count)
-            }
-        }
+        overlapTail(segment.startSample, out)
         return out
+    }
+
+    /**
+     * 用高频段的精确样本覆盖 [out] 中与之重叠的部分（[out] 从 [segmentStart] 起算）。
+     *
+     * 二者可能以两种方式错位，必须分别换算：
+     *  - 段起点**早于**环起点（常见）：`out` 内的高频段起点 = tailStart − segmentStart，
+     *    高频段从下标 0 开始；
+     *  - 段起点**晚于**环起点（段刚建立、环已先滑动）：`out` 从下标 0 开始，
+     *    高频段要从 offset = segmentStart − tailStart 处开始拷。
+     *
+     * 早期实现只处理了前一种，后者会让 `from` 为负、整段样本都不拷贝 —— 于是
+     * finalize 拿到一段全零的频率流，同步拟合直接失败（返回 null）。
+     */
+    private fun overlapTail(segmentStart: Long, out: FloatArray) {
+        val tail = copyTail()
+        if (tail.isEmpty() || out.isEmpty()) return
+        val tailOffset = (segmentStart - tailStart).coerceAtLeast(0L).toInt()
+        val outOffset = (tailStart - segmentStart).coerceAtLeast(0L).toInt()
+        if (tailOffset >= tail.size || outOffset >= out.size) return
+        val count = minOf(tail.size - tailOffset, out.size - outOffset)
+        if (count > 0) System.arraycopy(tail, tailOffset, out, outOffset, count)
     }
 
     /** 把整段频率解码为一帧（与一期路径一致）。 */
@@ -756,9 +800,13 @@ class SstvStreamDecoder(
         val vis = visDetector.result
         if (vis != null && vis.mode == mode) {
             // VIS 坐标是「喂给检测器的音频」坐标系；音频与频率流同时起算，
-            // 因此它与段起点之差就是段内下标（抽样时按 stride 折算）
-            val local = ((vis.stopEndSample - startSample) / stride).toInt().coerceAtLeast(0)
-            if (local < freqs.size) {
+            // 因此它与段起点之差就是段内下标（抽样时按 stride 折算）。
+            //
+            // VIS 必须落在**本段范围内**：持续接收时 VIS 只出现在流首，后续帧的段
+            // 起点都在它之后；此时强行把它夹到 0 会在错误位置搜同步，把本来能解的
+            // 帧解死。落在段外的 VIS 直接忽略，交给全局拟合。
+            val local = ((vis.stopEndSample - startSample) / stride).toInt()
+            if (local >= 0 && local < freqs.size) {
                 val viaVis = decoder.decodeFromFrequencies(
                     freqs = freqs,
                     mode = mode,
@@ -896,8 +944,27 @@ class SstvStreamDecoder(
         if (!center.isFinite()) return
 
         if (fitLocked && lineSamples.isFinite()) {
-            val predicted = firstCenter + lineSamples * pulseK.toDouble()
+            // 允许漏检：先把脉冲对齐到最近的「行格点」，再检查它离该格点是否足够近。
+            //
+            // 不能像早期实现那样预测「正好第 pulseK 个」：真实信号偶尔会漏一个脉冲
+            // （脉冲恰好跨环边界被截断、深衰落、瞬时干扰），预测值随即永久落后整整
+            // 一行，此后每个真实脉冲都被判为野值 —— 跟踪器在第一次漏检后彻底失效，
+            // 命中率跌到 0，后续行全靠外推（实测 MARTIN 1 在第 159 个脉冲处死锁）。
+            //
+            // 行号必须单调：同一脉冲重复上报、或迟到的旧脉冲都直接丢弃，
+            // 否则最小二乘会被重复点带偏。
+            val line = round((center - firstCenter) / lineSamples).toLong()
+            if (line <= lastAcceptedLine) return
+            val predicted = firstCenter + lineSamples * line.toDouble()
             if (abs(center - predicted) > lineSamples * CHAIN_TOLERANCE) return
+            lastAcceptedLine = line
+            // 把最小二乘的序号也推进到这一行。
+            //
+            // 回归的自变量必须是**真实行号**而不是「第几个收到的脉冲」：漏检时二者
+            // 会错开，若仍用顺序号，等于把 11 个行周期的间隔记成 1 个，斜率被拉高
+            // 4% 以上，越过 slant 门限后反复「解锁 → 重建链 → 再解锁」，丢锁恢复
+            // 就再也收不到行（实测 `丢锁后重新锁定` 只剩零星几行）。
+            pulseK = line
         }
         attachCandidate(center, meanHz)
     }
@@ -1002,6 +1069,9 @@ class SstvStreamDecoder(
         if (!fitLocked) {
             fitLocked = true
             lostSync = false
+            // 刚锁定时，最后一个已接受的脉冲是第 (pulseK−1) 行；此后只接受
+            // 行号更大的脉冲（见 onPulse 的单调校验）
+            lastAcceptedLine = pulseK - 1L
             // 首个接受脉冲之前还有多少行？
             //
             // 音频可能从图像中途开始，此时首脉冲所在行的行首为负（行已残缺），
@@ -1112,10 +1182,32 @@ class SstvStreamDecoder(
 
             val locked = fit.pulseCenters.isNotEmpty()
             radioLinePixels.fill(0)
+
+            // 把这一行需要读的样本从**环形缓冲**展开成线性数组，并把 fit 的坐标整体
+            // 平移到窗口起点。
+            //
+            // 为什么必须转换：decodeRadioLine 用 `firstLineStart + row·lineSamples`
+            // 之类的**绝对样本位置**直接索引 freqs。Q0 的频率缓冲是线性数组，绝对位置
+            // 恰好等于下标；Q1 改成环形缓冲后，绝对位置与环下标只差一个常量
+            // `tailStart`，而 decodeRadioLine 里的越界守卫
+            // `channelStart >= freqs.size - 1` 会用绝对位置去比环容量 —— 环一滑动
+            // （约 5 秒后）每一行都判为「越界」，实时输出直接归零。
+            //
+            // 窗口取「行首前一个行周期 ~ 最晚通道终点后半个行周期」：前侧覆盖逐行精调
+            // 要回读的行首同步脉冲（Scottie 族的同步在行中，也不会超出），后侧覆盖
+            // 最后一个通道的尾部与群延迟。
+            val windowStart = (start - samples).toLong().coerceAtLeast(tailStart)
+            val windowEnd = (lastChannelEndSample + samples * 0.5).toLong()
+                .coerceAtMost(appendedEnd)
+            val window = copyRange(windowStart, windowEnd)
             // line = 0：时序在行内是相对的，绝对位置由 fit.firstLineStart 承载
+            val localFit = fit.copy(
+                firstLineStart = fit.firstLineStart - windowStart,
+                pulseCenters = fit.pulseCenters.map { it - windowStart },
+            )
             val ok = lineDecoder.decodeRadioLine(
-                freqs = buffer,
-                fit = fit,
+                freqs = window,
+                fit = localFit,
                 mode = mode,
                 line = 0,
                 hedrShiftHz = currentShiftHz(),
@@ -1297,6 +1389,15 @@ class SstvStreamDecoder(
     private val frameGapSamples: Long
         get() = (mode.imageLines * mode.lineSeconds * sampleRate).toLong() +
             sampleRate.toLong()
+
+    /**
+     * [`feed`] 内部单块的最大样本数：半个环容量。
+     *
+     * 取一半而不是整个容量，是为了保证「上一块的样本在被扫描之前不会被下一块覆盖」：
+     * 每块写入后 `appendedEnd - tailStart <= capacity`，扫描游标始终落在环内。
+     */
+    private val maxFeedChunk: Int
+        get() = maxOf(1, tailCapacity / 2)
 
     /** 历史段总预算（样本）：超过后把最老的段抽样减半。 */
     private val maxHistorySamples: Long

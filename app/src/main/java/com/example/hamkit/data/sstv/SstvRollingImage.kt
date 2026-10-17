@@ -192,14 +192,16 @@ class SstvRollingImage(
      *
      * @param mode 用于标注模式名与失谐量
      * @param hedrShiftHz 本次接收的失谐量
+     * @param maxHeight 目标最大高度（行），默认 [maxHeightRows]；超过时等间隔抽样
      */
     fun toResult(
         mode: SstvMode,
         hedrShiftHz: Double = 0.0,
         slantRatio: Double = 1.0,
         syncPulseCount: Int = 0,
+        maxHeight: Int = maxHeightRows,
     ): SstvDecoder.Result? {
-        val (pixels, outHeight) = toPixels()
+        val (pixels, outHeight) = toPixels(maxHeight)
         if (outHeight == 0) return null
         return SstvDecoder.Result(
             mode = mode,
