@@ -4,8 +4,6 @@ import android.content.Intent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,7 +18,6 @@ import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
@@ -28,6 +25,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -154,145 +152,154 @@ fun SstvGalleryScreenMiuix(
     ) { padding ->
         // 用 Box 包一层：全屏查看要盖在列表之上，两者必须是同一个布局父节点的兄弟
         Box(modifier = Modifier.fillMaxSize()) {
-            Column(
+            // 整页只有一个滚动容器（LazyVerticalGrid），说明、录音卡片都用 item() 承载。
+            // 不能写成 Column(verticalScroll) { ... LazyVerticalGrid(...) }：
+            // 那会让网格在**无限高度约束**下测量，Compose 直接抛 IllegalStateException
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(if (pickForTx) 2 else 3),
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding)
-                    .padding(horizontal = 12.dp)
-                    // 整列可滚动：上方说明与录音卡片在格子多时也要能划出去
-                    .verticalScroll(rememberScrollState()),
+                    .padding(padding),
+                contentPadding = PaddingValues(
+                    start = 12.dp,
+                    end = 12.dp,
+                    bottom = 24.dp,
+                ),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = if (uiState.gallery.isEmpty()) {
-                        "还没有解码历史。接收或导入一段录音后，图像会自动出现在这里。"
-                    } else {
-                        "共 ${uiState.gallery.size} 张 · ${formatBytes(uiState.galleryBytes)}"
-                    },
-                    style = MiuixTheme.textStyles.body2,
-                    color = colorScheme.onBackground,
-                )
-                // 最近一次操作结果（已保存 / 已删除…）只在有图时显示一行，避免常态占位
-                uiState.status.takeIf { uiState.gallery.isNotEmpty() && it.isNotBlank() }?.let {
-                    Spacer(Modifier.height(4.dp))
-                    Text(it, style = MiuixTheme.textStyles.footnote1, color = colorScheme.primary)
-                }
-                Spacer(Modifier.height(8.dp))
-
-                // ── 接收录音（T? 「录下过境 → 事后重解」的入口）──
-                if (uiState.recordings.isNotEmpty()) {
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Text(
-                                "接收录音",
-                                style = MiuixTheme.textStyles.title4,
-                                color = colorScheme.onBackground,
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                "${uiState.recordingsLabel}。录音带 VIS 头，可直接重解 —— " +
-                                    "当时没解好的帧还有机会救回来。",
-                                style = MiuixTheme.textStyles.footnote1,
-                                color = colorScheme.onBackground,
-                            )
-                            Spacer(Modifier.height(6.dp))
-                            uiState.recordings.take(5).forEach { entry ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            entry.modeName.ifBlank { "未识别模式" },
-                                            style = MiuixTheme.textStyles.body2,
-                                            color = colorScheme.onBackground,
-                                        )
-                                        Text(
-                                            "${STAMP_FORMAT.format(Date(entry.timestamp))} · " +
-                                                "${"%.0f".format(entry.seconds)} 秒 · " +
-                                                formatBytes(entry.sizeBytes),
-                                            style = MiuixTheme.textStyles.footnote1,
-                                            color = colorScheme.primary,
-                                        )
-                                    }
-                                    TextButton(
-                                        text = "重解",
-                                        onClick = { viewModel.decodeRecording(entry) },
-                                    )
-                                    TextButton(
-                                        text = "删除",
-                                        onClick = { viewModel.deleteRecording(entry) },
-                                    )
-                                }
-                            }
-                            if (uiState.recordings.size > 5) {
+                // ── 表头：张数与最近一次操作结果 ──
+                item(key = "header", span = { GridItemSpan(maxLineSpan) }) {
+                    Column(modifier = Modifier.padding(top = 8.dp)) {
+                        Text(
+                            text = if (uiState.gallery.isEmpty()) {
+                                "还没有解码历史。接收或导入一段录音后，图像会自动出现在这里。"
+                            } else {
+                                "共 ${uiState.gallery.size} 张 · ${formatBytes(uiState.galleryBytes)}"
+                            },
+                            style = MiuixTheme.textStyles.body2,
+                            color = colorScheme.onBackground,
+                        )
+                        // 最近一次操作结果（已保存 / 已删除…）只在有图时显示一行
+                        uiState.status
+                            .takeIf { uiState.gallery.isNotEmpty() && it.isNotBlank() }
+                            ?.let {
                                 Spacer(Modifier.height(4.dp))
                                 Text(
-                                    "另有 ${uiState.recordings.size - 5} 段未列出",
+                                    it,
+                                    style = MiuixTheme.textStyles.footnote1,
+                                    color = colorScheme.primary,
+                                )
+                            }
+                    }
+                }
+
+                // ── 接收录音（「录下过境 → 事后重解」的入口）──
+                if (uiState.recordings.isNotEmpty()) {
+                    item(key = "recordings", span = { GridItemSpan(maxLineSpan) }) {
+                        Card(modifier = Modifier.fillMaxWidth()) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(
+                                    "接收录音",
+                                    style = MiuixTheme.textStyles.title4,
+                                    color = colorScheme.onBackground,
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    "${uiState.recordingsLabel}。录音带 VIS 头，可直接重解 —— " +
+                                        "当时没解好的帧还有机会救回来。",
                                     style = MiuixTheme.textStyles.footnote1,
                                     color = colorScheme.onBackground,
                                 )
-                            }
-                            Spacer(Modifier.height(6.dp))
-                            // 清空录音不可撤销：文案直接标成错误色，提醒这是破坏性操作
-                            Button(
-                                onClick = { viewModel.clearRecordings() },
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Text("清空全部录音", color = colorScheme.error)
+                                Spacer(Modifier.height(6.dp))
+                                uiState.recordings.take(5).forEach { entry ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                entry.modeName.ifBlank { "未识别模式" },
+                                                style = MiuixTheme.textStyles.body2,
+                                                color = colorScheme.onBackground,
+                                            )
+                                            Text(
+                                                "${STAMP_FORMAT.format(Date(entry.timestamp))} · " +
+                                                    "${"%.0f".format(entry.seconds)} 秒 · " +
+                                                    formatBytes(entry.sizeBytes),
+                                                style = MiuixTheme.textStyles.footnote1,
+                                                color = colorScheme.primary,
+                                            )
+                                        }
+                                        TextButton(
+                                            text = "重解",
+                                            onClick = { viewModel.decodeRecording(entry) },
+                                        )
+                                        TextButton(
+                                            text = "删除",
+                                            onClick = { viewModel.deleteRecording(entry) },
+                                        )
+                                    }
+                                }
+                                if (uiState.recordings.size > 5) {
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        "另有 ${uiState.recordings.size - 5} 段未列出",
+                                        style = MiuixTheme.textStyles.footnote1,
+                                        color = colorScheme.onBackground,
+                                    )
+                                }
+                                Spacer(Modifier.height(6.dp))
+                                // 清空录音不可撤销：文案直接标成错误色，提醒破坏性
+                                Button(
+                                    onClick = { viewModel.clearRecordings() },
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Text("清空全部录音", color = colorScheme.error)
+                                }
                             }
                         }
                     }
-                    Spacer(Modifier.height(12.dp))
                 }
 
+                // ── 空态提示 ──
                 if (uiState.gallery.isEmpty()) {
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text(
-                                "空图库",
-                                style = MiuixTheme.textStyles.title4,
-                                color = colorScheme.onBackground,
-                            )
-                            Spacer(Modifier.height(6.dp))
-                            Text(
-                                "• 「接收」页可实时解码电台/卫星的 SSTV 信号\n" +
-                                    "• 「导入」可解码已录好的 WAV 录音\n" +
-                                    "• 收满一帧后自动保存的前提是设置里开启了「自动保存」",
-                                style = MiuixTheme.textStyles.body2,
-                                color = colorScheme.onBackground,
-                            )
+                    item(key = "empty", span = { GridItemSpan(maxLineSpan) }) {
+                        Card(modifier = Modifier.fillMaxWidth()) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text(
+                                    "空图库",
+                                    style = MiuixTheme.textStyles.title4,
+                                    color = colorScheme.onBackground,
+                                )
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    "• 「接收」页可实时解码电台/卫星的 SSTV 信号\n" +
+                                        "• 「导入」可解码已录好的 WAV 录音\n" +
+                                        "• 收满一帧后自动保存的前提是设置里开启了「自动保存」",
+                                    style = MiuixTheme.textStyles.body2,
+                                    color = colorScheme.onBackground,
+                                )
+                            }
                         }
                     }
-                } else {
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(if (pickForTx) 2 else 3),
-                        // 高度必须由内容决定（wrapContentHeight），不能再 fillMaxSize：
-                        // LazyVerticalGrid 嵌在可滚动 Column 里时拿不到有限高度约束，
-                        // 以前用 fillMaxSize 会导致整页划不动
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 0.dp),
-                        contentPadding = PaddingValues(bottom = 24.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        items(uiState.gallery, key = { it.file.name }) { entry ->
-                            GalleryTile(
-                                entry = entry,
-                                thumbnail = uiState.thumbnails[entry.file.name],
-                                onClick = {
-                                    if (pickForTx) {
-                                        viewModel.setTxFromGallery(entry)
-                                        onPicked(entry)
-                                    } else {
-                                        viewModel.openViewer(entry)
-                                    }
-                                },
-                                onDelete = if (pickForTx) null else ({ pendingDelete = entry }),
-                            )
-                        }
-                    }
+                }
+
+                // ── 缩略图网格 ──
+                items(uiState.gallery, key = { it.file.name }) { entry ->
+                    GalleryTile(
+                        entry = entry,
+                        thumbnail = uiState.thumbnails[entry.file.name],
+                        onClick = {
+                            if (pickForTx) {
+                                viewModel.setTxFromGallery(entry)
+                                onPicked(entry)
+                            } else {
+                                viewModel.openViewer(entry)
+                            }
+                        },
+                        onDelete = if (pickForTx) null else ({ pendingDelete = entry }),
+                    )
                 }
             }
 

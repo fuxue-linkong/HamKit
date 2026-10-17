@@ -4,8 +4,6 @@ import android.content.Intent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,11 +14,11 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -109,154 +107,162 @@ fun SstvGalleryScreenMaterial(
     ) { innerPadding ->
         // 用 Box 包一层：全屏查看要盖在列表之上，两者必须是同一个布局父节点的兄弟
         Box(modifier = Modifier.fillMaxSize()) {
-            Column(
+            // 整页只有一个滚动容器（LazyVerticalGrid），说明与录音卡片都用 item() 承载。
+            // 不能写成 Column(verticalScroll) { ... LazyVerticalGrid(...) }：
+            // 那会让网格在**无限高度约束**下测量，Compose 直接抛 IllegalStateException
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(if (pickForTx) 2 else 3),
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(innerPadding)
-                    .padding(horizontal = 16.dp)
-                    // 整列可滚动：上方说明与录音卡片在格子多时也要能划出去
-                    .verticalScroll(rememberScrollState()),
+                    .padding(innerPadding),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    end = 16.dp,
+                    bottom = 24.dp,
+                ),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(
-                    text = if (uiState.gallery.isEmpty()) {
-                        "还没有解码历史。接收或导入一段录音后，图像会自动出现在这里。"
-                    } else {
-                        "共 ${uiState.gallery.size} 张 · ${formatBytes(uiState.galleryBytes)}"
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                // 最近一次操作结果（已保存 / 已删除…）只在有图时显示一行，避免常态占位
-                uiState.status.takeIf { uiState.gallery.isNotEmpty() && it.isNotBlank() }?.let {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = it,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
+                // ── 表头：张数与最近一次操作结果 ──
+                item(key = "header", span = { GridItemSpan(maxLineSpan) }) {
+                    Column {
+                        Text(
+                            text = if (uiState.gallery.isEmpty()) {
+                                "还没有解码历史。接收或导入一段录音后，图像会自动出现在这里。"
+                            } else {
+                                "共 ${uiState.gallery.size} 张 · ${formatBytes(uiState.galleryBytes)}"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        //
+                        uiState.status
+                            .takeIf { uiState.gallery.isNotEmpty() && it.isNotBlank() }
+                            ?.let {
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    text = it,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                    }
                 }
-                Spacer(Modifier.height(8.dp))
 
                 // ── 接收录音（「录下过境 → 事后重解」的入口）──
                 if (uiState.recordings.isNotEmpty()) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        ),
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text(
-                                text = "接收录音",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                text = "${uiState.recordingsLabel}。录音带 VIS 头，可直接重解 —— " +
-                                    "当时没解好的帧还有机会救回来。",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            SegmentedColumn(
-                                content = uiState.recordings.take(5).map { entry ->
-                                    {
-                                        SegmentedListItem(
-                                            headlineContent = {
-                                                Text(entry.modeName.ifBlank { "未识别模式" })
-                                            },
-                                            supportingContent = {
-                                                Text(
-                                                    "${MATERIAL_STAMP_FORMAT.format(Date(entry.timestamp))} · " +
-                                                        "${"%.0f".format(entry.seconds)} 秒 · " +
-                                                        formatBytes(entry.sizeBytes),
-                                                )
-                                            },
-                                            trailingContent = {
-                                                Row {
-                                                    TextButton(onClick = { viewModel.decodeRecording(entry) }) {
-                                                        Text("重解")
-                                                    }
-                                                    TextButton(onClick = { viewModel.deleteRecording(entry) }) {
-                                                        Text("删除")
-                                                    }
-                                                }
-                                            },
-                                        )
-                                    }
-                                },
-                            )
-                            if (uiState.recordings.size > 5) {
+                    item(key = "recordings", span = { GridItemSpan(maxLineSpan) }) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            ),
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text(
+                                    text = "接收录音",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
                                 Spacer(Modifier.height(4.dp))
                                 Text(
-                                    text = "另有 ${uiState.recordings.size - 5} 段未列出",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.outline,
+                                    text = "${uiState.recordingsLabel}。录音带 VIS 头，可直接重解 —— " +
+                                        "当时没解好的帧还有机会救回来。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
-                            }
-                            Spacer(Modifier.height(8.dp))
-                            OutlinedButton(
-                                onClick = { viewModel.clearRecordings() },
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Text("清空全部录音")
+                                Spacer(Modifier.height(8.dp))
+                                SegmentedColumn(
+                                    content = uiState.recordings.take(5).map { entry ->
+                                        {
+                                            SegmentedListItem(
+                                                headlineContent = {
+                                                    Text(entry.modeName.ifBlank { "未识别模式" })
+                                                },
+                                                supportingContent = {
+                                                    Text(
+                                                        "${MATERIAL_STAMP_FORMAT.format(Date(entry.timestamp))} · " +
+                                                            "${"%.0f".format(entry.seconds)} 秒 · " +
+                                                            formatBytes(entry.sizeBytes),
+                                                    )
+                                                },
+                                                trailingContent = {
+                                                    Row {
+                                                        TextButton(onClick = { viewModel.decodeRecording(entry) }) {
+                                                            Text("重解")
+                                                        }
+                                                        TextButton(onClick = { viewModel.deleteRecording(entry) }) {
+                                                            Text("删除")
+                                                        }
+                                                    }
+                                                },
+                                            )
+                                        }
+                                    },
+                                )
+                                if (uiState.recordings.size > 5) {
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        text = "另有 ${uiState.recordings.size - 5} 段未列出",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.outline,
+                                    )
+                                }
+                                Spacer(Modifier.height(8.dp))
+                                OutlinedButton(
+                                    onClick = { viewModel.clearRecordings() },
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Text("清空全部录音")
+                                }
                             }
                         }
                     }
-                    Spacer(Modifier.height(12.dp))
                 }
 
+                // ── 空态提示 ──
                 if (uiState.gallery.isEmpty()) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        ),
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text(
-                                text = "提示",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                            Spacer(Modifier.height(6.dp))
-                            Text(
-                                text = "• 「接收」页可实时解码电台/卫星的 SSTV 信号\n" +
-                                    "• 「导入」可解码已录好的 WAV 录音\n" +
-                                    "• 收满一帧后自动保存的前提是设置里开启了「自动保存」",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                    item(key = "empty", span = { GridItemSpan(maxLineSpan) }) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            ),
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text(
+                                    text = "提示",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    text = "• 「接收」页可实时解码电台/卫星的 SSTV 信号\n" +
+                                        "• 「导入」可解码已录好的 WAV 录音\n" +
+                                        "• 收满一帧后自动保存的前提是设置里开启了「自动保存」",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
-                } else {
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(if (pickForTx) 2 else 3),
-                        // 嵌在可滚动 Column 里：高度必须由内容决定，fillMaxSize 会让整页划不动
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 0.dp),
-                        contentPadding = PaddingValues(bottom = 24.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        items(uiState.gallery, key = { it.file.name }) { entry ->
-                            GalleryTileMaterial(
-                                entry = entry,
-                                thumbnail = uiState.thumbnails[entry.file.name],
-                                onClick = {
-                                    if (pickForTx) {
-                                        viewModel.setTxFromGallery(entry)
-                                        onPicked(entry)
-                                    } else {
-                                        viewModel.openViewer(entry)
-                                    }
-                                },
-                                onDelete = if (pickForTx) null else ({ pendingDelete = entry }),
-                            )
-                        }
-                    }
+                }
+
+                // ── 缩略图网格 ──
+                items(uiState.gallery, key = { it.file.name }) { entry ->
+                    GalleryTileMaterial(
+                        entry = entry,
+                        thumbnail = uiState.thumbnails[entry.file.name],
+                        onClick = {
+                            if (pickForTx) {
+                                viewModel.setTxFromGallery(entry)
+                                onPicked(entry)
+                            } else {
+                                viewModel.openViewer(entry)
+                            }
+                        },
+                        onDelete = if (pickForTx) null else ({ pendingDelete = entry }),
+                    )
                 }
             }
 
