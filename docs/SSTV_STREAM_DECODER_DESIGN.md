@@ -3,7 +3,7 @@
 > 编制日期：2026-09-27
 > 上游：[SSTV_PHASE3_PLAN.md](SSTV_PHASE3_PLAN.md)（三期调研）§六 Q0
 > 依据：当前 `miuix` 分支代码（HEAD `6fec027`）中 `SstvDecoder` / `SstvSync` / `SstvDemodulator` / `SstvMode` 的实际签名
-> 状态：**设计完成，未开始编码**
+> 状态：**已实现并合入**（2026-10-17），实现记录见 §十一
 > 预估：2 天（含 11 个单元测试）
 
 ---
@@ -449,3 +449,45 @@ private fun decodeNextLine(): Boolean {
 | Q2 滚动预览 | `onLine(LineEvent)` | 按 `imageRow` 追加绘制；`locked=false` 的行可弱化显示 |
 | Q3 重复帧识别 | `finalize()` 的 `Result` | 融合输入统一用 finalize 结果（对齐一致） |
 | Q4 融合质量筛选 | `Stats.syncHitRate`、`LineEvent.locked`、`Stats.slantRatio` | 作为"该帧是否值得参与融合"的判据（对应三期实验二的教训） |
+
+
+---
+
+## 十一、实现记录（2026-10-17 落地）
+
+### 11.1 交付内容
+
+| 文件 | 内容 |
+|---|---|
+| `data/sstv/SstvStreamDecoder.kt`（新增） | 流式逐行解码器本体 |
+| `data/sstv/SstvDecoder.kt` | `decodeRadioLine` / `sampleLevel` 由 `private` 改 `internal`；新增 `resetFrameState()` |
+| `data/sstv/SstvSync.kt` | `findSyncPulses` 新增 `dropFirstPulse` 参数；新增 `LINE_REFINE_TOLERANCE` 常量 |
+| `data/sstv/SstvVis.kt` | 新增只读属性 `result`（供 finalize 判断有无 VIS） |
+| `app/src/test/.../SstvStreamDecoderTest.kt`（新增） | 12 个用例，全部纯 JVM |
+
+### 11.2 与设计稿的差异（均为实现中发现并修正的必要改动）
+
+| # | 设计稿 | 实现 | 原因 |
+|---|---|---|---|
+| 1 | §4.2 在线最小二乘「至少 4 个脉冲后锁定」，未说首脉冲如何取得 | 新增**候选链**：未锁定时把「连续差一个行周期」的脉冲攒成链，攒够 4 个才一次性入账并拟合 | 直接对每个候选脉冲入账，图像内容里的偶然 1200 Hz 短段会把直线带歪（实测峰值偏差达 244 样本 ⇒ 整幅错位一行）。串联必须**从锁定前就生效** |
+| 2 | §4.1 脉冲门限只有「最短长度」 | 增加**最长长度**门限（1.6 × 标称同步时长） | 「VIS 停止位 + 第 0 行同步」首尾相接，会合成一个 622 样本的长段（正常为 134），其中心比真实同步早约 244 样本。这与一期剔除首脉冲是同一个坑，这里用长度识别而不假设「首脉冲必被污染」 |
+| 3 | §4.3 `fitForLine` 只给 `lineSamples` 与 `firstLineStart` | 行首换算必须是 `中心 − sync/2 − syncOffset`，**三项各扣一次** | 反复踩到两种错：多扣 Scottie 偏移（整行错位 2·sep+2·chanLen）、漏扣 Scottie 偏移。设计稿未写出该恒等式，实现已固化为 `radioStart()` 并加注释 |
+| 4 | §4.3 用 `recentPulses` 找附近脉冲 | 行几何锚点取**拟合直线在 k=0 的取值**，不从环形缓冲取 | 环形缓冲只保留最近 64 个脉冲，长音频下「首个脉冲」会漂到第 64 个之后 |
+| 5 | §4.4「PD 族回调两次」 | 保持按**图像行**回调；`Stats.decodedLines` 也按图像行计 | 与 §5 D5 一致 |
+| 6 | §3.3 `finalize()` 直接委托一期 | 先做 VIS 检测：**有 VIS** 才走一期路径（此时逐像素一致）；**无 VIS** 走全局拟合回退（`dropFirstPulse = false`） | 一期入口在无 VIS 时会失败；而持有 VIS 起点却不用其失谐量反而更差 |
+| 7 | 未提及 | 新增 `feedAudio()`：可与 `feed()` 并行喂原始音频，仅用于 finalize 的 VIS 识别 | VIS 检测必须在原始音频上做，频率流上检不出 |
+
+### 11.3 实测结果（Robot 36 / Scottie 1，16 kHz）
+
+| 指标 | 结果 |
+|---|---|
+| `finalize()` 与一期 `decodeFromFrequencies` | **逐像素一致**（Robot 36 / Martin 1 / Scottie 1 全覆盖） |
+| 实时（因果）输出 vs 一期 PSNR | **30.6 dB**（Robot 36 整帧；设计稿 §六 Q0 原先写 ≥ 40 dB，实测因果代价约 30 dB，已按实测收紧断言为 ≥ 25 dB） |
+| 实时解出行数 | 238 / 240（首行的同步与 VIS 停止位粘连、末两行音频不完整，二者一期同样解不出） |
+| 收敛速度 | 12 个脉冲后 `slantRatio` 已达 1.000000，同步命中率 100% |
+| 吞吐 | 单帧 37 秒音频一次性 `feed` 约 140 ms（含逐行解码），实时余量充足 |
+
+### 11.4 未做（按设计划归后续任务）
+
+- 频率流滚动回收（Q1）：`consumedSamples()` 已提供且语义已明确为「下一行行首 − 一个行周期」，但 Q0 暂不回收。
+- 滚动预览 UI（Q2）、重复帧识别（Q3）、融合（Q4–Q5）。

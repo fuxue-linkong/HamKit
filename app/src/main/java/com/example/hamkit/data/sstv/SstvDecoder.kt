@@ -149,9 +149,8 @@ class SstvDecoder(
         val effectiveRate = fit.effectiveRate(sampleRate)
         val pixels = IntArray(mode.linePixels * mode.imageLines)
         var decodedLines = 0
-        // 每次解码都是一段独立的音频流，行奇偶状态必须重新起算（否则上一段音频的
-        // 判定会污染这一段；虽然标记本身会立刻纠正，但第一行仍会带错色度）
-        lastEvenParity = true
+        // 每次解码都是一段独立的音频流，行奇偶状态必须重新起算
+        resetFrameState()
         for (line in 0 until mode.radioLines) {
             if (!decodeRadioLine(
                     freqs, fit, mode, line, effectiveShiftHz, pixels, validFromSample, effectiveRate,
@@ -192,11 +191,29 @@ class SstvDecoder(
     private var levelScratch = FloatArray(0)
 
     /**
+     * 重置帧级状态（行奇偶与 Robot 跨行色度）。
+     *
+     * 每次解码都是一段独立的音频流，这些状态必须重新起算：否则上一段音频的判定
+     * 会污染这一段 —— 虽然行奇偶标记本身会立刻纠正，但第一行仍会带错色度。
+     * 三期的 [SstvStreamDecoder.finalize] 复用一个解码器实例重解时也要调用它。
+     */
+    internal fun resetFrameState() {
+        lastEvenParity = true
+        chromaCr = IntArray(0)
+        chromaCb = IntArray(0)
+    }
+
+    /**
      * 解码一个无线行并写入 [pixels]。
+     *
+     * `internal` 而非 `private`：三期的 [SstvStreamDecoder] 需要**逐行**驱动解码。
+     * 行解码里含三族色彩组装、Robot 行交替色度、PD 双行配对、Scottie 行首偏移，
+     * 这些全部经过既有用例验证，重写等于放弃保障；而它唯一的输入是一个 [SstvSync.SyncFit]，
+     * 「离线全局拟合」与「流式滚动拟合」都能造出来 —— 这个边界正是正确的复用点。
      *
      * @return 该行是否完整落在音频范围内；false 表示同步已丢失，调用方应停止。
      */
-    private fun decodeRadioLine(
+    internal fun decodeRadioLine(
         freqs: FloatArray,
         fit: SstvSync.SyncFit,
         mode: SstvMode,
@@ -424,7 +441,7 @@ class SstvDecoder(
      * 取窗平均而非单点采样是抗噪的关键；窗宽取像素时长的 60%，避免跨越相邻像素。
      * 频率映射前先减去 `hedrShiftHz`，否则整幅图像会偏亮或偏暗。
      */
-    private fun sampleLevel(
+    internal fun sampleLevel(
         freqs: FloatArray,
         centerSample: Double,
         pixelSamples: Double,

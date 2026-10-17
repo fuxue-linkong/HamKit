@@ -80,7 +80,7 @@ object SstvSync {
          */
         fun lineStartRefined(line: Int, syncSamples: Double): Double {
             val predictedCenter = lineStart(line) + syncOffsetSamples + syncSamples / 2.0
-            val tolerance = lineSamples * 0.2
+            val tolerance = lineSamples * LINE_REFINE_TOLERANCE
             var best: Double? = null
             var bestDistance = Double.MAX_VALUE
             for (center in pulseCenters) {
@@ -114,6 +114,12 @@ object SstvSync {
      * @param sampleRate 采样率（Hz）
      * @param hedrShiftHz 实测 leader 与标称 1900 Hz 的偏差，用于校正同步频率目标
      * @param startIndex 从该样本位置开始搜索（通常为 VIS 停止位之后）
+     * @param dropFirstPulse 是否在拟合前剔除首脉冲（默认 true）。
+     *
+     *   只在**能确定音频里没有 VIS 头**（例如三期的持续接收、纯图像数据流）时传 false：
+     *   此时首脉冲就是真实的第 0 行同步，剔除它反而会丢掉一个锚点；
+     *   而若起点落在 VIS 的 1900 Hz leader 之后，停止位会与首脉冲粘连成一个
+     *   被污染的长脉冲，必须剔除。
      * @return 拟合结果；同步脉冲不足或拟合异常时返回 null
      */
     fun findSyncPulses(
@@ -122,6 +128,7 @@ object SstvSync {
         sampleRate: Int,
         hedrShiftHz: Double,
         startIndex: Int = 0,
+        dropFirstPulse: Boolean = true,
     ): SyncFit? {
         val nominalLineSamples = mode.lineSeconds * sampleRate
         val syncSamples = mode.syncSeconds * sampleRate
@@ -174,10 +181,11 @@ object SstvSync {
 
         // 3. 最小二乘拟合：center(k) ≈ a + b·k
         //
-        //    刻意剔除第一个脉冲：VIS 的停止位（1200 Hz）与图像第一行的同步脉冲
+        //    默认剔除第一个脉冲：VIS 的停止位（1200 Hz）与图像第一行的同步脉冲
         //    同为 1200 Hz 且首尾相接，极易被检测成一个被污染的「合并段」。剔除后
         //    由拟合直线外推行 0 的位置，使整体对齐不受该污染影响。
-        val startOffset = if (chain.size > MIN_PULSES_FOR_FIT) 1 else 0
+        //    音频里确定没有 VIS 时（见 [dropFirstPulse]）则保留，多一个有效锚点。
+        val startOffset = if (dropFirstPulse && chain.size > MIN_PULSES_FOR_FIT) 1 else 0
         val m = chain.size - startOffset
         var sumK = 0.0
         var sumP = 0.0
@@ -242,6 +250,14 @@ object SstvSync {
     /** 判断某个频率样本是否落在同步脉冲频率附近。 */
     private fun isSync(value: Float, targetHz: Double): Boolean =
         kotlin.math.abs(value - targetHz) <= SYNC_TOLERANCE_HZ
+
+    /**
+     * 逐行精调时，在拟合预测位置附近搜索实测脉冲的容差（行周期的倍数）。
+     *
+     * 三期 `SstvStreamDecoder` 判定某行是否「命中实测脉冲」（`LineEvent.locked`）
+     * 时复用同一常量，保证两者对「命中」的定义严格一致。
+     */
+    internal const val LINE_REFINE_TOLERANCE = 0.2
 
     /** 同步频率容差（Hz）。 */
     private const val SYNC_TOLERANCE_HZ = 60.0

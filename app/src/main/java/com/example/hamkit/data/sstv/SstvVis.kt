@@ -74,6 +74,14 @@ class SstvVisDetector(
     private var detected: Result? = null
 
     /**
+     * 最近一次检出的结果（未检出为 null）。
+     *
+     * 供三期的 [SstvStreamDecoder.finalize] 在收尾时判断「这段音频里到底有没有 VIS」——
+     * 有 VIS 才能让它与一期走完全相同的解码路径。
+     */
+    val result: Result? get() = detected
+
+    /**
      * 送入一段音频（单声道浮点，范围约 ±1.0），返回本次检出结果；未检出返回 null。
      *
      * 一旦检出成功，后续调用将直接返回同一结果，直至 [reset] —— 与 slowrx
