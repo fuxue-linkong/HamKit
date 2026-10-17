@@ -68,18 +68,18 @@ class RollingRefreshHelperTest {
     fun `相邻重建间隔不小于节流值`() = runTest(dispatcher) {
         val requests = MutableStateFlow(0)
         val renderTimes = mutableListOf<Long>()
-        var virtual = 0L
+        // 时钟直接取虚拟调度器的时间：delay 与 now() 走同一个时间轴，
+        // 否则「手动递增的变量」与「虚拟时间」不同步，节流判断会失真
         val job = launchRollingRefresher(
             requests = requests,
             minIntervalMs = 120L,
-            now = { virtual },
-            onRender = { renderTimes.add(virtual) },
+            now = { testScheduler.currentTime },
+            onRender = { renderTimes.add(testScheduler.currentTime) },
         )
         advanceUntilIdle()
 
-        // 逐行推进：每 10 ms 来一行新数据（远快于节流间隔）
-        repeat(30) {
-            virtual += 10
+        // 每 10 ms 来一行新数据（远快于 120 ms 节流间隔），持续 600 ms
+        repeat(60) {
             requests.update { it + 1 }
             advanceTimeBy(10L)
         }
