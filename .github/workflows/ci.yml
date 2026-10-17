@@ -95,6 +95,15 @@ jobs:
             --continue \
             --stacktrace \
             --no-daemon 2>&1 | tee test-output.log
+          # runner 内存打满时 JVM 会静默退出、日志眼看是「成功」但一个测试都没跑，
+          # 这里先把真实退出码与产物落地情况显式打出来，便于远程排障
+          echo "gradle exit=${PIPESTATUS[0]}"
+          ls -l app/build/test-results/testDebugUnitTest 2>/dev/null | head -5 || true
+          if find app/build/test-results -name 'TEST-*.xml' -print -quit 2>/dev/null | grep -q .; then
+            echo "TEST-XML: present"
+          else
+            echo "TEST-XML: none"
+          fi
 
       # 测试失败时上传报告，并标记跳过后续构建步骤
       - name: Upload test reports on failure
