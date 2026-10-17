@@ -219,8 +219,13 @@ android {
     testOptions {
         unitTests {
             all {
-                // 并行 fork：利用多核 CPU，每个 fork 运行一个测试类
-                it.maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
+                // 并行 fork：利用多核 CPU，每个 fork 运行一个测试类。
+                // 上限 4：持续接收 / 融合用例各自持有较大的频率缓冲（单帧解码音频可达
+                // 数千万样本），fork 数随核数线性增长时，GitHub 的 4 核 runner 上
+                // 并行峰值会把容器内存打满，JVM 直接失败退出（TEST-*.xml 一个都不生成，
+                // 表现为「单元测试门禁空跑」，极难定位）。4 个分片已能跑满整轮。
+                it.maxParallelForks =
+                    (Runtime.getRuntime().availableProcessors() / 2).coerceIn(1, 4)
                 // 每个 fork 的 JVM 堆内存（避免 OOM，也避免过大导致 GC 停顿）
                 it.setJvmArgs(
                     listOf(
