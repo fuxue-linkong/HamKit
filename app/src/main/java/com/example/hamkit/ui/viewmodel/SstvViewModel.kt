@@ -1867,24 +1867,24 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 return@launch
             }
-            txOrigin = TxOrigin.File(cached)
+            txOrigin = cached
             loadTxSource()
         }
     }
 
     /** 从 SSTV 图库（已解码图像）选图作为发射源。 */
     fun setTxFromGallery(entry: SstvImageStore.Entry) {
-        txOrigin = TxOrigin.File(entry.file)
+        txOrigin = entry.file
         loadTxSource()
     }
 
-    /** 发射源：相册选择会先落成 `cacheDir/sstv_tx` 下的缓存副本，图库选择直接用图库文件。 */
-    private sealed interface TxOrigin {
-        /** 相册/文件选择的缓存副本（文件名即用户在系统里看到的显示名）。 */
-        data class File(val file: java.io.File) : TxOrigin
-    }
-
-    private var txOrigin: TxOrigin? = null
+    /**
+     * 发射源文件。
+     *
+     * 相册选择会先复制到 `cacheDir/sstv_tx` 下的缓存副本；图库选择直接用图库文件。
+     * 只保存文件而不是 URI —— URI 授权可能过期，也不能保证可重复打开（见 [setTxImage]）。
+     */
+    private var txOrigin: java.io.File? = null
 
     /**
      * 切模式后重装配。
@@ -1930,7 +1930,7 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(txStatus = "正在载入图片…") }
         viewModelScope.launch {
             val outcome = withContext(Dispatchers.IO) {
-                SstvBitmapSource.loadOrError(origin.file, mode, callsign)
+                SstvBitmapSource.loadOrError(origin, mode, callsign)
             }
             val result = outcome.getOrNull()
             if (result == null) {
@@ -1955,7 +1955,7 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update {
                 it.copy(
                     txPreview = preview,
-                    txSourceLabel = origin.file.name,
+                    txSourceLabel = origin.name,
                     txStatus = "已载入 ${result.width}×${result.height}，按 ${mode.displayName} 发射约 " +
                         "${"%.0f".format(seconds)} 秒",
                 )
