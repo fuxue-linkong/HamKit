@@ -82,24 +82,7 @@ jobs:
           gradle-version: ${{ env.GRADLE_VERSION }}
           cache-read-only: false # 可写缓存（行业惯例：分支构建可写）
 
-      # 分片第一轮：只跑纯 JVM 数据层用例（APK 打包标签里没有 Android 资源依赖）。
-      # 后面的 Robolectric 用例要下载 android-all(J) 并解压运行；两者混在一起时
-      # 4 核 runner 的峰值内存会被 Robolectric SDK 解压撑爆，导致 JVM 被 OOM killer
-      # 直接杀掉、一个 TEST-*.xml 都不生成（日志上完全看不出失败）。
-      - name: Run unit tests (pure JVM)
-        id: jvm-tests
-        run: |
-          set -o pipefail
-          gradle :app:testDebugUnitTest \
-            --tests 'com.example.hamkit.data.*' \
-            --console=plain \
-            --continue \
-            --stacktrace \
-            --no-daemon 2>&1 | tee test-output-jvm.log
-          echo "gradle exit=${PIPESTATUS[0]}"
-
-      - name: Run unit tests (Robolectric)
-        id: robolectric-tests
+      - name: Run unit tests
         run: |
           set -o pipefail
           gradle :app:testDebugUnitTest \
@@ -107,15 +90,6 @@ jobs:
             --continue \
             --stacktrace \
             --no-daemon 2>&1 | tee test-output.log
-          # runner 内存打满时 JVM 会静默退出、日志眼看是「成功」但一个测试都没跑，
-          # 这里先把真实退出码与产物落地情况显式打出来，便于远程排障
-          echo "gradle exit=${PIPESTATUS[0]}"
-          ls -l app/build/test-results/testDebugUnitTest 2>/dev/null | head -5 || true
-          if find app/build/test-results -name 'TEST-*.xml' -print -quit 2>/dev/null | grep -q .; then
-            echo "TEST-XML: present"
-          else
-            echo "TEST-XML: none"
-          fi
 
       - name: Upload test reports on failure
         if: failure()
@@ -126,7 +100,6 @@ jobs:
             app/build/reports/tests
             app/build/test-results
             test-output.log
-            test-output-jvm.log
           retention-days: 30
           if-no-files-found: warn
 

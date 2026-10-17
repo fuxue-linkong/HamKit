@@ -302,8 +302,11 @@ object SstvFrameFusion {
         val h = center.height
         val weights = DoubleArray(frames.size)
         for (i in frames.indices) {
-            // 用配准后的实际帧算权重：直接比缩略图会把「对得准但偏移了」的帧算低
-            val score = ncc(centerThumb, thumbnail(shifted(frames[i], shifts[i].rowShift, shifts[i].columnShift)))
+            // 用配准后的实际帧算权重：直接比缩略图会把「对得准但偏移了」的帧算低。
+            // shifts 是 (行偏移, 列偏移) 二元组，注意顺序与 shifted() 的参数一致
+            val rowShift = shifts[i].first
+            val columnShift = shifts[i].second
+            val score = ncc(centerThumb, thumbnail(shifted(frames[i], rowShift, columnShift)))
             weights[i] = max(0.0, score)
         }
         if (weights.all { it <= 0.0 }) weights.fill(1.0)

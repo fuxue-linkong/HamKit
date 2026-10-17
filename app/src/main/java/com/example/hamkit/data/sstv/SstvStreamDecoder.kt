@@ -355,8 +355,10 @@ class SstvStreamDecoder(
         val result = visDetector.process(pcm)
         // 中途捕到 VIS：失谐量可信度远高于「未锁定时的 0」，立刻用于脉冲搜索。
         // 模式仍不切换 —— 切换会让流水号断裂、已收内容与新模式的行周期不匹配
+        // 写运行时镜像 [initialShiftHz]（构造参数初始化的可变副本），
+        // 而不是构造参数本身 —— 参数在 Kotlin 里是只读的
         if (result != null && !fitLocked) {
-            initialHedrShiftHz = result.hedrShiftHz
+            initialShiftHz = result.hedrShiftHz
         }
     }
 
