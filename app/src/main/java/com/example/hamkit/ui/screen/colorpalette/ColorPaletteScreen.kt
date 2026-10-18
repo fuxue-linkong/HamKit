@@ -45,15 +45,17 @@ fun ColorPaletteScreen() {
     } catch (_: Exception) {
         ColorSpec.SpecVersion.Default
     }
+    // 主题模式在 SettingsRepository 中以 Int 存储，需转回 ColorMode 枚举
+    val currentColorMode = ColorMode.fromValue(uiState.themeMode)
 
     // 导入成功/失败后的统一收尾：更新状态并刷新首页时间卡背景
-    fun onSaved() {
+    val onSaved: () -> Unit = {
         // 存储实际文件路径而非源 URI（源 URI 进程重启后可能失效）
         viewModel.setCustomBackgroundUri(imageStore.customImageFile.absolutePath)
         mainViewModel.refreshLandscapeImage()
     }
 
-    fun onFailed(reason: String) {
+    val onFailed: (String) -> Unit = { reason ->
         Log.e(IMPORT_LOG_TAG, "背景导入失败：$reason")
         Toast.makeText(
             context,
@@ -102,6 +104,14 @@ fun ColorPaletteScreen() {
             viewModel.clearCustomBackgroundUri()
             mainViewModel.refreshLandscapeImage()
         },
+    )
+
+    // 组装 UI 状态（重构时漏掉了这行，导致两个子屏幕收到未定义的 state）
+    val state = ColorPaletteUiState(
+        uiState = uiState,
+        currentColorMode = currentColorMode,
+        currentPaletteStyle = currentPaletteStyle,
+        currentColorSpec = currentColorSpec,
     )
 
     when (LocalUiMode.current) {
