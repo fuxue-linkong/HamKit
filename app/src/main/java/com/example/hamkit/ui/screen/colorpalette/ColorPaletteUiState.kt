@@ -29,5 +29,7 @@ data class ColorPaletteScreenActions(
     val onSetEnablePredictiveBack: (Boolean) -> Unit,
     val onSetPageScale: (Float) -> Unit,
     val onSetCustomBackground: (android.net.Uri) -> Unit = {},
+    // 裁剪结果位图直存路径：不依赖裁剪页回传的 uri 授权
+    val onSetCustomBackgroundBitmap: (android.graphics.Bitmap) -> Unit = {},
     val onClearCustomBackground: () -> Unit = {},
 )

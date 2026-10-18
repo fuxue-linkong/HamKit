@@ -1,6 +1,8 @@
 package com.example.hamkit.ui.screen.colorpalette
 
+import android.graphics.Bitmap
 import android.net.Uri
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.LocalActivity
 import androidx.compose.runtime.Composable
@@ -22,6 +24,8 @@ import com.example.hamkit.ui.navigation3.LocalNavigator
 import com.example.hamkit.ui.theme.ColorMode
 import com.example.hamkit.ui.viewmodel.SettingsViewModel
 
+private const val IMPORT_LOG_TAG = "BgImport"
+
 @Composable
 fun ColorPaletteScreen() {
     val navigator = LocalNavigator.current
@@ -41,12 +45,23 @@ fun ColorPaletteScreen() {
     } catch (_: Exception) {
         ColorSpec.SpecVersion.Default
     }
-    val state = ColorPaletteUiState(
-        uiState = uiState,
-        currentColorMode = ColorMode.fromValue(uiState.themeMode),
-        currentPaletteStyle = currentPaletteStyle,
-        currentColorSpec = currentColorSpec,
-    )
+
+    // 导入成功/失败后的统一收尾：更新状态并刷新首页时间卡背景
+    fun onSaved() {
+        // 存储实际文件路径而非源 URI（源 URI 进程重启后可能失效）
+        viewModel.setCustomBackgroundUri(imageStore.customImageFile.absolutePath)
+        mainViewModel.refreshLandscapeImage()
+    }
+
+    fun onFailed(reason: String) {
+        Log.e(IMPORT_LOG_TAG, "背景导入失败：$reason")
+        Toast.makeText(
+            context,
+            context.getString(R.string.timecard_background_save_failed),
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
     val actions = ColorPaletteScreenActions(
         onBack = dropUnlessResumed { navigator.pop() },
         onSetThemeMode = viewModel::setThemeMode,
@@ -64,20 +79,23 @@ fun ColorPaletteScreen() {
             activity?.recreate()
         },
         onSetPageScale = viewModel::setPageScale,
-        onSetCustomBackground = { uri ->
-            if (imageStore.saveCustomImage(uri, context)) {
-                // 存储实际文件路径而非源 URI（源 URI 进程重启后可能失效）
-                viewModel.setCustomBackgroundUri(imageStore.customImageFile.absolutePath)
-                mainViewModel.refreshLandscapeImage()
+        // 首选路径：直接用裁剪结果位图保存，绕开 MediaStore 临时授权失效问题
+        onSetCustomBackgroundBitmap = { bitmap: Bitmap ->
+            if (imageStore.saveCustomImage(bitmap)) {
+                onSaved()
             } else {
-                Toast.makeText(
-                    context,
-                    context.getString(R.string.timecard_background_save_failed),
-                    Toast.LENGTH_SHORT
-                ).show()
+                onFailed("裁剪结果位图保存失败")
             }
-            // 清理裁剪回退路径产生的临时文件
-            java.io.File(context.cacheDir, "crop_temp.jpg").delete()
+            bitmap.recycle()
+        },
+        // 兼容路径：裁剪页只回传 uri 时（如 Activity 重建）仍按 uri 读取并保存
+        onSetCustomBackground = { uri: Uri ->
+            Log.i(IMPORT_LOG_TAG, "背景导入走 uri 路径：${uri.scheme}:$uri")
+            if (imageStore.saveCustomImage(uri, context)) {
+                onSaved()
+            } else {
+                onFailed("uri 读取保存失败：${uri.scheme}:$uri")
+            }
         },
         onClearCustomBackground = {
             imageStore.clearCustomImage()

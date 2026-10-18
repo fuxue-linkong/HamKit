@@ -1,13 +1,10 @@
 package com.example.hamkit.ui.screen.colorpalette
 
 import android.annotation.SuppressLint
-import android.graphics.Bitmap
-import android.net.Uri
 import android.os.Build
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.ui.platform.LocalContext
-import java.io.File
-import java.io.FileOutputStream
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -125,23 +122,17 @@ fun ColorPaletteScreenMaterial(
     val context = LocalContext.current
 
     val cropLauncher = rememberLauncherForActivityResult(CropImageContract()) { result ->
-        if (result != null && result.isSuccessful) {
-            result.uriContent?.let { actions.onSetCustomBackground(it) }
-                ?: result.bitmap?.let { bitmap ->
-                    // 回退：uriContent 为空时用 bitmap 保存到临时文件
-                    val file = File(context.cacheDir, "crop_temp.jpg")
-                    try {
-                        FileOutputStream(file).use { fos ->
-                            if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 90, fos)) {
-                                file.delete()
-                                return@let
-                            }
-                        }
-                        actions.onSetCustomBackground(Uri.fromFile(file))
-                    } catch (_: Exception) {
-                        file.delete()
-                    }
-                }
+        // 裁剪结果优先使用内存位图，避免 uriContent 指向相册 uri 时授权失效导致保存失败
+        val cropped = result?.takeIf { it.isSuccessful }?.bitmap
+        if (cropped != null) {
+            actions.onSetCustomBackgroundBitmap(cropped)
+        } else {
+            val uri = result?.takeIf { it.isSuccessful }?.uriContent
+            if (uri != null) {
+                actions.onSetCustomBackground(uri)
+            } else {
+                Log.w("BgImport", "裁剪结果为空或失败：successful=${result?.isSuccessful}, error=${result?.error}")
+            }
         }
     }
 
