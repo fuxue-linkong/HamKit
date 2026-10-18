@@ -33,7 +33,7 @@ import com.amap.api.maps.model.LatLng
 import com.amap.api.maps.model.MarkerOptions
 import com.example.hamkit.data.aprs.AprsStation
 import com.example.hamkit.data.location.CoordinateConverter
-import com.example.hamkit.ui.appViewModel
+import com.example.hamkit.ui.applicationScopedViewModel
 import com.example.hamkit.ui.viewmodel.AprsViewModel
 import java.util.Locale
 
@@ -51,7 +51,7 @@ import java.util.Locale
 fun AprsMapScreenMaterial(
     onNavigateBack: () -> Unit = {}
 ) {
-    val viewModel = appViewModel<AprsViewModel>()
+    val viewModel = applicationScopedViewModel<AprsViewModel>()
     val stations by viewModel.stations.collectAsStateWithLifecycle()
     val config by viewModel.settings.collectAsStateWithLifecycle()
 

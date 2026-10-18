@@ -58,7 +58,7 @@ import com.example.hamkit.data.qso.QsoExportFormat
 import com.example.hamkit.data.qso.QsoExporter
 import com.example.hamkit.ui.LocalUiMode
 import com.example.hamkit.ui.UiMode
-import com.example.hamkit.ui.appViewModel
+import com.example.hamkit.ui.applicationScopedViewModel
 import com.example.hamkit.ui.viewmodel.QsoLogViewModel
 import com.example.hamkit.ui.viewmodel.QsoTimeRange
 import kotlinx.coroutines.Dispatchers
@@ -111,7 +111,7 @@ fun QsoLogScreen(
 fun QsoLogScreenMiuix(
     onNavigateBack: () -> Unit = {},
 ) {
-    val viewModel = appViewModel<QsoLogViewModel>()
+    val viewModel = applicationScopedViewModel<QsoLogViewModel>()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()

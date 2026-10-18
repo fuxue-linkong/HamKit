@@ -52,7 +52,7 @@ import kotlinx.coroutines.launch
 import com.example.hamkit.data.sstv.SstvImageStore
 import com.example.hamkit.ui.LocalUiMode
 import com.example.hamkit.ui.UiMode
-import com.example.hamkit.ui.appViewModel
+import com.example.hamkit.ui.applicationScopedViewModel
 import com.example.hamkit.ui.viewmodel.SstvViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -106,7 +106,7 @@ fun SstvGalleryScreenMiuix(
     onPicked: (SstvImageStore.Entry) -> Unit = {},
     onNavigateBack: () -> Unit = {},
 ) {
-    val viewModel = appViewModel<SstvViewModel>()
+    val viewModel = applicationScopedViewModel<SstvViewModel>()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scrollBehavior = MiuixScrollBehavior()
@@ -206,8 +206,9 @@ fun SstvGalleryScreenMiuix(
                                 )
                                 Spacer(Modifier.height(4.dp))
                                 Text(
-                                    "${uiState.recordingsLabel}。录音带 VIS 头，可直接重解 —— " +
-                                        "当时没解好的帧还有机会救回来。",
+                                    "${uiState.recordingsLabel}。录音多为带 VIS 头的按帧接收，可直接重解 —— " +
+                                        "当时没解好的帧还有机会救回来；持续接收的录音从任意时刻开始，" +
+                                        "重解时用盲扫识别模式。",
                                     style = MiuixTheme.textStyles.footnote1,
                                     color = colorScheme.onBackground,
                                 )

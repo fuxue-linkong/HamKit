@@ -30,7 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.data.sstv.SstvMode
-import com.example.hamkit.ui.appViewModel
+import com.example.hamkit.ui.applicationScopedViewModel
 import com.example.hamkit.ui.component.material.SegmentedColumn
 import com.example.hamkit.ui.component.material.SegmentedDropdownItem
 import com.example.hamkit.ui.component.material.SegmentedListItem
@@ -57,7 +57,7 @@ fun SstvSettingsScreenMaterial(
     onNavigate: (Route) -> Unit = {},
     onNavigateBack: () -> Unit = {},
 ) {
-    val viewModel = appViewModel<SstvViewModel>()
+    val viewModel = applicationScopedViewModel<SstvViewModel>()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     // 图库数量由 ViewModel 在协程中统计（文件 IO 不落在主线程）
     val galleryCount = uiState.galleryCount
@@ -94,7 +94,7 @@ fun SstvSettingsScreenMaterial(
                             add {
                                 SegmentedSwitchItem(
                                     title = "实时预览",
-                                    summary = "接收过程中逐行刷新画面；关闭可省电，收满仍会显示图像（仅按帧接收生效，持续接收始终显示预览）",
+                                    summary = "接收过程中逐行刷新画面；关闭可省电，收满仍会显示图像",
                                     checked = uiState.livePreview,
                                     onCheckedChange = { viewModel.setLivePreview(it) },
                                 )

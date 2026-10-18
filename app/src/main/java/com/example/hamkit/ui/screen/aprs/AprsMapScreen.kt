@@ -36,7 +36,7 @@ import com.example.hamkit.data.aprs.AprsStation
 import com.example.hamkit.data.location.CoordinateConverter
 import com.example.hamkit.ui.LocalUiMode
 import com.example.hamkit.ui.UiMode
-import com.example.hamkit.ui.appViewModel
+import com.example.hamkit.ui.applicationScopedViewModel
 import com.example.hamkit.ui.viewmodel.AprsViewModel
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Scaffold
@@ -66,7 +66,7 @@ fun AprsMapScreen(
 fun AprsMapScreenMiuix(
     onNavigateBack: () -> Unit = {}
 ) {
-    val viewModel = appViewModel<AprsViewModel>()
+    val viewModel = applicationScopedViewModel<AprsViewModel>()
     val stations by viewModel.stations.collectAsStateWithLifecycle()
     val config by viewModel.settings.collectAsStateWithLifecycle()
 

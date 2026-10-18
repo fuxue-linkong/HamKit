@@ -11,6 +11,8 @@ import com.example.hamkit.data.cw.MorseCodeGenerator
 import com.example.hamkit.data.cw.MorseCodePlayer
 import com.example.hamkit.data.cw.PlayMode
 import com.example.hamkit.radioApp
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -139,8 +141,12 @@ class CWPracticeViewModel : ViewModel() {
             playMode = settings.playMode,
             onComplete = {
                 _isPlaying.value = false
+                // 自然播完也收掉计时器，避免它对已结束的练习空转到点
+                cancelPracticeTimer()
             }
         )
+        // 「练习时长」到点自动停（此前该设置项只写库不生效）
+        startPracticeTimerIfNeeded()
     }
 
     fun pausePractice() {
@@ -161,6 +167,38 @@ class CWPracticeViewModel : ViewModel() {
         _isPlaying.value = false
         _isPaused.value = false
         player.stop()
+        cancelPracticeTimer()
+    }
+
+    /**
+     * 练习时长定时器：自由练习开始播放时启动，到点自动停止播放。
+     *
+     * 让「练习时长（分钟）」设置项真正生效 —— 此前该值只作为成绩记录的
+     * duration 元数据写库，从不影响任何行为。教程模式（currentCourseId > 0）
+     * 不受它控制：课时由内容长度决定，与时长无关。
+     */
+    private var practiceTimerJob: Job? = null
+
+    /** 启动时长定时器（仅自由练习）；已有时长设置的分钟数 ≤ 0 时不启动。 */
+    private fun startPracticeTimerIfNeeded() {
+        // 教程模式按时长自动停会打断课程节奏：课时由练习文本本身决定
+        if (_currentCourseId.value > 0) return
+        cancelPracticeTimer()
+        val durationMs = _settings.value.practiceDuration.takeIf { it > 0 }
+            ?.let { it * 60_000L } ?: return
+        practiceTimerJob = viewModelScope.launch {
+            delay(durationMs)
+            // 暂停中不打断：用户恢复后若已超时，下一轮播放/操作前由本协程已退出，
+            // 这里只在播放中执行停止；stopPractice 内部会再清一次计时器（幂等）
+            if (_isPlaying.value && !_isPaused.value) {
+                stopPractice()
+            }
+        }
+    }
+
+    private fun cancelPracticeTimer() {
+        practiceTimerJob?.cancel()
+        practiceTimerJob = null
     }
 
     fun updateUserInput(input: String) {
@@ -325,6 +363,7 @@ class CWPracticeViewModel : ViewModel() {
 
     override fun onCleared() {
         super.onCleared()
+        cancelPracticeTimer()
         player.stop()
     }
 }

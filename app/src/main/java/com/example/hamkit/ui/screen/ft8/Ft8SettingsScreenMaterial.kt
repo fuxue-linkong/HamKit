@@ -43,7 +43,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.data.ft8.Ft8Band
-import com.example.hamkit.ui.appViewModel
+import com.example.hamkit.ui.applicationScopedViewModel
 import com.example.hamkit.ui.component.material.ExpressiveSwitch
 import com.example.hamkit.ui.viewmodel.Ft8ViewModel
 
@@ -58,7 +58,7 @@ import com.example.hamkit.ui.viewmodel.Ft8ViewModel
 fun Ft8SettingsScreenMaterial(
     onNavigateBack: () -> Unit = {}
 ) {
-    val viewModel = appViewModel<Ft8ViewModel>()
+    val viewModel = applicationScopedViewModel<Ft8ViewModel>()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val config = uiState.config
 

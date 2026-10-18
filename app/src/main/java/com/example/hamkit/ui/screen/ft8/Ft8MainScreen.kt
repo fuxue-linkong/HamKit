@@ -40,7 +40,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.data.ft8.Ft8Band
 import com.example.hamkit.ui.LocalUiMode
 import com.example.hamkit.ui.UiMode
-import com.example.hamkit.ui.appViewModel
+import com.example.hamkit.ui.applicationScopedViewModel
 import com.example.hamkit.ui.navigation3.Route
 import com.example.hamkit.ui.viewmodel.Ft8ViewModel
 import top.yukonga.miuix.kmp.basic.Button
@@ -85,7 +85,7 @@ fun Ft8MainScreenMiuix(
     onNavigate: (Route) -> Unit = {},
     onNavigateBack: () -> Unit = {}
 ) {
-    val viewModel = appViewModel<Ft8ViewModel>()
+    val viewModel = applicationScopedViewModel<Ft8ViewModel>()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val config = uiState.config
     val context = LocalContext.current

@@ -1067,8 +1067,10 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         startWaterfallUpdates()
-        // 预览刷新协程常驻一个：解码线程只改计数，建图节奏由这里控制
-        launchRollingRefresher()
+        // 预览刷新协程常驻一个：解码线程只改计数，建图节奏由这里控制。
+        // 「实时预览」关闭时也启动但保持空转 —— 持续接收的卷纸在收尾时才建图落盘，
+        // 与按帧接收的 needBitmap 口径一致；设置页文案已注明此差异
+        launchRollingRefresher(allowRender = settingsStore.livePreview)
 
         persistentJob = viewModelScope.launch(Dispatchers.IO) {
             val demodulator = SstvDemodulator(
@@ -1095,9 +1097,10 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
                 val block = if (read == pcm.size) pcm else pcm.copyOf(read)
                 // 录音只写**实际读到的**样本（伪读的零头不能落盘，否则时间轴会错）
                 wav?.append(buffer, 0, read)
-                // 喂原始音频给内部 VIS 检测器：收尾时若发现本段起点带 VIS，就能走与
-                // 一期完全相同的路径（finalize 逐像素一致）。模式仍以锁定值为准，
-                // 避免中途误判导致行号连续性被破坏
+                // 喂原始音频给内部 VIS 检测器：收尾时若本段起点带 VIS（通常只有流的
+                // 首帧 —— 后续帧的段起点都在 VIS 之后），对应帧就能走与一期完全相同的
+                // 路径（该帧 finalize 逐像素一致）；落在段外的 VIS 被忽略，交给全局拟合。
+                // 模式仍以锁定值为准，避免中途误判导致行号连续性被破坏
                 decoder.feedAudio(block)
                 val freqs = demodulator.process(block)
                 decoder.feed(freqs)
@@ -1150,8 +1153,12 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
      *
      * 只在一次持续接收开始时调用一次，并把后续频繁调用的 [scheduleRollingRefresh]
      * 降级为「改一个计数」—— 这样解码线程从不为建图付出任何代价。
+     *
+     * @param allowRender 「实时预览」开关：关闭时协程仍常驻但跳过建图
+     *   （省电，与按帧接收的 `livePreview` 口径一致），
+     *   收尾落盘不依赖它 —— [stopPersistentReceiving] 用 finalize 的定稿结果建图
      */
-    private fun launchRollingRefresher() {
+    private fun launchRollingRefresher(allowRender: Boolean) {
         rollingRefreshJob?.cancel()
         // 耗时协程放到 Default 上跑：collect 里的 delay/节流与 Bitmap 重建都不占主线程
         rollingRefreshJob = viewModelScope.launch(Dispatchers.Default) {
@@ -1159,7 +1166,7 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
                 requests = rollingRefreshRequests,
                 minIntervalMs = PERSISTENT_MIN_RENDER_INTERVAL_MS,
                 now = SystemClock::uptimeMillis,
-                onRender = { renderRollingPreview() },
+                onRender = { if (allowRender) renderRollingPreview() },
             )
         }
     }
@@ -1869,6 +1876,24 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setTxIncludeVis(include: Boolean) {
         _uiState.update { it.copy(txIncludeVis = include) }
+        // 载入时的「约 X 秒」是按当时的 VIS 开关估的：切开关后重算一次，
+        // 否则状态行时长与实际发射时长不一致（预览位图不受影响，无需重载图像）
+        if (_uiState.value.txPreview != null && _uiState.value.txMode != null) {
+            reloadTxStatusEstimate()
+        }
+    }
+
+    /** 按当前模式与 VIS 开关重算载入状态行里的「约 X 秒」。 */
+    private fun reloadTxStatusEstimate() {
+        val mode = _uiState.value.txMode ?: return
+        val seconds = mode.frameSeconds +
+            (SstvEncoder.VIS_TOTAL_SECONDS.takeIf { _uiState.value.txIncludeVis } ?: 0.0)
+        val current = _uiState.value.txStatus
+        // 只替换「约 X 秒」这一段，保留可能存在的裁剪说明等其他内容
+        val updated = current.replaceFirst(Regex("约 \\d+ 秒"), "约 ${"%.0f".format(seconds)} 秒")
+        if (updated != current) {
+            _uiState.update { it.copy(txStatus = updated) }
+        }
     }
 
     fun setCallsign(value: String) {
@@ -2016,7 +2041,9 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
                 SstvImageStore.toBitmap(pixels, result.width, result.height)
             }
             if (token != txLoadToken) return@launch
-            val seconds = mode.frameSeconds + SstvEncoder.VIS_TOTAL_SECONDS
+            // 与实际编码一致：VIS 头受「包含 VIS 头」开关控制，估算不能恒按含 VIS
+            val seconds = mode.frameSeconds +
+                (SstvEncoder.VIS_TOTAL_SECONDS.takeIf { _uiState.value.txIncludeVis } ?: 0.0)
             // 源图比例与模式比例不一致时会被居中裁掉一圈，明确告知用户裁了多少
             val cropNote = if (loaded.cropped) {
                 "；已按 ${mode.displayName} 比例自动裁剪原图 " +

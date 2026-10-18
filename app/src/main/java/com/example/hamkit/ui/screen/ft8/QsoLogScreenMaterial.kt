@@ -77,7 +77,7 @@ import com.example.hamkit.data.ft8.Ft8QsoRecord
 import com.example.hamkit.data.qso.AdifExporter
 import com.example.hamkit.data.qso.QsoExportFormat
 import com.example.hamkit.data.qso.QsoExporter
-import com.example.hamkit.ui.appViewModel
+import com.example.hamkit.ui.applicationScopedViewModel
 import com.example.hamkit.ui.viewmodel.QsoLogViewModel
 import com.example.hamkit.ui.viewmodel.QsoTimeRange
 import kotlinx.coroutines.Dispatchers
@@ -100,7 +100,7 @@ import java.time.format.DateTimeFormatter
 fun QsoLogScreenMaterial(
     onNavigateBack: () -> Unit = {},
 ) {
-    val viewModel = appViewModel<QsoLogViewModel>()
+    val viewModel = applicationScopedViewModel<QsoLogViewModel>()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()

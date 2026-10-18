@@ -289,7 +289,12 @@ class AprsViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** 连接成功后重发所有待发/失败消息（离线入队核心） */
+    /**
+     * 连接成功后重发所有未达重试上限的待发/失败消息（离线入队核心）。
+     *
+     * `retryCount ≥ [MSG_MAX_RETRY]` 的消息被跳过 —— 它们已判定投递失败，
+     * 留在库里供用户查看，不能每次连上都再发一遍。
+     */
     private fun sendPendingMessages() {
         val config = _settings.value
         if (config.callsign.isEmpty()) return

@@ -32,7 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.ui.LocalUiMode
 import com.example.hamkit.ui.UiMode
-import com.example.hamkit.ui.appViewModel
+import com.example.hamkit.ui.applicationScopedViewModel
 import com.example.hamkit.ui.viewmodel.Ft8ViewModel
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.IconButton
@@ -67,7 +67,7 @@ fun Ft8SettingsScreen(
 fun Ft8SettingsScreenMiuix(
     onNavigateBack: () -> Unit = {}
 ) {
-    val viewModel = appViewModel<Ft8ViewModel>()
+    val viewModel = applicationScopedViewModel<Ft8ViewModel>()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val config = uiState.config
 

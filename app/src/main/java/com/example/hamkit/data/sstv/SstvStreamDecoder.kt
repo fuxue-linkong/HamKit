@@ -45,7 +45,7 @@ import kotlin.math.round
  *
  * | 段 | 保存什么 | 回收条件 |
  * |---|---|---|
- * | **高频段** `buffer` | 最近的一小段样本（[TAIL_SAMPLES]） | 恒定的环形窗口，超过即丢最老 |
+ * | **高频段** `buffer` | 最近 `TAIL_LINES` 个行周期的样本（至少 `MIN_TAIL_SAMPLES`，容量取 2 的幂） | 恒定的环形窗口，超过即丢最老 |
  * | **低频段** `segments`（按帧） | 每帧「行起点 → 帧尾起点」的浮点频率，按行抽样（stride） | 帧数超过 [maxSegments] 时整帧丢弃最老；[dropHistory] 可全部丢弃 |
  *
  * 抽样（stride）的代价只落在 [finalize] 的**同步拟合精度**上（亚行周期的抖动，由逐行
@@ -535,15 +535,6 @@ class SstvStreamDecoder(
         // 当前帧的起点随之丢失：实时路径不受影响，但 finalize 不再有完整帧
     }
 
-    /**
-     * 运行期更新失谐量估计（例如中途捕到 VIS 头后调用）。
-     *
-     * 只影响「脉冲不足时」的退化值；脉冲足够多后仍以滚动实测均值为准。
-     */
-    fun updateHedrShift(hedrShiftHz: Double) {
-        initialShiftHz = hedrShiftHz
-    }
-
     // ══════════════════════════════════════════════════════════════════
     // ① 两段式缓冲写入
     // ══════════════════════════════════════════════════════════════════
@@ -699,9 +690,9 @@ class SstvStreamDecoder(
         if (lineSamples.isFinite() && lineSamples > 0) lineSamples else nominalLineSamples
 
     /**
-     * 把 [segment] 的存储内容截取到 `[startSample, end)` 窗口内（段起点随之移动）。
+     * 把 [segment] 的存储内容截取到 `[windowStart, windowEnd)` 窗口内（段起点随之移动）。
      *
-     * 窗口宽度在段变长后可能缩到只剩 1 个样本；每轮越界后窗口翻倍，摊还 O(n)。
+     * 每块 feed 调用一次、一步截取：窗口起点之前的样本已不可能被回读，直接削掉。
      */
     private fun Segment.clip(windowStart: Long, windowEnd: Long) {
         if (size == 0) return
