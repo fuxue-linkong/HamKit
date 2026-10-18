@@ -11,7 +11,7 @@ Official website: https://hamkit.click
 ### Completed
 
 - **CW Trainer** (Morse code learning)
-- **SSTV (Slow-Scan Television)** (in-house pure-Kotlin DSP; PD / Robot / Martin / Scottie families, 11 modes)
+- **SSTV (Slow-Scan Television)** (in-house pure-Kotlin DSP; PD / Robot / Martin / Scottie / Wraase families, 19 modes)
 - **Satellite Positioning & Tracking** (in-house SGP4/SDP4 engine, Look4Sat-style radar view, SatNOGS transponder frequency database)
 - **AMSAT Satellite Status**
 - **Calendar Transit Alerts**
@@ -67,7 +67,6 @@ Official website: https://hamkit.click
 - **Weak-signal handling**: SNR-driven adaptive integration window (strong signals behave exactly as before), zero-phase pixel-Nyquist low-pass, plus optional histogram stretch / median denoise / bad-line repair
 - **Continuous reception**: after a frame completes, mode and mistuning are kept and the next frame is picked up automatically
 - **Persistent reception**: no VIS header and no frame boundaries required — decoding starts at any moment and the preview keeps growing downwards like a paper roll; a two-stage frequency buffer keeps memory flat over hours of listening
-- **Cross-frame fusion**: when the same picture is retransmitted, copies are identified by thumbnail cross-correlation, misaligned frames are screened out by quality gates, aligned, and merged pixel-wise with a median; the UI reports how many copies were merged and the measured gain (+x.x dB), without promising more than the measurements show
 - **Selectable audio source**: microphone or **playback capture** (Android 10+, decodes audio playing in other apps such as a player or a WebSDR page)
 - **Transmit**: pick an image → encode to SSTV audio → play into the radio mic, or export a standard WAV for a line-in cable; optional callsign overlay and VIS header, fully streamed (even PD-290 fits in memory)
 - **Gallery**: thumbnail grid, full-screen view, delete, share (FileProvider), export to the system gallery

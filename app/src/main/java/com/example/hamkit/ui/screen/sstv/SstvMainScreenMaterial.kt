@@ -420,8 +420,8 @@ fun SstvMainScreenMaterial(
                             )
                             Spacer(Modifier.height(4.dp))
                             Text(
-                                text = "1200 Hz 冒青、1500 Hz 偏绿、2300 Hz 偏红。调谐时看那条同步线是否" +
-                                    "稳稳落在青色区；散成一片说明信噪比差。",
+                                text = "1200 Hz 偏红橙、1500 Hz 偏黄绿、2300 Hz 偏青蓝（频率越低越暖、越高越冷）。" +
+                                    "调谐时看那条同步线是否稳稳落在青色区；散成一片说明信噪比差。",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )

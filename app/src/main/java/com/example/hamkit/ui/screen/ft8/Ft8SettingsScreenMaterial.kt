@@ -166,12 +166,12 @@ fun Ft8SettingsScreenMaterial(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "允许发射",
+                            text = "允许发射（预留）",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "启用后可在 FT8 模式下发送消息",
+                            text = "目前 FT8 尚无发送功能；此开关仅作预留，暂不影响任何行为",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

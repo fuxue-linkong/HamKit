@@ -130,7 +130,7 @@ fun SstvSettingsScreenMiuix(
                 )
                 SstvSwitchRow(
                     title = "实时预览",
-                    summary = "接收过程中逐行刷新画面；关闭可省电，收满仍会显示图像",
+                    summary = "接收过程中逐行刷新画面；关闭可省电，收满仍会显示图像（仅按帧接收生效，持续接收始终显示预览）",
                     checked = uiState.livePreview,
                     onCheckedChange = { viewModel.setLivePreview(it) },
                 )

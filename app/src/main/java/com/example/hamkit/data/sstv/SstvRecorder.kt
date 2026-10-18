@@ -98,7 +98,7 @@ class SstvRecorder(
         val result: SstvDecoder.Result,
         /** 是否已收满整帧。 */
         val complete: Boolean,
-        /** 当前实测频率噪声（Hz）；不可测时为 0。 */
+        /** 当前实测频率噪声（Hz）；解调器未建立时为 0，样本不足（不可测）时为 `SstvDemodulator.NOISE_UNKNOWN_HZ` 占位值。 */
         val noiseHz: Double,
     )
 
