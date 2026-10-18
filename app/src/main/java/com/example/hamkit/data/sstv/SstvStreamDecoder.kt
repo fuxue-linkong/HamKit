@@ -24,7 +24,7 @@ import kotlin.math.round
  * | 输出 | 触发 | 定位依据 | 用途 |
  * |---|---|---|---|
  * | 实时 | 每次 [feed] | 在线最小二乘（因果） | 边收边显示，延迟低 |
- * | 收尾 | [finalize] | 全局拟合 + 按帧重解 | 保存 / 跨帧融合 |
+ * | 收尾 | [finalize] | 全局拟合 + 按帧重解 | 保存 |
  *
  * ## 行号语义（重要）
  *
@@ -76,7 +76,6 @@ class SstvStreamDecoder(
      * @param imageRow 图像行号（流水号，见类注释「行号语义」）
      * @param pixels 该行的打包 RGB（0xRRGGBB），长度 = [SstvMode.linePixels]
      * @param locked 该行是否由**实测同步脉冲**定位（false 表示用的是拟合外推）。
-     *   跨帧融合需要这个信号来判断「这一行值不值得采信」
      */
     data class LineEvent(val imageRow: Int, val pixels: IntArray, val locked: Boolean) {
         // IntArray 的默认语义是引用比较，这里按内容比较，避免调用方踩坑
@@ -92,7 +91,7 @@ class SstvStreamDecoder(
             (imageRow * 31 + pixels.contentHashCode()) * 31 + locked.hashCode()
     }
 
-    /** 解码统计快照，供 UI 展示与跨帧融合的质量筛选。 */
+    /** 解码统计快照，供 UI 展示。 */
     data class Stats(
         /** 已解出的图像行数 */
         val decodedLines: Int,
@@ -654,7 +653,7 @@ class SstvStreamDecoder(
      * 在每次 [feed] 末尾维护历史段：切帧、抽样、帧数上限。
      *
      * 帧边界的判定：**连续太久没有同步脉冲**（超过一个完整帧时长 + 1 秒）就认为上一帧
-     * 已经发完。这只影响「历史段如何切分」（截图、finalize、融合的输入），不影响实时解码。
+     * 已经发完。这只影响「历史段如何切分」（截图、finalize 的输入），不影响实时解码。
      */
     private fun maintainHistory() {
         if (!fitLocked || appendedEnd <= 0) return
@@ -665,7 +664,7 @@ class SstvStreamDecoder(
         // ② 帧尾切分：最后一个脉冲之后超过 frameGapSamples 仍无新脉冲 → 上一段冻结
         //
         //    ⚠ 必须用「最近实际接受的脉冲」：若用拟合外推，丢锁后会一直外推、
-        //    永远判不出帧尾，历史段就永远不会切分（融合也就永远只有一段素材）。
+        //    永远判不出帧尾，历史段就永远不会切分（finalize 也就永远只有一段素材）。
         val last = segments.last()
         val lastCenter = lastAcceptedCenter()
         if (!last.frozen && lastCenter.isFinite()) {
@@ -689,7 +688,7 @@ class SstvStreamDecoder(
         // ④ 帧数上限：整帧丢弃最老的。
         //    但**最后一段不能丢** —— 它是「当前正在收的这一段」，所有后续样本都按它
         //    记账；若把段列表清空，下一次 feed 会重新建立一个起点落在当前尾部的段，
-        //    早期数据就悄悄消失在历史之外（finalize 与融合都少一段素材）
+        //    早期数据就悄悄消失在历史之外（finalize 就少一段素材）
         while (segments.size > maxSegments && segments.size > 1) {
             segments.removeAt(0)
         }

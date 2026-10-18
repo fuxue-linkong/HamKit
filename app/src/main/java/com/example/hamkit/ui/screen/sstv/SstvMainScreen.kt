@@ -404,12 +404,6 @@ fun SstvMainScreenMiuix(
                     onCheckedChange = { viewModel.setPersistent(it) },
                 )
                 SstvSwitchRow(
-                    title = "跨帧融合",
-                    summary = "同一张图被重复发送时，筛选并配准后合并多次结果（实测有增益，但不是倍数级）",
-                    checked = uiState.fusionEnabled,
-                    onCheckedChange = { viewModel.setFusionEnabled(it) },
-                )
-                SstvSwitchRow(
                     title = "连续接收",
                     summary = "收满一帧后保留模式与失谐量，自动接续下一帧（ISS 连发多张时用）",
                     checked = uiState.continuous,
@@ -518,16 +512,6 @@ fun SstvMainScreenMiuix(
                         }
                         if (uiState.rollingRows > 0) {
                             SstvInfoRow("持续接收", "已解 ${uiState.rollingRows} 行")
-                        }
-                        if (uiState.fusionFrames > 0) {
-                            SstvInfoRow("融合素材", "${uiState.fusionFrames} 段图像")
-                        }
-                        if (uiState.fusionUsedFrames > 0) {
-                            SstvInfoRow(
-                                "融合结果",
-                                "${uiState.fusionUsedFrames} 帧合并，实测 +${"%.1f".format(uiState.fusionGainDb)} dB" +
-                                    if (uiState.fusionRejected > 0) "（筛掉 ${uiState.fusionRejected} 帧）" else "",
-                            )
                         }
                         uiState.savedFileName?.let { SstvInfoRow("已保存", it) }
                     }

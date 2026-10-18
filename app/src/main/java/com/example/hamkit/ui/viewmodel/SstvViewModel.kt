@@ -28,7 +28,6 @@ import com.example.hamkit.data.sstv.SstvRecorder
 import com.example.hamkit.data.sstv.SstvRecordingStore
 import com.example.hamkit.data.sstv.SstvSettingsStore
 import com.example.hamkit.data.sstv.SstvDemodulator
-import com.example.hamkit.data.sstv.SstvFrameFusion
 import com.example.hamkit.data.sstv.SstvRollingImage
 import com.example.hamkit.data.sstv.SstvStreamDecoder
 import com.example.hamkit.data.sstv.SstvWaterfall
@@ -88,25 +87,13 @@ data class SstvUiState(
     /** 连续模式下已完成的帧数。 */
     val completedFrames: Int = 0,
 
-    // ── 持续接收 + 跨帧融合（三期 Q2/Q5）──
+    // ── 持续接收（三期 Q2）──
     /** 持续接收开关（不要求 VIS、不等帧边界，画面一直向下延长）。 */
     val persistent: Boolean = false,
     /** 持续接收中已累积的图像行数（「卷纸」长度）。 */
     val rollingRows: Int = 0,
     /** 是否已有行从「卷纸」顶部滚出（此时画面表示的是最近一段，而不是整段）。 */
     val rollingScrolled: Boolean = false,
-    /** 跨帧融合开关。 */
-    val fusionEnabled: Boolean = true,
-    /** 本轮持续接收中已收集到的候选帧数（同一张图可能被收到多次）。 */
-    val fusionFrames: Int = 0,
-    /** 最近一次融合的帧数（0 表示还没融合过）。 */
-    val fusionUsedFrames: Int = 0,
-    /** 最近一次融合的实测增益（dB）。 */
-    val fusionGainDb: Double = 0.0,
-    /** 最近一次融合被筛掉的帧数。 */
-    val fusionRejected: Int = 0,
-    /** 是否正在融合（后台计算）。 */
-    val fusing: Boolean = false,
     val galleryCount: Int = 0,
     val error: String? = null,
 
@@ -308,9 +295,6 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
      */
     private var rollingRefreshRequests = MutableStateFlow(0)
 
-    /** 持续接收期间**已收满的帧**（交给 [SstvFrameFusion] 做跨帧融合的素材）。 */
-    private var fusionFrames: MutableList<SstvFrameFusion.Frame> = mutableListOf()
-
     private val _uiState = MutableStateFlow(
         SstvUiState(
             manualModeName = settingsStore.manualModeName,
@@ -318,7 +302,6 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
             livePreview = settingsStore.livePreview,
             continuous = settingsStore.continuous,
             persistent = settingsStore.persistent,
-            fusionEnabled = settingsStore.fusionEnabled,
             maxFrames = settingsStore.maxFrames,
             adaptiveSpan = settingsStore.adaptiveSpan,
             blindScanOnFailure = settingsStore.blindScanOnFailure,
@@ -638,7 +621,7 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
 
     fun startReceiving() {
         if (_uiState.value.isReceiving) return
-        // 上一段持续接收还在收尾（融合 / 保存录音）时不能开新会话：
+        // 上一段持续接收还在收尾（保存录音）时不能开新会话：
         // 收尾协程最后会调用 finishPersistentReceiving()，它按当前 `persistent` 收尾，
         // 若此时已换成新会话，会把刚启动的新会话一起拆掉（新会话瞬间变回未接收）。
         if (persistent != null) {
@@ -914,16 +897,6 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun setFusionEnabled(enabled: Boolean) {
-        settingsStore.fusionEnabled = enabled
-        _uiState.update {
-            it.copy(
-                fusionEnabled = enabled,
-                status = if (enabled) "跨帧融合已开启：同一张图被收到多次时会自动挑最好的部分合并" else "跨帧融合已关闭",
-            )
-        }
-    }
-
     fun setMaxFrames(frames: Int) {
         settingsStore.maxFrames = frames
         _uiState.update { it.copy(maxFrames = settingsStore.maxFrames) }
@@ -1075,7 +1048,6 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
             onLine = { event -> onPersistentLine(event) },
         )
         persistentDecoder = decoder
-        fusionFrames = mutableListOf()
 
         persistent = PersistentSession(source, mode, wav, recorderFile)
         _uiState.update {
@@ -1091,10 +1063,6 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
                 completedFrames = 0,
                 rollingRows = 0,
                 rollingScrolled = false,
-                fusionFrames = 0,
-                fusionUsedFrames = 0,
-                fusionGainDb = 0.0,
-                fusionRejected = 0,
                 status = "持续接收中：${mode.displayName}，从任意时刻开始解，画面会不断延长",
             )
         }
@@ -1238,7 +1206,7 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * 用户停止持续接收：收起解码器，把卷纸内容落盘，并尝试跨帧融合。
+     * 用户停止持续接收：收起解码器，把卷纸内容落盘。
      */
     private fun stopPersistentReceiving() {
         val session = persistent
@@ -1256,7 +1224,7 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
             finishPersistentReceiving()
             return
         }
-        _uiState.update { it.copy(isReceiving = false, fusing = settingsStore.fusionEnabled) }
+        _uiState.update { it.copy(isReceiving = false) }
 
         viewModelScope.launch {
             try {
@@ -1276,33 +1244,11 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 val frames = collected.frames
                 val rollingFrameCount = frames.size
-                collectFusionFrames(frames, mode)
 
-                // ② 跨帧融合（模式未知时跳过：融合需要模式判断行数是否完整）
-                val fusionMode = mode
-                val fusion = if (settingsStore.fusionEnabled && fusionMode != null && fusionFrames.size >= 2) {
-                    withContext(Dispatchers.Default) {
-                        SstvFrameFusion.fuse(fusionFrames, fusionMode)
-                    }
-                } else {
-                    null
-                }
-
-                // ③ 选最终图：融合结果 > 本次会话最近一帧定稿 > 卷纸内容。
+                // 选最终图：本次会话最近一帧定稿 > 卷纸内容。
                 //    刻意**不用上一个会话的 lastResult** —— 那会保存出一张与本次接收无关的旧图
                 lastResult = null
-                val finalResult = fusion?.let { fused ->
-                    SstvDecoder.Result(
-                        mode = fusionMode ?: mode ?: SstvMode.ROBOT_36,
-                        width = fused.width,
-                        height = fused.height,
-                        pixels = fused.pixels,
-                        hedrShiftHz = collected.shiftHz,
-                        slantRatio = 1.0,
-                        syncPulseCount = 0,
-                        decodedLines = fused.height,
-                    )
-                } ?: frames.lastOrNull()
+                val finalResult = frames.lastOrNull()
                     ?: rollingImage?.toResult(
                         mode = mode ?: SstvMode.ROBOT_36,
                         hedrShiftHz = collected.shiftHz,
@@ -1321,11 +1267,8 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
                         it.copy(
                             bitmap = bitmap,
                             decodedLines = finalResult.decodedLines,
-                            fusionUsedFrames = fusion?.usedFrames ?: 0,
-                            fusionGainDb = fusion?.gainDb ?: 0.0,
-                            fusionRejected = fusion?.rejected?.size ?: 0,
                             savedFileName = saved?.name ?: it.savedFileName,
-                            status = buildStopStatus(rollingFrameCount, fusion, saved?.name),
+                            status = buildStopStatus(rollingFrameCount, saved?.name),
                         )
                     }
                 } else {
@@ -1333,7 +1276,7 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
                         it.copy(status = "已停止：这段音频里没有解出完整的图像行")
                     }
                 }
-                // 收尾统一放在 finally：正常结束、融合/保存失败、协程取消都要释放会话，
+                // 收尾统一放在 finally：正常结束、保存失败、协程取消都要释放会话，
                 // 否则 `persistent` 永远非空，开始按钮会被一直挡住。
                 // 若音频先自行结束（采集协程自己退出），它也会在主线程调用同一个收尾，
                 // 由 `persistent == null` 的守卫保证只执行一次。
@@ -1341,7 +1284,7 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
                 // 协程被取消（例如 ViewModel 销毁）不是收尾失败，交给 finally 释放资源即可
                 throw t
             } catch (t: Throwable) {
-                // 融合 / 保存失败也必须收尾：否则 persistent 永远非空，开始按钮会被一直挡住
+                // 保存失败也必须收尾：否则 persistent 永远非空，开始按钮会被一直挡住
                 _uiState.update { it.copy(status = "收尾失败：${t.message ?: "未知错误"}") }
             } finally {
                 finishPersistentReceiving()
@@ -1349,47 +1292,17 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** 把 [SstvStreamDecoder.finalizeFrames] 的结果转成融合输入并记账。 */
-    private fun collectFusionFrames(frames: List<SstvDecoder.Result>, mode: SstvMode?) {
-        if (mode == null) return
-        val stats = persistentDecoder?.stats()
-        for (result in frames) {
-            // 行数不足的帧对融合没有贡献（最终由 screen() 再筛一次），这里先粗过滤，
-            // 避免把上百个残帧塞进聚类
-            if (result.decodedLines < mode.imageLines / 3) continue
-            fusionFrames.add(
-                SstvFrameFusion.Frame(
-                    pixels = result.pixels,
-                    width = result.width,
-                    height = result.height,
-                    syncHitRate = stats?.syncHitRate ?: 1f,
-                    slantRatio = result.slantRatio,
-                    decodedLines = result.decodedLines,
-                ),
-            )
-        }
-        _uiState.update { it.copy(fusionFrames = fusionFrames.size) }
-    }
-
-    /** 停止后的说明文案：如实反映「融合用了几帧、实测多少增益」。 */
+    /** 停止后的说明文案。 */
     private fun buildStopStatus(
         frameCount: Int,
-        fusion: SstvFrameFusion.Result?,
         savedName: String?,
     ): String {
         val base = when {
-            fusion != null && fusion.usedFrames >= 2 ->
-                "已融合 ${fusion.usedFrames} 次传输，实测 +${"%.1f".format(fusion.gainDb)} dB"
-            frameCount >= 1 -> "已收到 $frameCount 段图像（仅一次传输，无可融合的副本）"
+            frameCount >= 1 -> "已收到 $frameCount 段图像"
             else -> "已停止"
         }
-        val rejected = if ((fusion?.rejected?.size ?: 0) > 0) {
-            "，筛掉 ${fusion!!.rejected.size} 帧"
-        } else {
-            ""
-        }
         val saved = savedName?.let { "，已保存 $it" } ?: ""
-        return base + rejected + saved
+        return base + saved
     }
 
     /** 收尾（采集结束 / 用户停止都会走到）：释放会话资源。 */
@@ -1425,7 +1338,7 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
         }
         stopWaterfallUpdates()
         SstvCaptureService.stop(getApplication())
-        _uiState.update { it.copy(isReceiving = false, fusing = false) }
+        _uiState.update { it.copy(isReceiving = false) }
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -2251,7 +2164,8 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
          * 预览重建的最小间隔（毫秒）。
          *
          * 约 8 帧/秒：肉眼已是连续增长，又给建图（高度越大越慢）留出余量。
-         * 与 [PERSISTENT_RENDER_ROWS] 双闸门 —— 行数够多**或**时间到了才重建。
+         * 与 [PERSISTENT_RENDER_ROWS] 双闸门 —— 行数闸门（[shouldRenderPreview]）发出请求，
+         * 本间隔再卡一次时间：距上次重建不足 120 ms 时先 delay 补齐，两关都过才真正建图。
          */
         private const val PERSISTENT_MIN_RENDER_INTERVAL_MS = 120L
 
