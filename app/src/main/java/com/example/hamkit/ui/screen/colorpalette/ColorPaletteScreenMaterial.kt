@@ -5,8 +5,6 @@ import android.os.Build
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.ui.platform.LocalContext
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
@@ -121,6 +119,8 @@ fun ColorPaletteScreenMaterial(
     val haptic = LocalHapticFeedback.current
     val context = LocalContext.current
 
+    // 图库选图与裁剪页的启动统一收敛到 ColorPaletteScreen（见其注释）：
+    // 这里只负责把裁剪结果分发到 actions，选图入口走 actions.onOpenImagePicker。
     val cropLauncher = rememberLauncherForActivityResult(CropImageContract()) { result ->
         // 裁剪结果优先使用内存位图，避免 uriContent 指向相册 uri 时授权失效导致保存失败
         val cropped = result?.takeIf { it.isSuccessful }?.bitmap
@@ -133,25 +133,6 @@ fun ColorPaletteScreenMaterial(
             } else {
                 Log.w("BgImport", "裁剪结果为空或失败：successful=${result?.isSuccessful}, error=${result?.error}")
             }
-        }
-    }
-
-    // 先仅从相册选图，再进入裁剪界面（避免弹出相机/相册选择，且裁剪界面有确认按钮）
-    val pickMedia = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
-        uri?.let {
-            cropLauncher.launch(
-                CropImageContractOptions(
-                    uri = it,
-                    cropImageOptions = CropImageOptions(
-                        guidelines = CropImageView.Guidelines.ON,
-                        fixAspectRatio = true,
-                        aspectRatioX = 16,
-                        aspectRatioY = 9,
-                    )
-                )
-            )
         }
     }
 
@@ -383,9 +364,9 @@ fun ColorPaletteScreenMaterial(
                     {
                         SegmentedListItem(
                             onClick = {
-                                pickMedia.launch(
-                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                )
+                                // 经 actions 打开图库：ColorPaletteScreen 会先登记
+                                // in-flight 状态，吞掉图库期间派发回来的返回事件
+                                actions.onOpenImagePicker()
                             },
                             headlineContent = {
                                 Text(
