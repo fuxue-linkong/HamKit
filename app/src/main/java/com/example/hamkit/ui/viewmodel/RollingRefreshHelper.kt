@@ -35,6 +35,7 @@ import kotlinx.coroutines.launch
  *   这样节流时序与 `kotlinx-coroutines-test` 的 `advanceTimeBy` 对齐
  * @param onRender 真正执行重建的挂起函数（在协程上下文里跑，可自行切线程）
  */
+
 fun CoroutineScope.launchRollingRefresher(
     requests: StateFlow<Int>,
     minIntervalMs: Long,
@@ -54,4 +55,27 @@ fun CoroutineScope.launchRollingRefresher(
             lastAt = now()
         }
     }
+}
+
+/**
+ * 是否需要再重建一次卷纸预览。
+ *
+ * **必须用累计追加行数**（[com.example.hamkit.data.sstv.SstvRollingImage.appendedRows]），
+ * 不能用「当前缓冲行数」（`size`）：卷纸到达 `maxRows` 后会滚出最老行、`size` 恒定为上限，
+ * 用 `size - 上次已渲染行数` 判断会永远小于阈值 —— 表现为长时间接收后预览突然停住，
+ * 而解码其实还在继续。
+ *
+ * @param appendedRows 本会话累计追加的行数（含已滚出的）
+ * @param renderedRows 上一次成功建图时记录的累计追加行数
+ * @param rowsPerRender 每新增这么多行才值得重建（第一行总是立即重建）
+ */
+internal fun shouldRenderPreview(
+    appendedRows: Int,
+    renderedRows: Int,
+    rowsPerRender: Int,
+): Boolean {
+    if (appendedRows <= 0) return false
+    // 第一行立即出图：否则用户要等满 rowsPerRender 行才看到画面
+    if (renderedRows == 0) return true
+    return appendedRows - renderedRows >= rowsPerRender
 }

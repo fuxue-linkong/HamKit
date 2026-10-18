@@ -45,6 +45,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 
 /**
@@ -271,13 +272,29 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
     /** 持续接收的音频采集协程。 */
     private var persistentJob: Job? = null
 
-    /** 持续接收的流式解码器。 */
+    /**
+     * 持续接收的流式解码器。
+     *
+     * 主线程创建/清空，预览协程（Default）读取，故为 `@Volatile`。
+     */
+    @Volatile
     private var persistentDecoder: SstvStreamDecoder? = null
 
-    /** 「卷纸」图像缓冲（动态高度，到顶滚出）。 */
+    /**
+     * 「卷纸」图像缓冲（动态高度，到顶滚出）。
+     *
+     * 解码线程追加、预览协程建图、主线程收尾，故为 `@Volatile`。
+     */
+    @Volatile
     private var rollingImage: SstvRollingImage? = null
 
-    /** 持续接收上一次建图的行数（用于判断是否需要重建位图）。 */
+    /**
+     * 上一次成功建图时，卷纸**累计追加**的行数（不是当前缓冲行数）。
+     *
+     * 必须用累计值：卷纸到 [SstvRollingImage.DEFAULT_MAX_ROWS] 后会滚出最老行，
+     * 当前行数恒定为上限；用当前行数比较会让预览在长时间接收后永久停住。
+     */
+    @Volatile
     private var rollingRenderedRows = 0
 
     /** 持续接收的刷新协程（节流建图，避免每行都新建位图）。 */
@@ -621,6 +638,13 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
 
     fun startReceiving() {
         if (_uiState.value.isReceiving) return
+        // 上一段持续接收还在收尾（融合 / 保存录音）时不能开新会话：
+        // 收尾协程最后会调用 finishPersistentReceiving()，它按当前 `persistent` 收尾，
+        // 若此时已换成新会话，会把刚启动的新会话一起拆掉（新会话瞬间变回未接收）。
+        if (persistent != null) {
+            _uiState.update { it.copy(status = "上一段持续接收正在收尾，请稍候再开始") }
+            return
+        }
         // 持续接收优先：它没有帧的概念，因此不走 SstvRecorder 的帧状态机
         if (settingsStore.persistent) {
             startPersistentReceiving()
@@ -956,6 +980,13 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     override fun onCleared() {
+        // 持续接收的音频源与录音文件必须在这里显式释放：onCleared 之后不会再走
+        // stopPersistentReceiving() 的收尾路径，否则麦克风/播放捕获会一直被占用，
+        // WAV 头也来不及回填（录音文件会坏掉）。
+        persistent?.let { session ->
+            runCatching { session.source.close() }
+            runCatching { session.recording?.close() }
+        }
         persistentJob?.cancel()
         persistentJob = null
         persistentDecoder = null
@@ -969,6 +1000,8 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
         player = null
         mediaProjection?.let { runCatching { it.stop() } }
         mediaProjection = null
+        // 播放捕获的前台服务只为投影而存在，页面销毁后必须一起停掉
+        SstvCaptureService.stop(getApplication())
         super.onCleared()
     }
 
@@ -1118,9 +1151,10 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
     private fun onPersistentLine(event: SstvStreamDecoder.LineEvent) {
         val rolling = rollingImage ?: return
         rolling.append(event.pixels)
-        // 第一行就刷新：否则用户要等满 PERSISTENT_RENDER_ROWS 行（约 1 秒）才看到画面，
-        // 会误以为「持续接收不出图」
-        if (rolling.size - rollingRenderedRows >= PERSISTENT_RENDER_ROWS || rollingRenderedRows == 0) {
+        // 用「累计追加行数」而不是「当前缓冲行数」：卷纸到 maxRows 后当前行数不再增长，
+        // 旧写法会让预览在长时间接收后永久停住（解码其实还在继续）。
+        // 第一行立即刷新：否则用户要等满 PERSISTENT_RENDER_ROWS 行才看到画面。
+        if (shouldRenderPreview(rolling.appendedRows, rollingRenderedRows, PERSISTENT_RENDER_ROWS)) {
             scheduleRollingRefresh()
         }
     }
@@ -1172,12 +1206,17 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun renderRollingPreview() {
         val rolling = rollingImage ?: return
         val decoder = persistentDecoder ?: return
+        // 先记下这次要画到哪一行：建图期间还会继续来新行，不能把它们算作已渲染，
+        // 否则下一次刷新会被白白推迟几行。
+        val renderedTotal = rolling.appendedRows
         val (pixels, height) = rolling.toPixels()
         if (height == 0) return
-        rollingRenderedRows = rolling.size
         val bitmap = withContext(Dispatchers.Default) {
             Bitmap.createBitmap(pixels, rolling.width, height, Bitmap.Config.ARGB_8888)
         }
+        // 收尾 / 新会话已接管：这是过期结果，直接丢弃，不能覆盖定稿画面与状态
+        if (rollingImage !== rolling || persistentDecoder !== decoder) return
+        rollingRenderedRows = renderedTotal
         val stats = decoder.stats()
         _uiState.update {
             it.copy(
@@ -1202,90 +1241,111 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
      * 用户停止持续接收：收起解码器，把卷纸内容落盘，并尝试跨帧融合。
      */
     private fun stopPersistentReceiving() {
+        val session = persistent
         val decoder = persistentDecoder
-        persistentJob?.cancel()
+        val collectJob = persistentJob
         persistentJob = null
+        collectJob?.cancel()
         // 关音源会打断阻塞的 read，采集协程随之退出
-        persistent?.source?.close()
+        session?.source?.close()
+        // 预览刷新先停：收尾期间继续建图只会用卷纸内容盖掉即将生成的定稿画面
+        rollingRefreshJob?.cancel()
+        rollingRefreshJob = null
 
-        if (decoder == null) {
+        if (decoder == null || session == null) {
             finishPersistentReceiving()
             return
         }
         _uiState.update { it.copy(isReceiving = false, fusing = settingsStore.fusionEnabled) }
 
         viewModelScope.launch {
-            val mode = _uiState.value.mode
-            // ① 先在后台收集素材：全局拟合出的各帧定稿 + 当前失谐量
-            val collected = withContext(Dispatchers.Default) {
-                PersistentOutcome(
-                    frames = decoder.finalizeFrames(),
-                    shiftHz = decoder.stats().hedrShiftHz,
-                )
-            }
-            val frames = collected.frames
-            val rollingFrameCount = frames.size
-            collectFusionFrames(frames, mode)
-
-            // ② 跨帧融合（模式未知时跳过：融合需要模式判断行数是否完整）
-            val fusionMode = mode
-            val fusion = if (settingsStore.fusionEnabled && fusionMode != null && fusionFrames.size >= 2) {
-                withContext(Dispatchers.Default) {
-                    SstvFrameFusion.fuse(fusionFrames, fusionMode)
+            try {
+                // 等采集协程真正退出再读解码器：cancel() 只是投递取消，若它还在 feed() 里，
+                // finalizeFrames() 会和它并发改同一份解码器内部状态（解码器不是线程安全的）。
+                // 加超时兜底：万一阻塞读没有及时返回，也不能让收尾永远卡住（否则无法再开始）。
+                collectJob?.let { job ->
+                    withTimeoutOrNull(PERSISTENT_STOP_JOIN_TIMEOUT_MS) { job.join() }
                 }
-            } else {
-                null
-            }
+                val mode = _uiState.value.mode
+                // ① 先在后台收集素材：全局拟合出的各帧定稿 + 当前失谐量
+                val collected = withContext(Dispatchers.Default) {
+                    PersistentOutcome(
+                        frames = decoder.finalizeFrames(),
+                        shiftHz = decoder.stats().hedrShiftHz,
+                    )
+                }
+                val frames = collected.frames
+                val rollingFrameCount = frames.size
+                collectFusionFrames(frames, mode)
 
-            // ③ 选最终图：融合结果 > 本次会话最近一帧定稿 > 卷纸内容。
-            //    刻意**不用上一个会话的 lastResult** —— 那会保存出一张与本次接收无关的旧图
-            lastResult = null
-            val finalResult = fusion?.let { fused ->
-                SstvDecoder.Result(
-                    mode = fusionMode ?: mode ?: SstvMode.ROBOT_36,
-                    width = fused.width,
-                    height = fused.height,
-                    pixels = fused.pixels,
-                    hedrShiftHz = collected.shiftHz,
-                    slantRatio = 1.0,
-                    syncPulseCount = 0,
-                    decodedLines = fused.height,
-                )
-            } ?: frames.lastOrNull()
-                ?: rollingImage?.toResult(
-                    mode = mode ?: SstvMode.ROBOT_36,
-                    hedrShiftHz = collected.shiftHz,
-                )
-
-            if (finalResult != null) {
-                lastResult = finalResult
-                val bitmap = withContext(Dispatchers.Default) { toDisplayBitmap(finalResult) }
-                val saved = if (settingsStore.autoSave) {
-                    withContext(Dispatchers.IO) { imageStore.save(finalResult) }
+                // ② 跨帧融合（模式未知时跳过：融合需要模式判断行数是否完整）
+                val fusionMode = mode
+                val fusion = if (settingsStore.fusionEnabled && fusionMode != null && fusionFrames.size >= 2) {
+                    withContext(Dispatchers.Default) {
+                        SstvFrameFusion.fuse(fusionFrames, fusionMode)
+                    }
                 } else {
                     null
                 }
-                if (saved != null) refreshGallery()
-                _uiState.update {
-                    it.copy(
-                        bitmap = bitmap,
-                        decodedLines = finalResult.decodedLines,
-                        fusionUsedFrames = fusion?.usedFrames ?: 0,
-                        fusionGainDb = fusion?.gainDb ?: 0.0,
-                        fusionRejected = fusion?.rejected?.size ?: 0,
-                        savedFileName = saved?.name ?: it.savedFileName,
-                        status = buildStopStatus(rollingFrameCount, fusion, saved?.name),
+
+                // ③ 选最终图：融合结果 > 本次会话最近一帧定稿 > 卷纸内容。
+                //    刻意**不用上一个会话的 lastResult** —— 那会保存出一张与本次接收无关的旧图
+                lastResult = null
+                val finalResult = fusion?.let { fused ->
+                    SstvDecoder.Result(
+                        mode = fusionMode ?: mode ?: SstvMode.ROBOT_36,
+                        width = fused.width,
+                        height = fused.height,
+                        pixels = fused.pixels,
+                        hedrShiftHz = collected.shiftHz,
+                        slantRatio = 1.0,
+                        syncPulseCount = 0,
+                        decodedLines = fused.height,
                     )
+                } ?: frames.lastOrNull()
+                    ?: rollingImage?.toResult(
+                        mode = mode ?: SstvMode.ROBOT_36,
+                        hedrShiftHz = collected.shiftHz,
+                    )
+
+                if (finalResult != null) {
+                    lastResult = finalResult
+                    val bitmap = withContext(Dispatchers.Default) { toDisplayBitmap(finalResult) }
+                    val saved = if (settingsStore.autoSave) {
+                        withContext(Dispatchers.IO) { imageStore.save(finalResult) }
+                    } else {
+                        null
+                    }
+                    if (saved != null) refreshGallery()
+                    _uiState.update {
+                        it.copy(
+                            bitmap = bitmap,
+                            decodedLines = finalResult.decodedLines,
+                            fusionUsedFrames = fusion?.usedFrames ?: 0,
+                            fusionGainDb = fusion?.gainDb ?: 0.0,
+                            fusionRejected = fusion?.rejected?.size ?: 0,
+                            savedFileName = saved?.name ?: it.savedFileName,
+                            status = buildStopStatus(rollingFrameCount, fusion, saved?.name),
+                        )
+                    }
+                } else {
+                    _uiState.update {
+                        it.copy(status = "已停止：这段音频里没有解出完整的图像行")
+                    }
                 }
-            } else {
-                _uiState.update {
-                    it.copy(status = "已停止：这段音频里没有解出完整的图像行")
-                }
+                // 收尾统一放在 finally：正常结束、融合/保存失败、协程取消都要释放会话，
+                // 否则 `persistent` 永远非空，开始按钮会被一直挡住。
+                // 若音频先自行结束（采集协程自己退出），它也会在主线程调用同一个收尾，
+                // 由 `persistent == null` 的守卫保证只执行一次。
+            } catch (t: kotlinx.coroutines.CancellationException) {
+                // 协程被取消（例如 ViewModel 销毁）不是收尾失败，交给 finally 释放资源即可
+                throw t
+            } catch (t: Throwable) {
+                // 融合 / 保存失败也必须收尾：否则 persistent 永远非空，开始按钮会被一直挡住
+                _uiState.update { it.copy(status = "收尾失败：${t.message ?: "未知错误"}") }
+            } finally {
+                finishPersistentReceiving()
             }
-            // 收尾只在用户主动停止时做：此时采集协程已被打断，`persistent` 仍有效。
-            // 若音频在采集过程中先结束（协程自己退出），它会在主线程上调用同一个收尾，
-            // 由 `persistent == null` 的守卫保证只执行一次
-            finishPersistentReceiving()
         }
     }
 
@@ -1342,6 +1402,10 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
         // 刷新协程先停：它持有 rollingImage 的引用，收尾后再建图只会覆盖掉定稿画面
         rollingRefreshJob?.cancel()
         rollingRefreshJob = null
+        // 定稿画面已经复制到 bitmap / lastResult，卷纸缓冲可以释放了。
+        // PD 族 20000 行 × 640 宽 × 4 字节 ≈ 51 MB，ViewModel 是应用级单例，留着就是长期占用。
+        rollingImage = null
+        rollingRenderedRows = 0
         runCatching { session.source.close() }
         // close() 回填 WAV 头并返回写入的样本数（0 表示什么都没录到，直接丢弃）
         val recorded = session.recording?.let { wav -> runCatching { wav.close() }.getOrDefault(0L) } ?: 0L
@@ -1921,9 +1985,13 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
      * 切模式、开关呼号都只需读本地文件，稳定且不受 URI 授权有效期影响。
      */
     fun setTxImage(uri: Uri) {
+        // 每次选图都作废之前还在读的请求：慢 provider 上旧请求可能后完成，
+        // 不加令牌会把用户刚选的新图又覆盖成上一张（预览/发射源随之错乱）。
+        val token = ++txLoadToken
         _uiState.update { it.copy(txStatus = "正在读取所选图片…") }
         viewModelScope.launch {
-            val cached = withContext(Dispatchers.IO) { copyTxImageToCache(uri) }
+            val cached = withContext(Dispatchers.IO) { copyTxImageToCache(uri, token) }
+            if (token != txLoadToken) return@launch
             if (cached == null) {
                 _uiState.update {
                     it.copy(
@@ -1952,6 +2020,14 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
     private var txOrigin: java.io.File? = null
 
     /**
+     * 发射源装载令牌：每次选图 / 重装配 +1，异步结果回来时对不上就丢弃。
+     *
+     * 主线程自增、IO/Default 线程读取，故为 `@Volatile`。
+     */
+    @Volatile
+    private var txLoadToken = 0
+
+    /**
      * 切模式后重装配。
      *
      * 直接读缓存副本重新解码：模式不同 => 目标分辨率不同，必须从原图重新缩放，
@@ -1966,7 +2042,7 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
      *
      * @return 缓存文件；读取失败返回 null
      */
-    private fun copyTxImageToCache(uri: Uri): java.io.File? = runCatching {
+    private fun copyTxImageToCache(uri: Uri, token: Int): java.io.File? = runCatching {
         val context = getApplication<Application>()
         val dir = java.io.File(context.cacheDir, TX_IMAGE_CACHE_DIR).apply { mkdirs() }
         // 显示名只做「展示与扩展名提示」用途，这里清洗掉路径分隔符，避免写出目录外
@@ -1976,6 +2052,12 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
         context.contentResolver.openInputStream(uri)?.use { input ->
             target.outputStream().use { output -> input.copyTo(output) }
         } ?: return null
+        // 写盘期间用户又选了一张：删掉这份过期副本后放弃。
+        // 必须赶在清理其它文件之前判断，否则会误删新请求刚写好的缓存。
+        if (token != txLoadToken) {
+            runCatching { target.delete() }
+            return null
+        }
         // 清掉上一次的旧缓存，避免缓存目录无限增长
         dir.listFiles()?.forEach { if (it != target) runCatching { it.delete() } }
         target.takeIf { it.length() > 0 }
@@ -1992,11 +2074,14 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
         val origin = txOrigin ?: return
         val mode = _uiState.value.txMode
         val callsign = if (_uiState.value.txOverlayCallsign) _uiState.value.callsign else null
+        // 切模式 / 开关呼号会触发重装配；更晚发起的请求才是用户想要的，旧结果直接丢弃
+        val token = ++txLoadToken
         _uiState.update { it.copy(txStatus = "正在载入图片…") }
         viewModelScope.launch {
             val outcome = withContext(Dispatchers.IO) {
                 SstvBitmapSource.loadOrError(origin, mode, callsign)
             }
+            if (token != txLoadToken) return@launch
             val loaded = outcome.getOrNull()
             if (loaded == null) {
                 txSource = null
@@ -2017,6 +2102,7 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 SstvImageStore.toBitmap(pixels, result.width, result.height)
             }
+            if (token != txLoadToken) return@launch
             val seconds = mode.frameSeconds + SstvEncoder.VIS_TOTAL_SECONDS
             // 源图比例与模式比例不一致时会被居中裁掉一圈，明确告知用户裁了多少
             val cropNote = if (loaded.cropped) {
@@ -2168,6 +2254,9 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
          * 与 [PERSISTENT_RENDER_ROWS] 双闸门 —— 行数够多**或**时间到了才重建。
          */
         private const val PERSISTENT_MIN_RENDER_INTERVAL_MS = 120L
+
+        /** 停止接收时等待采集协程退出的上限（毫秒）；超时后仍继续收尾，避免永远卡住。 */
+        private const val PERSISTENT_STOP_JOIN_TIMEOUT_MS = 3_000L
 
         /** 瀑布图快照刷新间隔：约 6–7 帧/秒，肉眼看是连续滚动，开销可忽略。 */
         const val WATERFALL_REFRESH_MS = 150L

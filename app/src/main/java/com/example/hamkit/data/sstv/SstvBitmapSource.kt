@@ -60,21 +60,20 @@ object SstvBitmapSource {
      * @param source 编码器用的图像源（已裁成模式宽高比、已按模式分辨率缩放）
      * @param originalWidth 源图（裁剪前）宽度，用于提示用户「被裁了多少」
      * @param originalHeight 源图（裁剪前）高度
+     * @param cropped 原图比例与模式比例不一致、确实裁过一圈（只缩放不算裁）
      */
     data class LoadedImage(
         val source: SstvImageSource,
         val originalWidth: Int,
         val originalHeight: Int,
-    ) {
-        /** 源图是否被裁过（源比例与目标比例不一致即会裁）。 */
-        val cropped: Boolean
-            get() = source.width != originalWidth || source.height != originalHeight
-    }
+        /** 源图比例与模式比例不一致、解码时确实裁掉过一圈。 */
+        val cropped: Boolean,
+    )
 
     /**
      * 带失败原因版本：UI 需要把「为什么载入失败」显示给用户，而不是一律「图片载入失败」。
      *
-     * 注意 [runCatching] 会吞掉 `OutOfMemoryError` 之外的异常并把 message 原样上抛，
+     * 注意 [runCatching] 会把抛出的异常（含 `OutOfMemoryError`）转成 failure，
      * 调用方据此拼出「图片载入失败：<原因>」。
      *
      * @return 成功给出 [LoadedImage]（含源图原始尺寸），失败给出可读的中文原因
@@ -94,6 +93,14 @@ object SstvBitmapSource {
                 source = bitmap.toSource(callsign),
                 originalWidth = bounds.outWidth,
                 originalHeight = bounds.outHeight,
+                // 注意：判断「有没有裁」必须比较宽高比，不能拿最终像素尺寸与原图比 ——
+                // 1280×992 与 640×496 比例相同，不裁也会尺寸不同。
+                cropped = needsAspectCrop(
+                    bounds.outWidth,
+                    bounds.outHeight,
+                    mode.linePixels,
+                    mode.imageLines,
+                ),
             )
         }
 
@@ -227,15 +234,20 @@ object SstvBitmapSource {
             ?: return@runCatching null
 
         // ① 先裁成目标宽高比：比较「源图比例」与「目标比例」，
-        //    源图更宽就裁左右，更高就裁上下，居中裁以保证主体不丢
+        //    源图更宽就裁左右，更高就裁上下，居中裁以保证主体不丢。
+        //    判定用整数交叉相乘（与 [needsAspectCrop] 同一套语义），避免浮点误差
+        //    把「同比例」误判成需要裁（或反过来）。
         val targetRatio = targetWidth.toFloat() / targetHeight
-        val sourceRatio = decoded.width.toFloat() / decoded.height
-        val cropped = if (sourceRatio > targetRatio) {
+        val sourceWider = decoded.width.toLong() * targetHeight >
+            decoded.height.toLong() * targetWidth
+        val sourceTaller = decoded.width.toLong() * targetHeight <
+            decoded.height.toLong() * targetWidth
+        val cropped = if (sourceWider) {
             // 源更宽：裁掉左右，保留高度
             val newWidth = max(1, (decoded.height * targetRatio).roundToInt())
             val left = (decoded.width - newWidth) / 2
             Bitmap.createBitmap(decoded, left, 0, newWidth, decoded.height)
-        } else if (sourceRatio < targetRatio) {
+        } else if (sourceTaller) {
             // 源更高：裁掉上下，保留宽度
             val newHeight = max(1, (decoded.width / targetRatio).roundToInt())
             val top = (decoded.height - newHeight) / 2
@@ -254,6 +266,26 @@ object SstvBitmapSource {
             scaled
         }
     }.getOrNull()
+
+    /**
+     * 源图宽高比是否与目标**不一致**（即自动裁剪会不会真的裁掉一圈）。
+     *
+     * 用整数交叉相乘而不是浮点除法：比例相同的大图/小图（如 1280×992 与 640×496）
+     * 必须判为「不裁」，否则 UI 会对一张等比缩放的图误报「已自动裁剪」。
+     *
+     * @return true 表示比例不同，解码时会居中裁掉多余的一边
+     */
+    internal fun needsAspectCrop(
+        sourceWidth: Int,
+        sourceHeight: Int,
+        targetWidth: Int,
+        targetHeight: Int,
+    ): Boolean {
+        require(sourceWidth > 0 && sourceHeight > 0 && targetWidth > 0 && targetHeight > 0) {
+            "尺寸必须为正：$sourceWidth×$sourceHeight -> $targetWidth×$targetHeight"
+        }
+        return sourceWidth.toLong() * targetHeight != sourceHeight.toLong() * targetWidth
+    }
 
     private const val RGB_MASK = 0x00FFFFFF
 

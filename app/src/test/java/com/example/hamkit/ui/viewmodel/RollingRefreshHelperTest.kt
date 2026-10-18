@@ -8,6 +8,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -106,5 +107,21 @@ class RollingRefreshHelperTest {
         repeat(1000) { requests.update { it + 1 } }
         assertEquals("1000 次递增应立即生效（无阻塞）", 1000, requests.value)
         job.cancel()
+    }
+
+    @Test
+    fun `累计行数判断：卷纸到顶后仍会继续刷新`() {
+        // 回归：旧实现用「当前缓冲行数 - 上次行数」，卷纸到达 maxRows 后恒为 0，
+        // 预览会永久停住（解码其实还在继续）。改用累计追加行数后必须还能触发。
+        assertFalse("只多 1 行不该重建", shouldRenderPreview(20_001, 20_000, 4))
+        assertTrue("累计多 4 行必须重建", shouldRenderPreview(20_004, 20_000, 4))
+    }
+
+    @Test
+    fun `累计行数判断：首行立即重建且不足阈值不重建`() {
+        assertTrue("首行要立即出图", shouldRenderPreview(1, 0, 4))
+        assertFalse("已渲染过且不足 4 行不重建", shouldRenderPreview(4, 3, 4))
+        assertTrue("满 4 行应重建", shouldRenderPreview(7, 3, 4))
+        assertFalse("没有新行不重建", shouldRenderPreview(0, 0, 4))
     }
 }

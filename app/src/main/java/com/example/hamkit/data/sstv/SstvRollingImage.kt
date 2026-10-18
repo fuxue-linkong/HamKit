@@ -60,7 +60,13 @@ class SstvRollingImage(
      */
     private var writeIndex = 0
 
-    /** 已写入的行数（含滚出的），用于统计。 */
+    /**
+     * 已写入的行数（含滚出的），用于统计，也用于判断预览是否需要重建。
+     *
+     * 解码线程写、预览线程读，故为 `@Volatile`：长时间接收时缓冲到达上限后
+     * `size` 不再增长，只能靠这个累计值判断「又有新行到了」。
+     */
+    @Volatile
     private var appended = 0
 
     /** 最近一次追加的行号（流水号），用于 UI 判断「有新行」。 */
