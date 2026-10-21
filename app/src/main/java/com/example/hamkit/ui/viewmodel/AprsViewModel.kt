@@ -15,6 +15,7 @@ import com.example.hamkit.data.aprs.AprsService
 import com.example.hamkit.data.aprs.AprsSettingsStore
 import com.example.hamkit.data.aprs.AprsStation
 import com.example.hamkit.data.location.LocationHelper
+import com.example.hamkit.data.privacy.PrivacyConsentStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -94,6 +95,8 @@ class AprsViewModel(application: Application) : AndroidViewModel(application) {
     /** 用户在声明对话框中点击「已持有执照并同意」：持久化确认状态后再连接 */
     fun confirmLicenseAndConnect() {
         _pendingLicenseConfirm.value = false
+        // 声明框明确说明 APRS 位置/消息会公开；在这里单独记录“位置公开”同意。
+        PrivacyConsentStore.setAprsPublicAccepted(getApplication(), true)
         updateSettings { it.copy(licenseConfirmed = true) }
         connect()
     }
@@ -202,6 +205,10 @@ class AprsViewModel(application: Application) : AndroidViewModel(application) {
             _lastError.value = READ_ONLY_SEND_BLOCKED
             return
         }
+        if (!PrivacyConsentStore.isAprsPublicAccepted(getApplication())) {
+            _lastError.value = "未同意公开 APRS 位置；请先连接 APRS 并确认公开声明"
+            return
+        }
 
         val packet = AprsPacket.formatPosition(
             latitude = location.latitude,
@@ -247,6 +254,10 @@ class AprsViewModel(application: Application) : AndroidViewModel(application) {
         // 只读模式（未填写 passcode）不发送消息（HK-REQ-003）
         if (config.isReadOnly) {
             _lastError.value = READ_ONLY_SEND_BLOCKED
+            return
+        }
+        if (!PrivacyConsentStore.isAprsPublicAccepted(getApplication())) {
+            _lastError.value = "未同意公开 APRS 消息；请先连接 APRS 并确认公开声明"
             return
         }
 

@@ -20,6 +20,7 @@ import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Update
 import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.runtime.Composable
@@ -309,6 +310,19 @@ fun SettingPagerMiuix(
                             show = showSendLogDialog.value,
                             onDismissRequest = { showSendLogDialog.value = false },
                             loadingDialog = loadingDialog
+                        )
+                        val privacy = stringResource(id = R.string.about_privacy)
+                        ArrowPreference(
+                            title = privacy,
+                            startAction = {
+                                Icon(
+                                    Icons.Rounded.Security,
+                                    modifier = Modifier.padding(end = 6.dp),
+                                    contentDescription = privacy,
+                                    tint = colorScheme.onBackground
+                                )
+                            },
+                            onClick = actions.onOpenPrivacy,
                         )
                         val about = stringResource(id = R.string.about)
                         ArrowPreference(

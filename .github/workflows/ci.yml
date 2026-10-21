@@ -8,8 +8,8 @@ name: CI Build APK
 # 正式版构建方式（与本地发版一致，勿改回 assembleDebug）：
 #   - 构建类型 release：开启 R8 混淆 + 资源收缩
 #   - 签名密钥从 GitHub Secrets 注入（KEYSTORE_BASE64 / KEYSTORE_PASSWORD /
-#     KEY_ALIAS / KEY_PASSWORD）；未配置时 app/build.gradle.kts 自动回退到
-#     debug keystore，保证 CI 不因缺少密钥而失败（构建类型仍为 release）
+#     KEY_ALIAS / KEY_PASSWORD）；未配置时跳过 Release 构建，绝不用 debug key
+#     冒充正式签名（app/build.gradle.kts 也会拒绝无签名的 release 产物）
 #   - 注入真签名时用 apksigner 校验 v1+v2+v3，并输出 SHA-1/SHA-256 指纹
 #   - 随产物上传 R8 mapping.txt，供线上崩溃栈回溯
 #
@@ -118,7 +118,7 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
           if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "::notice title=未注入签名密钥::KEYSTORE_BASE64 为空，本次回退到 debug keystore 签名（构建类型仍为 release）"
+            echo "::notice title=跳过 Release 构建::未配置 KEYSTORE_BASE64，拒绝用 debug key 签 release 包"
             echo "signed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -136,35 +136,20 @@ jobs:
           echo "Keystore verified successfully."
           echo "signed=true" >> "$GITHUB_OUTPUT"
 
-      # 无签名密钥时的回退：显式生成 debug keystore
-      # （自定义 signingConfig 指向不存在的文件时 AGP 不会自动补建）
-      - name: Ensure fallback debug keystore
-        if: steps.keystore.outputs.signed != 'true'
-        run: |
-          DEBUG_KEYSTORE="$HOME/.android/debug.keystore"
-          if [ -f "$DEBUG_KEYSTORE" ]; then
-            echo "debug keystore 已存在：$DEBUG_KEYSTORE"
-            exit 0
-          fi
-          mkdir -p "$HOME/.android"
-          keytool -genkeypair -v \
-            -keystore "$DEBUG_KEYSTORE" \
-            -storepass android -keypass android \
-            -alias androiddebugkey \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -dname "CN=Android Debug,O=Android,C=US"
-          echo "已生成回退用 debug keystore：$DEBUG_KEYSTORE"
-
       # 构建 Release APK：与本地发版同一套流程（R8 混淆 + 资源收缩）
+      # 没有签名密钥就跳过，绝不产出 debug 签名的 release 包。
       - name: Build Release APK
         id: build
-        if: success()
+        if: steps.keystore.outputs.signed == 'true'
         env:
-          # 注入真签名；文件不存在时 app/build.gradle.kts 自动回退 debug keystore
           KEYSTORE_PATH: ${{ github.workspace }}/signing/release.keystore
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          # 高德 Android SDK Key + Web 服务 Key：都是客户端标识；
+          # SDK Key 按包名 + 签名 SHA-1 限制，Web Key 靠配额/监控。
+          AMAP_SDK_KEY: ${{ secrets.AMAP_SDK_KEY }}
+          AMAP_WEB_KEY: ${{ secrets.AMAP_WEB_KEY }}
         run: |
           set -o pipefail
           gradle assembleRelease \
@@ -239,7 +224,7 @@ jobs:
           EOF
 
       - name: Upload Release APK
-        if: success()
+        if: steps.keystore.outputs.signed == 'true' && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: app-release-${{ github.run_id }}
@@ -250,7 +235,7 @@ jobs:
 
       # R8 映射文件：线上崩溃栈回溯必需，与正式版产物一并保留
       - name: Upload ProGuard mapping
-        if: success()
+        if: steps.keystore.outputs.signed == 'true' && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: mapping-release-${{ github.run_id }}
@@ -293,7 +278,7 @@ jobs:
           if [ "${{ steps.keystore.outputs.signed }}" = "true" ]; then
             SIGN_DESC="release keystore（正式签名）"
           else
-            SIGN_DESC="debug keystore（未注入 secrets 的回退签名）"
+            SIGN_DESC="skipped（未配置签名，未构建 Release）"
           fi
 
           echo "## CI Build Status" >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="HamKit — 为业余无线电爱好者打造的随身控制台。分区定位、卫星过境预测与自定义分类、CW 摩尔斯训练、SSTV / HF Fax 图像解码、FT8 与 QSO 日志、APRS 一体化。">
+    <meta name="theme-color" content="#0B0E14" media="(prefers-color-scheme: dark)">
+    <meta name="theme-color" content="#F7F8FA" media="(prefers-color-scheme: light)">
+    <meta name="keywords" content="HamKit,业余无线电,SGP4,卫星过境,CW,摩尔斯,SSTV,HF Fax,FT8,APRS,QSO 日志,ADIF">
+    <title>HamKit · 业余无线电随身控制台</title>
+    <!-- 内联图标：避免额外请求与 favicon 404 -->
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230B0E14'/%3E%3Ccircle cx='16' cy='16' r='4.5' fill='%234D8FFF'/%3E%3Cpath d='M16 3v5M16 24v5M3 16h5M24 16h5' stroke='%234D8FFF' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <style>
+        @font-face {
+            font-family: 'HarmonyOS Sans SC';
+            src: local('HarmonyOS Sans SC'), local('HarmonyOS_Sans_SC'),
+                 local('HarmonyOS Sans'), local('HarmonyOS_Sans');
+            font-display: swap;
+        }
+    </style>
+    <link rel="stylesheet" href="/style.css?v=3">
+    <!-- 设计系统：仅补充首页新增区块的样式，避免与原 style.css 重复 -->
+    <link rel="stylesheet" href="/assets/site.css">
+</head>
+<body>
+    <!-- 背景光晕 -->
+    <div class="aurora" aria-hidden="true">
+        <div class="aurora__blob aurora__blob--1"></div>
+        <div class="aurora__blob aurora__blob--2"></div>
+        <div class="aurora__blob aurora__blob--3"></div>
+        <canvas class="aurora__wave" aria-hidden="true"></canvas>
+    </div>
+
+    <!-- 顶部导航 -->
+    <header class="nav">
+        <a href="#" class="nav__brand">
+            <span class="nav__dot"></span>
+            <span>HamKit</span>
+        </a>
+        <nav class="nav__links" id="nav-links">
+            <a href="#features">功能</a>
+            <a href="#showcase">预览</a>
+            <a href="#download">下载</a>
+            <a href="#stack">技术</a>
+            <a href="#developer">开发者</a>
+        </nav>
+        <div class="nav__actions">
+            <a class="nav__cta u-hide-sm" href="https://github.com/fuxue-linkong/HamKit" target="_blank" rel="noopener">
+                <span>查看源码</span>
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2 1-.3 2-.4 3-.4s2 .1 3 .4c2.3-1.5 3.3-1.2 3.3-1.2.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
+            </a>
+            <span data-nav-auth></span>
+            <button class="nav__toggle" type="button" aria-label="展开导航" aria-expanded="false" aria-controls="nav-links">☰</button>
+        </div>
+    </header>
+
+    <main>
+        <!-- 公告（有生效公告时由脚本插入） -->
+        <div id="announce-host"></div>
+
+        <!-- Hero -->
+        <section class="hero">
+            <div class="hero__badge">
+                <span class="hero__badge-dot"></span>
+                <span id="release-badge">正在加载…</span>
+            </div>
+            <h1 class="hero__title" id="hero-title">HamKit</h1>
+            <p class="hero__subtitle" id="hero-subtitle">
+                从地面坐标到轨道预测，从摩尔斯电码到慢扫描电视。
+            </p>
+            <p class="hero__desc" id="hero-desc">
+                为业余无线电爱好者打造的随身控制台——分区定位、卫星过境预测与自定义分类、CW 摩尔斯训练、SSTV / HF Fax 图像解码、FT8 与 QSO 日志、APRS 一体化。
+            </p>
+            <div class="hero__cta">
+                <a class="btn btn--primary" id="hero-cta-primary" href="#download">
+                    下载 APK
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+                </a>
+                <a class="btn btn--ghost" id="hero-cta-secondary" href="#showcase">查看应用预览</a>
+            </div>
+        </section>
+
+        <!-- 功能 -->
+        <section id="features" class="section">
+            <div class="section__head">
+                <span class="section__tag">FEATURES</span>
+                <h2 class="section__title">核心功能</h2>
+                <p class="section__desc">从地面坐标到轨道预测，从摩尔斯电码到数字模式 — 覆盖业余无线电日常所需。全部信号处理自研，不依赖第三方 DSP 库。</p>
+            </div>
+
+            <!-- 默认内容：接口不可用时也能完整展示；接口可用时由脚本按后台配置替换 -->
+            <div class="features" id="features-grid">
+                <article class="feature">
+                    <div class="feature__icon">
+                        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <circle cx="12" cy="12" r="3" fill="currentColor"/>
+                            <ellipse cx="12" cy="12" rx="10" ry="4"/>
+                            <ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(60 12 12)"/>
+                            <ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(120 12 12)"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature__title">分区定位</h3>
+                    <p class="feature__text">一键获取 GPS 坐标，实时计算 CQ Zone、ITU Zone 与 6 位 Maidenhead 网格定位，配合反向地理编码显示地址（3 秒去抖、失败指数退避自动恢复）。</p>
+                    <div class="feature__tags"><span>CQ Zone</span><span>ITU Zone</span><span>Maidenhead</span><span>Geocoder</span></div>
+                </article>
+
+                <article class="feature">
+                    <div class="feature__icon">
+                        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/>
+                            <circle cx="12" cy="12" r="4" fill="currentColor"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature__title">卫星过境预测</h3>
+                    <p class="feature__text">自研 SGP4/SDP4 轨道计算引擎，支持 CelesTrak 与 SatNOGS 数据源，并行预测未来 48 小时过境。详情页给出实时方位 / 仰角 / 距离 / 速度与多普勒频移，内置 SatNOGS 转发器频率库与 AMSAT 状态，雷达图、星下点轨迹地图一应俱全。</p>
+                    <div class="feature__tags"><span>SGP4</span><span>CelesTrak</span><span>SatNOGS</span><span>多普勒</span><span>雷达图</span><span>AMSAT</span></div>
+                </article>
+
+                <article class="feature">
+                    <div class="feature__icon">
+                        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M3 7h4l2 3 2-3h4M3 17h4l2-3 2 3h4"/>
+                            <circle cx="18" cy="7" r="2.5"/><circle cx="18" cy="17" r="2.5"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature__title">卫星自定义分类</h3>
+                    <p class="feature__text">标签式分类，一颗卫星可归入多个分类；原「收藏」已平移为内置分类「我的关注」，历史数据自动迁移。「组织」与「提醒」彻底分离——把 50 颗卫星批量归入资料型分类，不会瞬间产生 50 条闹钟。分类配置可导出分享，导入按 id 合并。</p>
+                    <div class="feature__tags"><span>自定义分类</span><span>配置导入导出</span><span>筛选</span></div>
+                </article>
+
+                <article class="feature">
+                    <div class="feature__icon">
+                        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M3 12h3M9 12h2M13 12h6M3 12l1.5-4M6 12l-1.5 4M11 12l1-3M13 12l-1 3M19 12l1.5-3M19 12l1.5 3"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature__title">CW 摩尔斯练习</h3>
+                    <p class="feature__text">完整 Koch 课程（26 课）+ 字符组 / 呼号 / 文本训练。AudioTrack 实时合成正弦波，可调 WPM、音调与播放模式，练习进度本地跟踪，随时接着上次继续。</p>
+                    <div class="feature__tags"><span>Koch 方法</span><span>呼号训练</span><span>AudioTrack</span><span>进度跟踪</span></div>
+                </article>
+
+                <article class="feature">
+                    <div class="feature__icon">
+                        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 15l4-4 3 3 4-5 4 6"/>
+                            <circle cx="9" cy="9" r="1.3" fill="currentColor"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature__title">SSTV 慢扫描电视</h3>
+                    <p class="feature__text">纯 Kotlin 自研 DSP，零第三方依赖：正交鉴频 + VIS 头滑窗识别（±120 Hz 频偏仍可锁定），PD / Robot / Martin / Scottie / Wrasse 全族共 19 种模式。行同步 + slant 最小二乘校正补偿收发时钟差，信号瀑布图辅助调谐，实时逐行预览，VIS 缺失时可盲扫反推模式。</p>
+                    <div class="feature__tags"><span>19 种模式</span><span>VIS 识别</span><span>盲扫</span><span>瀑布图</span><span>失谐补偿</span></div>
+                </article>
+
+                <article class="feature">
+                    <div class="feature__icon">
+                        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M3 4v16h18"/><path d="M6 15c2-1 3-6 5-6s3 8 5 8 2-3 2-3"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature__title">SSTV 发射与图库</h3>
+                    <p class="feature__text">自研编码器可从相册或图库选图发射，支持呼号叠加与 VIS 头开关，无电台时可导出 WAV 用音频线接 LINE IN。解码结果自动入库：浏览、全屏查看、分享、导出相册，也能导入 WAV 录音离线重解——当时没解好的帧还有机会救回来。</p>
+                    <div class="feature__tags"><span>编码发射</span><span>呼号叠加</span><span>导出 WAV</span><span>录音重解</span></div>
+                </article>
+
+                <article class="feature">
+                    <div class="feature__icon">
+                        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M7 13h4M7 16h7"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature__title">HF Fax 气象传真</h3>
+                    <p class="feature__text">接收 WEFAX 天气图：120 行/分，无 VIS、无行同步、灰度连续成像——与 SSTV 完全不同的协议，因此独立成页。适合守听海岸电台的天气图播发。</p>
+                    <div class="feature__tags"><span>WEFAX</span><span>120 行/分</span><span>灰度成像</span></div>
+                </article>
+
+                <article class="feature">
+                    <div class="feature__icon">
+                        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M12 2a10 10 0 0 0-10 10 10 10 0 0 0 10 10 10 10 0 0 0 10-10 10 10 0 0 0-10-10z M12 6v6l4 2"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature__title">过境提醒</h3>
+                    <p class="feature__text">AlarmManager 精确闹钟 + WorkManager 每日刷新，AOS 前可配提前量提醒。重启自动恢复，支持仅白天模式；提醒开关逐星独立，与分类互不干扰。</p>
+                    <div class="feature__tags"><span>AlarmManager</span><span>WorkManager</span><span>BootReceiver</span></div>
+                </article>
+
+                <article class="feature">
+                    <div class="feature__icon">
+                        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M2 12h3l2-6 3 12 3-9 2 3h7"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature__title">FT8 数字模式<span class="feature__badge">打磨中</span></h3>
+                    <p class="feature__text">基于 WSJT-X / ft8_lib 标准：LDPC(174,91) 软判决解码、CRC-14、GFSK 调制与 15 秒时隙对齐，支持与真实 FT8 信号互通；内置波段选择与消息编辑，可一键生成待发消息。</p>
+                    <div class="feature__tags"><span>FT8</span><span>LDPC(174,91)</span><span>GFSK</span><span>软判决</span></div>
+                </article>
+
+                <article class="feature">
+                    <div class="feature__icon">
+                        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M12 2C8 2 5 5 5 9c0 5 7 13 7 13s7-8 7-13c0-4-3-7-7-7z"/><circle cx="12" cy="9" r="2.5" fill="currentColor"/><path d="M2 21h20"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature__title">APRS 位置报告</h3>
+                    <p class="feature__text">接入 APRS-IS：实时接收报文与站点列表，站点地图定位，支持消息收发与符号选择。坚守合规——不计算也不发放 Passcode，未填写时以只读模式连接（pass -1，可收不可发），首次连接前需确认持照与责任声明。</p>
+                    <div class="feature__tags"><span>APRS-IS</span><span>站点地图</span><span>消息收发</span><span>只读模式</span></div>
+                </article>
+
+                <article class="feature">
+                    <div class="feature__icon">
+                        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h4"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature__title">QSO 通联日志</h3>
+                    <p class="feature__text">FT8 通联记录自动落库，支持增删改与呼号前缀 / 频段 / 时间范围筛选，标记完成状态。可导出 ADIF 3.1.4（.adi）与 ADX 兼容 XML（.xml），按当前筛选或全部记录导出，保存到文件或直接分享。</p>
+                    <div class="feature__tags"><span>ADIF 3.1.4</span><span>ADX XML</span><span>筛选</span><span>分享导出</span></div>
+                </article>
+            </div>
+        </section>
+
+        <!-- 应用预览 -->
+        <section id="showcase" class="section">
+            <div class="section__head">
+                <span class="section__tag">PREVIEW</span>
+                <h2 class="section__title">应用预览</h2>
+                <p class="section__desc">Material 3 Expressive + Miuix KMP 双设计语言，可自定义背景图与卡片透明度，首页时间卡集成天气、UTC 与每日一言。</p>
+            </div>
+
+            <div class="notes">
+                <div class="note">
+                    <div class="note__icon">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18M3 12h18"/></svg>
+                    </div>
+                    <div>
+                        <h3 class="note__title">动态主题</h3>
+                        <p class="note__text">MaterialKolor 从背景图自动提取色板，生成 Material 3 ColorScheme。</p>
+                    </div>
+                </div>
+                <div class="note">
+                    <div class="note__icon">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/></svg>
+                    </div>
+                    <div>
+                        <h3 class="note__title">卡片透明度</h3>
+                        <p class="note__text">0–100% 自由调节，scrim 遮罩保证文字对比。</p>
+                    </div>
+                </div>
+                <div class="note">
+                    <div class="note__icon">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3" fill="currentColor"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/></svg>
+                    </div>
+                    <div>
+                        <h3 class="note__title">Look4Sat 雷达图</h3>
+                        <p class="note__text">极坐标雷达实时显示在境卫星方位与俯仰，视觉对齐 Look4Sat。</p>
+                    </div>
+                </div>
+                <div class="note">
+                    <div class="note__icon">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
+                    </div>
+                    <div>
+                        <h3 class="note__title">卫星并行预测</h3>
+                        <p class="note__text">SGP4/SDP4 分批并行，结果按 AOS 排序，在境卫星优先。</p>
+                    </div>
+                </div>
+                <div class="note">
+                    <div class="note__icon">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2C8 2 5 5 5 9c0 5 7 13 7 13s7-8 7-13c0-4-3-7-7-7z"/><circle cx="12" cy="9" r="2.5" fill="currentColor"/></svg>
+                    </div>
+                    <div>
+                        <h3 class="note__title">持续定位</h3>
+                        <p class="note__text">地址解析 3 秒去抖，失败指数退避自动恢复。</p>
+                    </div>
+                </div>
+                <div class="note">
+                    <div class="note__icon">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M7 18a4 4 0 0 1 0-8 6 6 0 0 1 11.5 1.5A4.5 4.5 0 0 1 17 18H7z"/></svg>
+                    </div>
+                    <div>
+                        <h3 class="note__title">时间卡与天气</h3>
+                        <p class="note__text">首页时间卡集成实时天气温度、UTC 与每日一言（接口失败自动回退本地文案），支持自定义背景图与遮罩色。</p>
+                    </div>
+                </div>
+                <div class="note">
+                    <div class="note__icon">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
+                    </div>
+                    <div>
+                        <h3 class="note__title">实时多普勒</h3>
+                        <p class="note__text">详情页按秒刷新方位 / 仰角 / 距离 / 速度，并给出多普勒频移。</p>
+                    </div>
+                </div>
+                <div class="note">
+                    <div class="note__icon">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 18l4-8 4 6 4-11 4 13h4"/></svg>
+                    </div>
+                    <div>
+                        <h3 class="note__title">信号瀑布图</h3>
+                        <p class="note__text">SSTV 解调信号的频率-时间图，调谐时看同步线是否稳落青色区。</p>
+                    </div>
+                </div>
+                <div class="note">
+                    <div class="note__icon">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
+                    </div>
+                    <div>
+                        <h3 class="note__title">APRS 站点地图</h3>
+                        <p class="note__text">站点列表与地图双视图，符号体系完整，可查看最近站点与消息。</p>
+                    </div>
+                </div>
+                <div class="note">
+                    <div class="note__icon">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h4"/></svg>
+                    </div>
+                    <div>
+                        <h3 class="note__title">标准 ADIF 导出</h3>
+                        <p class="note__text">ADIF 3.1.4 与 ADX XML 双格式，按筛选或全部记录导出，可存文件或分享。</p>
+                    </div>
+                </div>
+                <div class="note">
+                    <div class="note__icon">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 12h3M9 12h2M13 12h6M3 12l1.5-4M6 12l-1.5 4M11 12l1-3M13 12l-1 3M19 12l1.5-3M19 12l1.5 3"/></svg>
+                    </div>
+                    <div>
+                        <h3 class="note__title">CW 进度跟踪</h3>
+                        <p class="note__text">Koch 课程 26 课 + 字符组 / 呼号 / 文本训练，WPM 与音调可调，进度本地保存。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 下载 -->
+        <section id="download" class="section">
+            <div class="section__head">
+                <span class="section__tag">DOWNLOAD</span>
+                <h2 class="section__title" id="download-title">下载 HamKit</h2>
+                <p class="section__desc" id="download-desc">直接下载最新 APK，或前往 GitHub Releases 查看历史版本。</p>
+            </div>
+
+            <div class="download-grid">
+                <div class="card release-card" id="release-card">
+                    <!-- 静态兜底：JS 或版本接口不可用时，用户至少知道这里该有什么 -->
+                    <div class="skeleton" style="height:20px;width:40%"></div>
+                    <div class="skeleton u-mt" style="height:38px;width:60%"></div>
+                    <div class="skeleton u-mt" style="height:80px"></div>
+                    <p class="u-dim u-mt" style="font-size:13px">正在获取最新版本信息…</p>
+                </div>
+
+                <aside class="card download-side">
+                    <h3 class="card__title">系统要求</h3>
+                    <ul class="requirement-list" id="download-requirements">
+                        <li>Android 8.0（API 26）及以上</li>
+                        <li>targetSdk 37</li>
+                        <li>需定位权限</li>
+                        <li>MIT License</li>
+                    </ul>
+                    <dl class="download-facts">
+                        <div>
+                            <dt>适用系统</dt>
+                            <dd id="download-min-android">Android 8.0（API 26）及以上</dd>
+                        </div>
+                        <div>
+                            <dt>APK 镜像</dt>
+                            <dd><a id="download-mirror" href="https://apk.hamkit.click/" target="_blank" rel="noopener">apk.hamkit.click ↗</a></dd>
+                        </div>
+                        <div>
+                            <dt>源码仓库</dt>
+                            <dd><a href="https://github.com/fuxue-linkong/HamKit" target="_blank" rel="noopener">fuxue-linkong/HamKit ↗</a></dd>
+                        </div>
+                    </dl>
+                    <p class="download-note">
+                        更新日志优先从本官网拉取，服务器不可达时回退 GitHub Releases。
+                    </p>
+                </aside>
+            </div>
+        </section>
+
+        <!-- 技术栈 -->
+        <section id="stack" class="section">
+            <div class="section__head">
+                <span class="section__tag">STACK</span>
+                <h2 class="section__title">技术栈</h2>
+                <p class="section__desc">Kotlin 2.4 + Jetpack Compose + Material 3 Expressive + Miuix KMP。Navigation3 导航，MaterialKolor 动态取色，CI/CD 自动化构建，JaCoCo 覆盖率守护。</p>
+            </div>
+
+            <div class="stack">
+                <div class="stack__group">
+                    <h3 class="stack__title">语言与框架</h3>
+                    <ul class="stack__list">
+                        <li><span class="stack__name">Kotlin</span><span class="stack__ver">2.4.0</span></li>
+                        <li><span class="stack__name">Jetpack Compose</span><span class="stack__ver">BOM 2026.05.01</span></li>
+                        <li><span class="stack__name">Material 3</span><span class="stack__ver">1.5.0-alpha22 (Expressive)</span></li>
+                        <li><span class="stack__name">Navigation3</span><span class="stack__ver">1.1.2</span></li>
+                        <li><span class="stack__name">Coroutines</span><span class="stack__ver">1.11.0</span></li>
+                        <li><span class="stack__name">Miuix KMP</span><span class="stack__ver">0.9.3</span></li>
+                    </ul>
+                </div>
+                <div class="stack__group">
+                    <h3 class="stack__title">数据与定位</h3>
+                    <ul class="stack__list">
+                        <li><span class="stack__name">Room</span><span class="stack__ver">2.7.0</span></li>
+                        <li><span class="stack__name">DataStore</span><span class="stack__ver">1.1.4</span></li>
+                        <li><span class="stack__name">Play Services Location</span><span class="stack__ver">21.3.0</span></li>
+                        <li><span class="stack__name">OkHttp</span><span class="stack__ver">5.3.2</span></li>
+                        <li><span class="stack__name">WorkManager</span><span class="stack__ver">2.10.0</span></li>
+                    </ul>
+                </div>
+                <div class="stack__group">
+                    <h3 class="stack__title">领域专用</h3>
+                    <ul class="stack__list">
+                        <li><span class="stack__name">自研 SGP4/SDP4 引擎</span><span class="stack__ver">—</span></li>
+                        <li><span class="stack__name">自研 SSTV 收发链（DSP）</span><span class="stack__ver">零依赖</span></li>
+                        <li><span class="stack__name">自研 FT8 协议栈（LDPC/GFSK）</span><span class="stack__ver">零依赖</span></li>
+                        <li><span class="stack__name">自研 WEFAX 解码器</span><span class="stack__ver">—</span></li>
+                        <li><span class="stack__name">predict4java（差分验证）</span><span class="stack__ver">1.3.1</span></li>
+                        <li><span class="stack__name">SatNOGS 转发器频率库</span><span class="stack__ver">—</span></li>
+                        <li><span class="stack__name">高德地图 3D SDK</span><span class="stack__ver">latest</span></li>
+                        <li><span class="stack__name">MPAndroidChart</span><span class="stack__ver">v3.1.0</span></li>
+                        <li><span class="stack__name">Coil Compose</span><span class="stack__ver">2.7.0</span></li>
+                        <li><span class="stack__name">MaterialKolor</span><span class="stack__ver">4.1.1</span></li>
+                        <li><span class="stack__name">Commonmark</span><span class="stack__ver">0.28.0</span></li>
+                    </ul>
+                </div>
+                <div class="stack__group">
+                    <h3 class="stack__title">工程化</h3>
+                    <ul class="stack__list">
+                        <li><span class="stack__name">Gradle</span><span class="stack__ver">9.4.1</span></li>
+                        <li><span class="stack__name">AGP</span><span class="stack__ver">9.2.1</span></li>
+                        <li><span class="stack__name">KSP</span><span class="stack__ver">2.3.10</span></li>
+                        <li><span class="stack__name">JaCoCo</span><span class="stack__ver">0.8.12</span></li>
+                        <li><span class="stack__name">R8 ProGuard</span><span class="stack__ver">—</span></li>
+                        <li><span class="stack__name">GitHub Actions</span><span class="stack__ver">CI/CD</span></li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- 开发者 -->
+        <section id="developer" class="section">
+            <div class="section__head">
+                <span class="section__tag">AUTHORS</span>
+                <h2 class="section__title">开发者</h2>
+            </div>
+
+            <div class="devs" id="devs-grid">
+                <article class="dev-card">
+                    <div class="dev__avatar">
+                        <img src="./images/avatar.jpg" alt="开发者 fuxuelingkong 头像" loading="lazy"/>
+                    </div>
+                    <div class="dev-card__body">
+                        <div class="dev__name">fuxuelingkong</div>
+                        <div class="dev-card__meta">
+                            <a class="dev__link" href="mailto:fuxuelingkong@outlook.com">Email</a>
+                            <a class="dev__link" href="https://github.com/fuxue-linkong" target="_blank" rel="noopener">GitHub ↗</a>
+                        </div>
+                    </div>
+                </article>
+
+                <article class="dev-card">
+                    <div class="dev__avatar">
+                        <img src="https://github.com/2048lr.png" alt="开发者 Run Liu 头像" loading="lazy"/>
+                    </div>
+                    <div class="dev-card__body">
+                        <div class="dev__name">Run Liu</div>
+                        <div class="dev-card__meta">
+                            <a class="dev__link" href="mailto:liurun637@gmail.com">Email</a>
+                            <a class="dev__link" href="https://github.com/2048lr" target="_blank" rel="noopener">GitHub ↗</a>
+                        </div>
+                    </div>
+                </article>
+            </div>
+        </section>
+    </main>
+
+    <!-- 页脚 -->
+    <footer class="footer">
+        <div class="footer__inner">
+            <div class="footer__top">
+                <div class="footer__brand">
+                    <div class="footer__logo">
+                        <span class="footer__dot"></span>
+                        HamKit
+                    </div>
+                    <p class="footer__tagline" id="footer-tagline">为业余无线电爱好者而生的随身控制台。</p>
+                    <p class="footer__icp u-hidden" id="footer-icp"></p>
+                </div>
+                <div class="footer__cols">
+                    <div class="footer__col">
+                        <h4>导航</h4>
+                        <a href="#features">功能总览</a>
+                        <a href="#showcase">应用预览</a>
+                        <a href="#download">下载</a>
+                        <a href="#stack">技术栈</a>
+                    </div>
+                    <div class="footer__col">
+                        <h4>资源</h4>
+                        <a href="https://github.com/fuxue-linkong/HamKit" target="_blank" rel="noopener">GitHub 仓库</a>
+                        <a href="https://github.com/fuxue-linkong/HamKit/releases" target="_blank" rel="noopener">Releases</a>
+                        <a href="https://github.com/fuxue-linkong/HamKit/issues" target="_blank" rel="noopener">提交 Issue</a>
+                        <a href="mailto:liurun637@gmail.com">邮件反馈</a>
+                    </div>
+                    <div class="footer__col">
+                        <h4>账号</h4>
+                        <a href="/login">登录</a>
+                        <a href="/account">用户中心</a>
+                        <a href="/admin/">管理后台</a>
+                        <span class="u-dim">OIDC 单点登录</span>
+                    </div>
+                </div>
+            </div>
+            <div class="footer__bar">
+                <span id="footer-copyright">© 2026 HamKit · MIT License</span>
+                <span class="footer__privacy"><a href="/privacy.html">隐私政策</a></span>
+                <span class="footer__sig" id="footer-signature">73 · SK</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="/assets/site.js" defer></script>
+    <script src="/assets/markdown.js" defer></script>
+    <script src="/assets/home.js" defer></script>
+</body>
+</html>

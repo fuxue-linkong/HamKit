@@ -1,0 +1,33 @@
+[Unit]
+Description=HamKit Website (Node 后端 + 静态托管)
+Documentation=https://github.com/fuxue-linkong/HamKit
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hamkit
+Group=hamkit
+WorkingDirectory=/srv/hamkit/website
+
+# 配置全部来自 /srv/hamkit/website/.env（密钥不进 systemd 单元文件）
+EnvironmentFile=/srv/hamkit/website/.env
+ExecStart=/usr/bin/node server/index.js
+
+Restart=always
+RestartSec=3
+
+# 日志进 journald：journalctl -u hamkit -f
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hamkit
+
+# 加固：服务只需要写自己的 data/ 目录
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/srv/hamkit/website/data
+
+[Install]
+WantedBy=multi-user.target

@@ -27,6 +27,8 @@ data class SettingsUiState(
     val updateChecking: Boolean = false,
     val updateAvailable: Boolean = false,
     val updateError: Boolean = false,
+    /** 下载/校验失败的具体原因；为空时显示通用文案。 */
+    val updateErrorMessage: String = "",
     val latestVersionInfo: LatestVersionInfo = LatestVersionInfo(),
     /** 下载进度 0-100，-1 表示未在下载，100 表示已完成 */
     val downloadProgress: Int = -1,
@@ -48,6 +50,7 @@ data class SettingsScreenActions(
     val onOpenTheme: () -> Unit,
     val onSetUiModeIndex: (Int) -> Unit,
     val onOpenAbout: () -> Unit,
+    val onOpenPrivacy: () -> Unit = {},
     // 业务相关回调
     val onUpdateReminderSettings: (ReminderSettings) -> Unit = {},
     val onOpenReminderList: () -> Unit = {},

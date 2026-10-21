@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="dark light">
+    <meta name="robots" content="noindex, nofollow">
+    <title>用户中心 · HamKit</title>
+    <meta name="description" content="HamKit 用户中心：查看账号资料、角色与权限、会话安全与 IdP 身份信息。">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230B0E14'/%3E%3Ccircle cx='16' cy='16' r='4.5' fill='%234D8FFF'/%3E%3Cpath d='M16 3v5M16 24v5M3 16h5M24 16h5' stroke='%234D8FFF' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+    <link rel="stylesheet" href="/assets/site.css">
+    <link rel="stylesheet" href="/assets/admin.css">
+</head>
+<!-- 结构性类名（.account-grid / .profile-card / .perm 等）定义在 /assets/admin.css，此处不重复定义样式 -->
+<body class="login-page" data-auth-page="account">
+    <div class="aurora" aria-hidden="true">
+        <div class="aurora__blob aurora__blob--1"></div>
+        <div class="aurora__blob aurora__blob--2"></div>
+    </div>
+
+    <header class="nav">
+        <a class="nav__brand" href="/">
+            <span class="nav__dot" aria-hidden="true"></span>
+            <span>HamKit</span>
+        </a>
+        <nav class="nav__links" aria-label="页面导航">
+            <a href="/">首页</a>
+            <a href="/account" class="is-active" aria-current="page">用户中心</a>
+        </nav>
+    </header>
+
+    <main class="login-wrap">
+        <div class="container">
+            <!-- 未登录时的占位：requireLogin() 会立刻跳转登录页，正常情况下看不到这段内容 -->
+            <section class="empty" id="authGate" hidden>
+                <div class="empty__icon" aria-hidden="true">🔒</div>
+                <div class="empty__title">需要登录</div>
+                <p class="empty__text">
+                    正在确认登录状态。如果页面没有自动跳转，
+                    <a href="/auth/login?returnTo=%2Faccount">点此前往登录页</a>。
+                </p>
+            </section>
+
+            <div class="account-grid" id="authAccount" hidden>
+                <!-- 左：账号资料 -->
+                <section class="card profile-card" id="authProfile" aria-label="账号资料"></section>
+
+                <!-- 右：权限 / 会话 / IdP -->
+                <div class="u-stack">
+                    <section class="card" aria-labelledby="authPermTitle">
+                        <div class="card__head">
+                            <div>
+                                <h2 class="card__title" id="authPermTitle">我的权限</h2>
+                                <p class="card__desc">下表列出本站全部权限项；带 ✓ 的表示当前角色已具备。</p>
+                            </div>
+                            <div class="card__actions" id="authAdminEntry"></div>
+                        </div>
+                        <div class="perm-list" id="authPermList"></div>
+                    </section>
+
+                    <section class="card" aria-labelledby="authSessionTitle">
+                        <div class="card__head">
+                            <div>
+                                <h2 class="card__title" id="authSessionTitle">会话与安全</h2>
+                                <p class="card__desc">退出后需重新经过身份提供方授权才能再次进入后台。</p>
+                            </div>
+                        </div>
+                        <div class="u-stack u-stack--sm" id="authSessionBody"></div>
+                    </section>
+
+                    <section class="card" aria-labelledby="authIdpTitle">
+                        <div class="card__head">
+                            <div>
+                                <h2 class="card__title" id="authIdpTitle">IdP 身份信息</h2>
+                                <p class="card__desc">来自身份提供方声明（claims）的原始信息与角色来源说明。</p>
+                            </div>
+                        </div>
+                        <div class="u-stack u-stack--sm" id="authIdpBody"></div>
+                    </section>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="footer">
+        <div class="footer__inner">
+            <div class="footer__bar">
+                <span>© HamKit</span>
+                <span><a href="/privacy.html">隐私政策</a> · <a href="/">返回首页</a></span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="/assets/site.js"></script>
+    <script src="/assets/auth.js"></script>
+</body>
+</html>

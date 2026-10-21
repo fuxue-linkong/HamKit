@@ -312,7 +312,7 @@ class MainViewModel : ViewModel() {
             try {
                 val weatherResult = weatherApiService.fetchWeather(
                     latitude = result.latitude,
-                    longitude = result.longitude
+                    longitude = result.longitude,
                 )
                 weatherStore.save(weatherResult)
                 _weather.value = weatherResult
@@ -320,8 +320,7 @@ class MainViewModel : ViewModel() {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: ApiKeyMissingException) {
-                // API Key 未配置：构建时未注入 secret，无需重试
-                _weatherError.value = "API Key 未配置，请运行 gradle encryptSecrets 生成 secrets.dat"
+                _weatherError.value = "高德 Web 服务 Key 未配置，请设置 AMAP_WEB_KEY 或 local.properties 的 amap.api.key"
             } catch (e: WeatherNetworkException) {
                 // 网络层失败：连接超时、断网、DNS 等
                 _weatherError.value = "网络连接失败：${e.message}，请检查网络后重试"

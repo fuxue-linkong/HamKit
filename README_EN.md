@@ -107,6 +107,7 @@ Official website: https://hamkit.click
 **Data & Location**
 - Room 2.7.0 / DataStore 1.1.4
 - Google Play Services Location 21.3.0
+- Amap Android SDK + Web services (maps / weather / reverse geocoding)
 - OkHttp 5.3.2 / WorkManager 2.10.0
 
 **Domain-specific**
@@ -130,7 +131,7 @@ Official website: https://hamkit.click
 
 ## Feedback
 
-Please report bugs via [Issues](https://github.com/fuxue-linkong/HamKit/issues) or email fuxuelingkong@outlook.com.
+Please report bugs via [Issues](https://github.com/fuxue-linkong/HamKit/issues) or email liurun637@gmail.com.
 
 Feature requests are also welcome (though feasibility is not guaranteed).
 

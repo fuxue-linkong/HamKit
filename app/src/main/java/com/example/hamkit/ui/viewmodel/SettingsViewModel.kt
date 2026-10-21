@@ -19,9 +19,11 @@ import com.example.hamkit.data.repository.SettingsRepository
 import com.example.hamkit.data.repository.SettingsRepositoryImpl
 import com.example.hamkit.ui.screen.settings.SettingsUiState
 import com.example.hamkit.ui.theme.ColorMode
+import com.example.hamkit.ui.util.ApkVerifier
 import com.example.hamkit.ui.util.LatestVersionInfo
 import com.example.hamkit.ui.util.checkNewVersion
 import com.example.hamkit.ui.util.downloadApk
+import com.example.hamkit.ui.util.isAllowedUpdateUrl
 import com.example.hamkit.ui.util.isNewerVersion
 import java.io.File
 
@@ -216,7 +218,7 @@ class SettingsViewModel(
             if (last > 0 && System.currentTimeMillis() - last < updateThrottleMs) return
         }
         updatePrefs.edit { putLong("last_update_check_time", System.currentTimeMillis()) }
-        _uiState.update { it.copy(updateChecking = true, updateError = false) }
+        _uiState.update { it.copy(updateChecking = true, updateError = false, updateErrorMessage = "") }
         viewModelScope.launch {
             val info = withContext(kotlinx.coroutines.Dispatchers.IO) { checkNewVersion() }
             val hasUpdate = if (info.versionCode > 0) {
@@ -232,6 +234,7 @@ class SettingsViewModel(
                     latestVersionInfo = info,
                     updateAvailable = hasUpdate,
                     updateError = false,
+                    updateErrorMessage = "",
                     downloadProgress = -1,
                 )
             }
@@ -248,7 +251,19 @@ class SettingsViewModel(
         val info = _uiState.value.latestVersionInfo
         if (info.downloadUrl.isEmpty()) return
         if (_uiState.value.downloadProgress >= 0) return // 正在下载中
-        _uiState.update { it.copy(downloadProgress = 0, updateError = false) }
+        if (!isAllowedUpdateUrl(info.downloadUrl)) {
+            _uiState.update {
+                it.copy(
+                    downloadProgress = -1,
+                    updateError = true,
+                    updateErrorMessage = "更新地址不在允许的域名内，已拒绝下载",
+                )
+            }
+            return
+        }
+        _uiState.update {
+            it.copy(downloadProgress = 0, updateError = false, updateErrorMessage = "")
+        }
         viewModelScope.launch {
             val destFile = File(radioApp.cacheDir, "update_${info.versionCode}.apk")
             val success = withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -256,19 +271,45 @@ class SettingsViewModel(
                     _uiState.update { it.copy(downloadProgress = progress) }
                 }
             }
-            if (success) {
-                installApk(destFile)
-                _uiState.update { it.copy(downloadProgress = 100) }
-            } else {
-                _uiState.update { it.copy(downloadProgress = -1, updateError = true) }
+            if (!success) {
+                _uiState.update {
+                    it.copy(
+                        downloadProgress = -1,
+                        updateError = true,
+                        updateErrorMessage = "更新包下载失败或地址不可信",
+                    )
+                }
+                return@launch
             }
+
+            val verification = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                ApkVerifier.verify(radioApp, destFile, info.sha256)
+            }
+            if (!verification.ok) {
+                destFile.delete()
+                _uiState.update {
+                    it.copy(
+                        downloadProgress = -1,
+                        updateError = true,
+                        updateErrorMessage = verification.message.ifBlank { "更新包校验失败" },
+                    )
+                }
+                return@launch
+            }
+
+            installApk(destFile)
+            _uiState.update { it.copy(downloadProgress = 100) }
         }
     }
 
     /** 清除更新检查结果（关闭对话框时调用）。 */
     fun clearUpdateResult() {
         _uiState.update {
-            it.copy(updateAvailable = false, latestVersionInfo = LatestVersionInfo())
+            it.copy(
+                updateAvailable = false,
+                updateErrorMessage = "",
+                latestVersionInfo = LatestVersionInfo(),
+            )
         }
     }
 
