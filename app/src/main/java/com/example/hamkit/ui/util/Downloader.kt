@@ -2,6 +2,7 @@ package com.example.hamkit.ui.util
 
 import com.example.hamkit.radioApp
 import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -15,6 +16,21 @@ private const val RELEASES_URL =
 
 /** 官网使用的 CloudFront APK 分发域名，源站为 S3。 */
 private const val APK_CDN_HOST = "apk.hamkit.click"
+
+/** 允许下载更新包的域名。新增分发域名时必须同步更新这里，不接受任意 URL。 */
+private val ALLOWED_UPDATE_HOSTS = setOf(APK_CDN_HOST)
+
+/**
+ * 更新地址白名单校验。
+ *
+ * 只接受 HTTPS + 官方 APK CDN；官网后台即使被接管，也无法把用户引到任意域名。
+ */
+internal fun isAllowedUpdateUrl(url: String): Boolean = runCatching {
+    val parsed = url.toHttpUrl()
+    parsed.scheme == "https" &&
+        parsed.host in ALLOWED_UPDATE_HOSTS &&
+        parsed.port == 443
+}.getOrDefault(false)
 
 /**
  * 查询最新版本信息。
@@ -89,6 +105,8 @@ internal fun parseUpdateJson(body: String): LatestVersionInfo = runCatching {
         versionName = obj.optString("versionName"),
         downloadUrl = obj.optString("downloadUrl"),
         changelog = obj.optString("changelog"),
+        sha256 = obj.optString("sha256"),
+        source = UpdateSource.WEBSITE,
     )
 }.getOrDefault(LatestVersionInfo())
 
@@ -126,11 +144,20 @@ internal fun parseLatestVersion(body: String): LatestVersionInfo {
             .find(apkFileName)?.groupValues?.get(1)?.toIntOrNull() ?: 0
     }
 
+    // GitHub Release 正文里若写了 SHA256，就拿来用；没有则只做签名/包名校验。
+    val sha256 = Regex("(?i)SHA-?256\\s*[:=]?\\s*([0-9a-f]{64})")
+        .find(changelog)
+        ?.groupValues
+        ?.get(1)
+        .orEmpty()
+
     return LatestVersionInfo(
         versionCode = versionCode,
         versionName = versionName,
         downloadUrl = downloadUrl,
         changelog = changelog,
+        sha256 = sha256,
+        source = UpdateSource.GITHUB,
     )
 }
 
@@ -151,6 +178,7 @@ internal fun buildCdnApkUrl(apkFileName: String): String = HttpUrl.Builder()
  * @return 下载成功返回 true，失败返回 false
  */
 fun downloadApk(url: String, destFile: File, onProgress: (Int) -> Unit): Boolean {
+    if (!isAllowedUpdateUrl(url)) return false
     val partialFile = File(destFile.parentFile, "${destFile.name}.part")
     val success = runCatching {
         radioApp.okhttpClient.newCall(Request.Builder().url(url).build()).execute()

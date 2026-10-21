@@ -1,0 +1,16 @@
+[Unit]
+Description=每 30 分钟同步一次 HamKit TLE 数据
+
+[Timer]
+# 开机 2 分钟后首次运行，之后每 30 分钟一次
+OnBootSec=2min
+OnUnitActiveSec=30min
+# 若因关机/休眠错过触发，开机后补跑一次
+Persistent=true
+# 随机延迟，避免整点集中请求 GitHub / S3
+RandomizedDelaySec=60
+
+Unit=hamkit-tle-sync.service
+
+[Install]
+WantedBy=timers.target

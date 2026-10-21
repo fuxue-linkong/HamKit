@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="dark light">
+    <meta name="robots" content="noindex, nofollow">
+    <title>登录 · HamKit 管理后台</title>
+    <meta name="description" content="HamKit 管理后台登录入口：使用 OIDC 单点登录访问版本、内容与用户管理。">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230B0E14'/%3E%3Ccircle cx='16' cy='16' r='4.5' fill='%234D8FFF'/%3E%3Cpath d='M16 3v5M16 24v5M3 16h5M24 16h5' stroke='%234D8FFF' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+    <link rel="stylesheet" href="/assets/site.css">
+    <link rel="stylesheet" href="/assets/admin.css">
+</head>
+<!-- 结构性类名（.login-page / .login-wrap / .login-card 等）定义在 /assets/admin.css，此处不重复定义样式 -->
+<body class="login-page" data-auth-page="login">
+    <!-- 背景光晕 -->
+    <div class="aurora" aria-hidden="true">
+        <div class="aurora__blob aurora__blob--1"></div>
+        <div class="aurora__blob aurora__blob--2"></div>
+        <div class="aurora__blob aurora__blob--3"></div>
+    </div>
+
+    <main class="login-wrap">
+        <section class="login-card" aria-labelledby="authCardTitle">
+            <!-- 品牌行 -->
+            <div class="login-card__brand">
+                <span class="nav__dot" aria-hidden="true"></span>
+                <span>HamKit</span>
+            </div>
+
+            <div class="login-card__head">
+                <h1 class="login-card__title" id="authCardTitle">登录 HamKit 管理后台</h1>
+                <p class="login-card__desc">
+                    管理后台承载版本发布、站点内容、公告与用户权限。本站通过 OIDC（OpenID Connect）单点登录，
+                    账号与密码由你所在组织的身份提供方（IdP）统一管理，本站不保存任何密码。
+                </p>
+            </div>
+
+            <!-- 由 /assets/auth.js 填充：回调错误 / 已登录提示 -->
+            <div class="u-stack u-stack--sm" id="authNotice" hidden></div>
+
+            <!-- 主按钮：OIDC 登录 -->
+            <div class="login-providers" id="authProviders" hidden>
+                <p style="margin:12px 0 4px;color:var(--text-2,#656d76);font-size:13px;line-height:1.6;">
+                    登录即表示你已阅读并同意 <a href="/privacy.html">《隐私政策》</a>。我们只用账号信息完成登录、权限与安全审计。
+                </p>
+                <button class="btn btn--primary btn--lg btn--block" type="button" id="authOidcBtn">使用 OIDC 登录</button>
+            </div>
+
+            <!-- 配置引导 / 开发直登 区块（内容全部由脚本按 /api/meta 结果构建） -->
+            <div class="login-meta" id="authMeta" hidden></div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <div class="footer__inner">
+            <div class="footer__bar">
+                <span>© HamKit</span>
+                <span><a href="/privacy.html">隐私政策</a> · <a href="/">返回首页</a></span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="/assets/site.js"></script>
+    <script src="/assets/auth.js"></script>
+</body>
+</html>

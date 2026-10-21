@@ -66,9 +66,9 @@ fun UpdateDialogs(
         return
     }
 
-    // 下载失败：错误对话框
+    // 下载/校验失败：错误对话框
     if (uiState.updateError) {
-        UpdateErrorDialog(actions)
+        UpdateErrorDialog(actions, uiState.updateErrorMessage)
         return
     }
 
@@ -153,7 +153,9 @@ private fun UpdateDownloadingDialog(progress: Int) {
 // ── 下载失败 ──
 
 @Composable
-private fun UpdateErrorDialog(actions: SettingsScreenActions) {
+private fun UpdateErrorDialog(actions: SettingsScreenActions, message: String) {
+    val fallback = stringResource(R.string.update_download_failed)
+    val text = message.ifBlank { fallback }
     when (LocalUiMode.current) {
         UiMode.Miuix -> WindowDialog(
             show = true,
@@ -161,7 +163,7 @@ private fun UpdateErrorDialog(actions: SettingsScreenActions) {
             onDismissRequest = actions.onClearUpdateResult,
             content = {
                 Column {
-                    MiuixText(text = stringResource(R.string.update_download_failed))
+                    MiuixText(text = text)
                     BottomSheetDialogButtons(
                         confirmText = stringResource(R.string.update_retry),
                         onConfirm = { /* retry handled by caller */ },
@@ -181,7 +183,7 @@ private fun UpdateErrorDialog(actions: SettingsScreenActions) {
             title = { Text(stringResource(R.string.settings_check_update)) },
             text = {
                 Text(
-                    text = stringResource(R.string.update_download_failed),
+                    text = text,
                     style = MaterialTheme.typography.bodyMedium,
                 )
             },

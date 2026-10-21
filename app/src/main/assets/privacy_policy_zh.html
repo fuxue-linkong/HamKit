@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HamKit 隐私政策</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      margin: 0 auto;
+      padding: 20px 20px 48px;
+      max-width: 760px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+      font-size: 15px;
+      line-height: 1.75;
+      color: #1f2328;
+      background: #ffffff;
+    }
+    h1 { font-size: 24px; line-height: 1.3; margin: 0 0 8px; }
+    h2 { font-size: 18px; margin: 28px 0 8px; }
+    h3 { font-size: 16px; margin: 20px 0 6px; }
+    p { margin: 8px 0; }
+    ul { margin: 8px 0 8px 22px; padding: 0; }
+    li { margin: 4px 0; }
+    .meta { color: #656d76; font-size: 13px; margin-bottom: 20px; }
+    .note { padding: 12px 14px; border-left: 3px solid #0969da; background: #f6f8fa; margin: 16px 0; }
+    .warn { padding: 12px 14px; border-left: 3px solid #cf222e; background: #fff5f5; margin: 16px 0; }
+    a { color: #0969da; }
+    code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13px; }
+    @media (prefers-color-scheme: dark) {
+      body { color: #e6edf3; background: #0d1117; }
+      .meta { color: #8b949e; }
+      .note { background: #161b22; border-left-color: #58a6ff; }
+      .warn { background: #2d1114; border-left-color: #f85149; }
+      a { color: #58a6ff; }
+    }
+  </style>
+</head>
+<body>
+  <h1>HamKit 隐私政策</h1>
+  <p class="meta">版本 1.0 · 更新日期：2026-10-19 · 适用 HamKit Android 应用（包名 com.example.hamkit）</p>
+
+  <div class="note">
+    <strong>摘要：</strong>HamKit 是免费的业余无线电辅助工具。我们处理精确位置、麦克风/音频、呼号和 APRS 数据，用于分区定位、地图、卫星、APRS、FT8、SSTV 等功能。数据主要保存在你的设备上；只有在你使用对应功能时，才会与高德地图、APRS-IS、卫星数据源或更新服务器交互。我们不出售个人信息，不投放广告。
+  </div>
+
+  <h2>1. 我们是谁</h2>
+  <p>HamKit 由个人开发者维护，联系邮箱：<a href="mailto:liurun637@gmail.com">liurun637@gmail.com</a>。本政策说明我们如何处理你的个人信息，以及你可以如何行使权利。</p>
+
+  <h2>2. 我们处理哪些信息、为什么处理</h2>
+
+  <h3>2.1 精确位置（敏感个人信息）</h3>
+  <ul>
+    <li><strong>信息：</strong>设备定位得到的经纬度、海拔、速度、方向，以及由坐标反查得到的地址/行政区。</li>
+    <li><strong>目的：</strong>计算 CQ/ITU 分区与 Maidenhead 网格；显示地图；查询当地天气；计算卫星过境与多普勒；在你主动开启 APRS 上报时发送位置。</li>
+    <li><strong>方式：</strong>定位在本地完成；天气与逆地理编码会把坐标发送给高德地图开放平台；地图由高德 Android SDK 显示；APRS 上报会把呼号与位置发送到 APRS-IS。</li>
+    <li><strong>法律依据：</strong>你的单独同意（《个人信息保护法》第 29 条）。你可以在系统设置中关闭定位权限，或拒绝首次启动时的位置同意。</li>
+  </ul>
+
+  <h3>2.2 麦克风与音频</h3>
+  <ul>
+    <li><strong>信息：</strong>麦克风采集的音频；Android 10+ 在“播放捕获”模式下由 MediaProjection 采集的其他应用音频；你保存的 WAV 录音、SSTV/传真图片。</li>
+    <li><strong>目的：</strong>FT8 解码、SSTV/WEFAX 接收、信号瀑布图、录音回放与离线解码。</li>
+    <li><strong>方式：</strong>音频在设备本地处理；只有你主动分享/导出时才会离开设备。播放捕获需要系统每次授权。</li>
+  </ul>
+
+  <h3>2.3 呼号、APRS 与 QSO 日志</h3>
+  <ul>
+    <li><strong>信息：</strong>呼号、SSID、APRS Passcode、APRS 位置/消息、QSO 日志（呼号、网格、频段、时间、报告）。</li>
+    <li><strong>目的：</strong>连接 APRS-IS、收发报文、记录通联、导出 ADIF/XML。</li>
+    <li><strong>方式：</strong>Passcode 保存在本机；连接 APRS-IS 时会作为登录凭据发送给该服务器，但不会上传到我们自己的服务器。只有你开启 APRS 上报/发消息时，呼号、位置和消息才会发送到 APRS-IS。APRS-IS 是公开的业余无线电网络，相关信息可能被第三方网站转载。</li>
+  </ul>
+
+  <h3>2.4 设备与网络信息</h3>
+  <ul>
+    <li><strong>信息：</strong>IP 地址、User-Agent、请求时间；高德 SDK 可能收集设备标识、网络状态、位置等以提供地图/天气服务。</li>
+    <li><strong>目的：</strong>完成网络请求、更新检查、故障排查、反滥用。</li>
+    <li><strong>方式：</strong>更新检查会访问 hamkit.click / GitHub；卫星 TLE 来自 CelesTrak/SatNOGS 镜像；AMSAT 状态来自 amsat.org。</li>
+  </ul>
+
+  <h3>2.5 本地设置与图片</h3>
+  <p>主题、页面缩放、提醒、图库、背景图等设置保存在本机。我们不运营账号系统，也不会上传这些内容。</p>
+
+  <h2>3. 第三方服务与共享</h2>
+  <p>为实现功能，以下第三方可能会处理必要的信息。我们不会出售你的个人信息。</p>
+  <ul>
+    <li><strong>高德地图开放平台：</strong>地图显示、天气查询、逆地理编码。会接收坐标、设备/网络信息；其隐私政策见 <a href="https://lbs.amap.com/pages/privacy/">lbs.amap.com/pages/privacy</a>。</li>
+    <li><strong>APRS-IS：</strong>你主动连接并开启上报时，呼号、位置、消息会进入公开网络。默认只读、位置上报默认关闭。</li>
+    <li><strong>CelesTrak / SatNOGS / AMSAT：</strong>提供卫星 TLE、转发器频率、状态数据；请求会携带 IP/User-Agent，不包含你的位置。</li>
+    <li><strong>GitHub / hamkit.click：</strong>检查与下载更新；会接收 IP/User-Agent。</li>
+    <li><strong>Google Play Services Location（如设备支持）：</strong>用于系统定位；具体处理见 Google 的隐私政策。</li>
+  </ul>
+
+  <h2>4. 存储期限与地点</h2>
+  <ul>
+    <li>本地数据（设置、日志、图片、录音、Passcode）保存在你的设备上，直到你在应用内删除、清除应用数据或卸载应用。</li>
+    <li>APRS-IS 上的公开数据由该网络及其镜像网站保存，我们无法删除或控制。</li>
+    <li>第三方服务（高德、GitHub 等）按各自的隐私政策和保留期限处理请求数据。</li>
+    <li>我们不会把本地 QSO 日志、Passcode 或图库上传到自己的服务器。</li>
+  </ul>
+
+  <h2>5. 数据出境</h2>
+  <p>APRS-IS 是国际业余无线电网络，服务器可能位于中国境外；CelesTrak、SatNOGS、AMSAT、GitHub 等也位于中国境外。使用这些功能时，相关请求（可能包含 IP、呼号、位置、消息）可能传输到境外。高德地图服务（含天气/逆地理编码）在中国境内。若你不希望数据出境，请关闭 APRS 上报、避免使用依赖境外数据源的功能。</p>
+
+  <h2>6. 权限</h2>
+  <ul>
+    <li><strong>定位：</strong>核心功能需要；可拒绝，但分区/地图/天气/APRS 将不可用。</li>
+    <li><strong>麦克风：</strong>FT8/SSTV/WEFAX 接收需要；可拒绝，相关功能不可用。</li>
+    <li><strong>通知：</strong>过境提醒需要；可拒绝。</li>
+    <li><strong>MediaProjection（播放捕获）：</strong>Android 10+ 可选，每次由系统弹窗授权。</li>
+    <li><strong>安装未知应用：</strong>仅用于应用内更新；可拒绝，改用官网/GitHub 手动下载。</li>
+  </ul>
+
+  <h2>7. 你的权利</h2>
+  <p>你可以要求查阅、复制、更正、删除你的个人信息，撤回同意，或注销/清除本地数据。由于本应用没有账号系统，大部分数据可直接在应用内删除，或通过“清除应用数据/卸载”完成。无法自行处理时，请发送邮件至 <a href="mailto:liurun637@gmail.com">liurun637@gmail.com</a>，我们会在合理期限内答复。</p>
+  <p>撤回同意不影响撤回前基于同意已进行的处理；撤回后你可能无法继续使用依赖该同意的功能。</p>
+
+  <h2>8. 安全</h2>
+  <p>我们采取访问控制、关闭云备份、最小化收集等措施保护数据。但任何系统都无法保证绝对安全；请妥善保管设备、锁屏密码和 APRS Passcode，不要在不可信设备上保存敏感日志。</p>
+
+  <h2>9. 未成年人</h2>
+  <p>本应用不是专门面向儿童的产品。若你未满 14 周岁，请在监护人陪同下阅读本政策，并由监护人同意后使用。业余无线电发射相关功能还应遵守《业余无线电台管理办法》及当地无线电管理规定。</p>
+
+  <div class="warn">
+    <strong>特别提示：</strong>APRS 位置与消息是公开的。请勿在开启上报时暴露家庭住址、工作单位等敏感位置。卫星过境、天气、地图等信息仅供参考，不应用于航行、救援或其他安全关键决策。
+  </div>
+
+  <h2>10. 政策更新</h2>
+  <p>我们可能因功能或法规变化更新本政策。重大变更会在应用内再次征求同意；版本号与更新日期见本页顶部。</p>
+
+  <h2>11. 联系我们</h2>
+  <p>隐私相关问题、投诉或权利请求：<a href="mailto:liurun637@gmail.com">liurun637@gmail.com</a>。我们会在收到请求后尽快处理。</p>
+</body>
+</html>

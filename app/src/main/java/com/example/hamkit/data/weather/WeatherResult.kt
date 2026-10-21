@@ -12,15 +12,16 @@ import androidx.compose.material.icons.filled.Thunderstorm
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.vector.ImageVector
+import java.util.Locale
 
 /**
  * 天气数据模型。包含实时天气与 4 天预报。
  *
- * 数据来源：高德天气 API
+ * 数据来源：高德 Web 服务（天气 + 逆地理编码）
  * - 实时天气：/v3/weather/weatherInfo?extensions=base
- * - 天气预报：/v3/weather/weatherInfo?extensions=all
+ * - 4 天预报：/v3/weather/weatherInfo?extensions=all
  *
- * @param cityName 城市名（如"北京"），由高德逆地理编码 API 返回
+ * @param cityName 城市名（来自高德逆地理编码）
  * @param now 实时天气
  * @param daily 4 天预报列表
  * @param fetchTimeMillis 数据获取时间戳，用于缓存过期判断
@@ -82,10 +83,9 @@ data class WeatherDay(
 )
 
 /**
- * 高德天气文字描述到 Material Icon 的映射。
+ * 天气文字描述到 Material Icon 的映射。
  *
- * 高德天气 API 不提供 icon code，仅返回中文天气描述。
- * 此函数根据描述中的关键字匹配到最合适的 Material Icon：
+ * 天气服务返回中文或英文描述，此函数根据关键字匹配到最合适的 Material Icon：
  * - 晴 → WbSunny / NightsStay
  * - 多云 → CloudQueue
  * - 阴 → Cloud
@@ -98,16 +98,18 @@ data class WeatherDay(
  * @param isNight 是否夜间（影响晴的图标选择）
  */
 fun mapWeatherIcon(weatherText: String, isNight: Boolean = false): ImageVector {
+    val text = weatherText.lowercase(Locale.getDefault())
     return when {
-        weatherText.contains("晴") -> if (isNight) Icons.Default.NightsStay else Icons.Default.WbSunny
-        weatherText.contains("多云") -> Icons.Default.CloudQueue
-        weatherText.contains("阴") -> Icons.Default.Cloud
-        weatherText.contains("雷") -> Icons.Default.Thunderstorm
-        weatherText.contains("雨") -> Icons.Default.Grain
-        weatherText.contains("雪") -> Icons.Default.AcUnit
-        weatherText.contains("雾") || weatherText.contains("霾") -> Icons.Default.Air
-        weatherText.contains("沙") || weatherText.contains("尘") -> Icons.Default.Air
-        weatherText.contains("风") -> Icons.Default.Air
+        text.contains("晴") || text.contains("clear") ->
+            if (isNight) Icons.Default.NightsStay else Icons.Default.WbSunny
+        text.contains("多云") || text.contains("cloud") -> Icons.Default.CloudQueue
+        text.contains("阴") || text.contains("overcast") -> Icons.Default.Cloud
+        text.contains("雷") || text.contains("thunder") -> Icons.Default.Thunderstorm
+        text.contains("雨") || text.contains("rain") || text.contains("drizzle") -> Icons.Default.Grain
+        text.contains("雪") || text.contains("snow") -> Icons.Default.AcUnit
+        text.contains("雾") || text.contains("霾") || text.contains("fog") -> Icons.Default.Air
+        text.contains("沙") || text.contains("尘") -> Icons.Default.Air
+        text.contains("风") || text.contains("wind") -> Icons.Default.Air
         else -> Icons.Default.BrokenImage
     }
 }

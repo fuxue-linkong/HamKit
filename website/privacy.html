@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>隐私政策 · HamKit</title>
+  <meta name="description" content="HamKit 官网隐私政策：我们收集哪些信息、为什么收集、保存多久，以及你的权利。">
+  <style>
+    :root { color-scheme: light dark; --fg:#1f2328; --muted:#656d76; --bg:#fff; --card:#f6f8fa; --line:#d0d7de; --link:#0969da; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--fg); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC","Microsoft YaHei",sans-serif; line-height:1.8; }
+    main { max-width: 820px; margin: 0 auto; padding: 40px 20px 72px; }
+    h1 { font-size: 30px; margin: 0 0 6px; }
+    h2 { font-size: 20px; margin: 32px 0 8px; }
+    h3 { font-size: 16px; margin: 20px 0 6px; }
+    p, li { font-size: 15px; }
+    ul { padding-left: 22px; }
+    .meta { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
+    .note { background: var(--card); border-left: 3px solid var(--link); padding: 14px 16px; margin: 18px 0; }
+    a { color: var(--link); }
+    .top { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom: 28px; }
+    .top a { text-decoration:none; }
+    .brand { font-weight: 700; letter-spacing: .02em; }
+    footer { margin-top: 48px; padding-top: 18px; border-top:1px solid var(--line); color:var(--muted); font-size:13px; display:flex; flex-wrap:wrap; gap:12px; justify-content:space-between; }
+    @media (prefers-color-scheme: dark) {
+      :root { --fg:#e6edf3; --muted:#8b949e; --bg:#0d1117; --card:#161b22; --line:#30363d; --link:#58a6ff; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <a class="brand" href="/">HamKit</a>
+    <a href="/">返回首页</a>
+  </div>
+
+  <h1>HamKit 官网隐私政策</h1>
+  <p class="meta">版本 1.0 · 更新日期：2026-10-19 · 适用于 hamkit.click 官网、登录与用户中心</p>
+
+  <div class="note">
+    <strong>摘要：</strong>官网只在你登录后台/用户中心时处理账号信息（邮箱、显示名、头像）、IP 和会话信息，用于身份认证、权限管理、安全审计和下载统计。我们不出售个人信息，不投放广告。
+  </div>
+
+  <h2>1. 我们是谁</h2>
+  <p>HamKit 由个人开发者维护。隐私相关联系邮箱：<a href="mailto:liurun637@gmail.com">liurun637@gmail.com</a>。</p>
+
+  <h2>2. 我们处理哪些信息</h2>
+  <h3>2.1 账号与身份信息</h3>
+  <ul>
+    <li>通过 OIDC 身份提供方登录后获得的邮箱、显示名、头像、用户名、角色；</li>
+    <li>登录时间、登录次数、最近活动时间；</li>
+    <li>用途：身份认证、后台权限控制、账号管理。</li>
+  </ul>
+
+  <h3>2.2 访问与安全日志</h3>
+  <ul>
+    <li>IP 地址、User-Agent、请求路径、操作记录（审计日志）；</li>
+    <li>用途：安全审计、故障排查、反滥用、统计下载量；</li>
+    <li>审计日志上限约 5000 条；统计事件默认保留 180 天（可通过环境变量调整）。</li>
+  </ul>
+
+  <h3>2.3 Cookie 与会话</h3>
+  <ul>
+    <li>登录后设置一个必要的会话 Cookie（HttpOnly、SameSite、HTTPS 下 Secure），用于保持登录状态；</li>
+    <li>不使用广告/追踪 Cookie，不接入第三方统计分析脚本。</li>
+  </ul>
+
+  <h2>3. 第三方服务</h2>
+  <ul>
+    <li><strong>OIDC 身份提供方</strong>（如 Casdoor / Keycloak）：完成登录与身份校验；</li>
+    <li><strong>云服务商 / CDN</strong>（当前为 AWS 境外区域与 CloudFront）：托管网站、APK 与日志；</li>
+    <li>除上述必要服务外，我们不向第三方出售或共享你的个人信息。</li>
+  </ul>
+
+  <h2>4. 保存期限与地点</h2>
+  <ul>
+    <li>账号信息保存在站点数据目录，直到账号被删除或你提出删除请求；</li>
+    <li>会话默认 8 小时过期（可配置）；审计日志按上限滚动；统计事件默认保留 180 天；</li>
+    <li>服务器与对象存储位于中国境外（AWS），因此账号信息、IP 和日志可能被传输到境外。</li>
+  </ul>
+
+  <h2>5. 你的权利</h2>
+  <p>你可以在“用户中心 → 隐私与数据”导出本站保存的账号资料、会话元数据与本人审计记录，或输入 DELETE 注销账号；也可以发送邮件至 <a href="mailto:liurun637@gmail.com">liurun637@gmail.com</a>。管理员也可以在后台删除用户。为避免冒名请求，我们可能要求你验证账号所有权。</p>
+
+  <h2>6. 安全</h2>
+  <p>我们使用 HTTPS、HttpOnly/Secure Cookie、CSRF 防护、登录限流、权限矩阵与审计日志等措施。任何系统都无法保证绝对安全；请使用独立密码并开启身份提供方的 MFA。</p>
+
+  <h2>7. 未成年人</h2>
+  <p>官网后台/用户中心面向开发者与管理员，不面向未成年人。未成年人请在监护人指导下使用，并由监护人处理账号与个人信息相关事宜。</p>
+
+  <h2>8. 政策更新</h2>
+  <p>功能或法规变化时，我们可能更新本政策；重大变更会在网站公告或登录页提示。版本号与更新日期见本页顶部。</p>
+
+  <h2>9. 联系我们</h2>
+  <p>隐私问题、投诉或权利请求：<a href="mailto:liurun637@gmail.com">liurun637@gmail.com</a>。</p>
+
+  <footer>
+    <span>© 2026 HamKit · MIT License</span>
+    <span><a href="/">首页</a> · <a href="/privacy.html">隐私政策</a></span>
+  </footer>
+</main>
+</body>
+</html>

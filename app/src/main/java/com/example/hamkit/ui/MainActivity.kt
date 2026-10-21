@@ -67,6 +67,8 @@ import androidx.navigationevent.compose.rememberNavigationEventState
 import kotlinx.coroutines.flow.MutableStateFlow
 import com.example.hamkit.R
 import com.example.hamkit.HamKitApplication
+import com.example.hamkit.data.privacy.AmapPrivacyInitializer
+import com.example.hamkit.data.privacy.PrivacyConsentStore
 import com.example.hamkit.data.sstv.SstvLaunchIntent
 import com.example.hamkit.data.sstv.SstvLaunchRequest
 import com.example.hamkit.ui.component.bottombar.BottomBar
@@ -83,6 +85,8 @@ import com.example.hamkit.ui.screen.colorpalette.ColorPaletteScreen
 import com.example.hamkit.ui.screen.home.HomePager
 import com.example.hamkit.ui.screen.location.LocationDetailScreen
 import com.example.hamkit.ui.screen.permission.PermissionScreen
+import com.example.hamkit.ui.screen.privacy.PrivacyConsentScreen
+import com.example.hamkit.ui.screen.privacy.PrivacyPolicyScreen
 import com.example.hamkit.ui.screen.reminder.ReminderListRouteScreen
 import com.example.hamkit.ui.screen.satellite.SatelliteFilterScreen
 import com.example.hamkit.ui.screen.satellite.SatelliteManagementScreen
@@ -144,13 +148,35 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Android 13+ 首次进入即请求通知权限；用户拒绝后下次仍可经权限页面再次请求
-        requestNotificationPermissionIfNeeded()
-
         // 冷启动时由通知点击带入的「直达 SSTV 接收态」请求（二期 T8）
         consumeSstvLaunchIntent(intent)
 
         setContent {
+            val context = LocalContext.current
+            var consentGranted by remember {
+                mutableStateOf(PrivacyConsentStore.isAccepted(context))
+            }
+
+            // 首启隐私闸门：同意前不创建业务 ViewModel、不请求权限、不初始化高德 SDK。
+            if (!consentGranted) {
+                PrivacyConsentScreen(
+                    onAgree = { aprsPublic ->
+                        PrivacyConsentStore.accept(
+                            context = context,
+                            location = true,
+                            aprsPublic = aprsPublic,
+                        )
+                        AmapPrivacyInitializer.initialize(context)
+                        consentGranted = true
+                    },
+                    onDecline = { (context as? Activity)?.finishAffinity() },
+                )
+                return@setContent
+            }
+
+            // 只有通过隐私闸门后才请求通知权限；定位/麦克风由各功能页在需要时请求。
+            LaunchedEffect(Unit) { requestNotificationPermissionIfNeeded() }
+
             val viewModel = viewModel<MainActivityViewModel>()
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             val selectedMainPage by viewModel.selectedMainPage.collectAsStateWithLifecycle()
@@ -241,6 +267,11 @@ class MainActivity : ComponentActivity() {
                             entryProvider = entryProvider {
                                 entry<Route.Main> { WithApplicationViewModelStoreOwner { mainScreenEntry() } }
                                 entry<Route.About> { WithApplicationViewModelStoreOwner { AboutScreen() } }
+                                entry<Route.PrivacyPolicy> {
+                                    WithApplicationViewModelStoreOwner {
+                                        PrivacyPolicyScreen(onBack = { navigator.pop() })
+                                    }
+                                }
                                 entry<Route.ColorPalette> { WithApplicationViewModelStoreOwner { ColorPaletteScreen() } }
                                 entry<Route.Permissions> { WithApplicationViewModelStoreOwner { PermissionScreen() } }
                                 entry<Route.Home> { WithApplicationViewModelStoreOwner { mainScreenEntry() } }

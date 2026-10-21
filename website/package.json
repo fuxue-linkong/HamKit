@@ -1,0 +1,22 @@
+{
+  "name": "hamkit-website",
+  "version": "1.0.0",
+  "private": true,
+  "description": "HamKit 官网 —— 首页 / 公告 / 下载 / OIDC 登录 / 管理后台（零运行时依赖）",
+  "type": "module",
+  "engines": {
+    "node": ">=18.17"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node server/dev.js",
+    "test": "node --test --test-timeout=30000 \"test/**/*.test.mjs\"",
+    "test:watch": "node --test --watch \"test/**/*.test.mjs\"",
+    "pages": "node build/build-pages.js",
+    "check": "node build/build-pages.js --check"
+  },
+  "dependencies": {},
+  "optionalDependencies": {
+    "express": "^4.21.2"
+  }
+}

@@ -1,0 +1,29 @@
+[Unit]
+Description=HamKit TLE 数据同步（celestrak-mirror → s3://hamkit-tle-tpe/tle/）
+Documentation=https://github.com/astrion-tech/celestrak-mirror
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/hamkit-tle-sync.sh
+
+# 凭证文件仅 root 可读
+User=root
+
+# 超时保护：单次同步最多 10 分钟
+TimeoutStartSec=600
+
+# 失败不影响系统，仅记录
+SuccessExitStatus=0
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hamkit-tle-sync
+
+# 加固
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/hamkit-tle /var/log

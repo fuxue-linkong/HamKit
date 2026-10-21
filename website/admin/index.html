@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<!--
+  HamKit 管理后台外壳
+  —— 单页应用：侧边栏 + 顶栏 + 视图容器，视图内容全部由 /assets/admin.js 渲染。
+  依赖：/assets/site.css（设计令牌）→ /assets/admin.css（后台骨架）→ /assets/markdown.js → /assets/site.js → /assets/admin.js
+-->
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>管理后台 · HamKit</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230B0E14'/%3E%3Ccircle cx='16' cy='16' r='4.5' fill='%234D8FFF'/%3E%3Cpath d='M16 3v5M16 24v5M3 16h5M24 16h5' stroke='%234D8FFF' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+    <link rel="stylesheet" href="/assets/site.css">
+    <link rel="stylesheet" href="/assets/admin.css">
+</head>
+<body class="admin-body">
+    <!-- 移动端抽屉遮罩 -->
+    <div class="sidebar-scrim" id="scrim" aria-hidden="true"></div>
+
+    <div class="admin">
+        <!-- ------------------------------ 侧边栏 ------------------------------ -->
+        <aside class="sidebar" id="sidebar" aria-label="后台导航">
+            <div class="sidebar__brand">
+                <span class="nav__dot"></span>
+                <span>HamKit</span>
+                <small>ADMIN</small>
+            </div>
+
+            <nav id="nav" class="u-stack u-stack--sm" aria-label="主导航"></nav>
+
+            <div class="sidebar__foot">
+                <a class="sidebar__link" href="/" target="_blank" rel="noopener">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12l9-9 9 9M5 10v10h14V10"/></svg>
+                    <span>返回前台</span>
+                </a>
+                <div class="sidebar__user" id="nav-user">
+                    <div class="sidebar__user-avatar">…</div>
+                    <div class="sidebar__user-info">
+                        <span class="sidebar__user-name">加载中…</span>
+                        <span class="sidebar__user-role">—</span>
+                    </div>
+                </div>
+                <button class="sidebar__link" type="button" id="btn-logout">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+                    <span>退出登录</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- ------------------------------- 主区域 ------------------------------ -->
+        <div class="admin__main">
+            <header class="topbar">
+                <button class="topbar__burger" type="button" id="burger" aria-label="打开导航" aria-expanded="false">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+                </button>
+                <div>
+                    <div class="topbar__title" id="view-title">概览</div>
+                    <div class="topbar__desc" id="view-desc">加载中…</div>
+                </div>
+                <div class="topbar__actions" id="view-actions"></div>
+            </header>
+
+            <main class="admin__content">
+                <section class="view" id="view-overview" data-view="overview" aria-label="概览"></section>
+                <section class="view" id="view-versions" data-view="versions" aria-label="版本管理"></section>
+                <section class="view" id="view-content" data-view="content" aria-label="首页内容"></section>
+                <section class="view" id="view-announcements" data-view="announcements" aria-label="公告管理"></section>
+                <section class="view" id="view-users" data-view="users" aria-label="用户管理"></section>
+                <section class="view" id="view-audit" data-view="audit" aria-label="审计日志"></section>
+                <section class="view" id="view-system" data-view="system" aria-label="系统状态"></section>
+                <section class="view" id="view-forbidden" data-view="forbidden" aria-label="无权限"></section>
+            </main>
+        </div>
+    </div>
+
+    <!-- 只读提示（缺少任意一项读权限时才会出现） -->
+    <div id="toast-slot" hidden></div>
+
+    <script src="/assets/markdown.js"></script>
+    <script src="/assets/site.js"></script>
+    <script src="/assets/admin.js"></script>
+</body>
+</html>

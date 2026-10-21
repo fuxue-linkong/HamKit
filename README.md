@@ -110,6 +110,7 @@
 **数据与定位**
 - Room 2.7.0 / DataStore 1.1.4
 - Google Play Services Location 21.3.0
+- 高德地图 SDK + Web 服务（地图 / 天气 / 逆地理编码）
 - OkHttp 5.3.2 / WorkManager 2.10.0
 
 **领域专用**
@@ -133,7 +134,7 @@
 
 ## 反馈
 
-如有 bug 请在 [Issues](https://github.com/fuxue-linkong/HamKit/issues) 中提出，或发送邮件至 fuxuelingkong@outlook.com。
+如有 bug 请在 [Issues](https://github.com/fuxue-linkong/HamKit/issues) 中提出，或发送邮件至 liurun637@gmail.com。
 
 也欢迎提出功能需求（能力有限，不一定能实现）。
 

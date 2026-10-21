@@ -1,10 +1,19 @@
 package com.example.hamkit.ui.util
 
+/** 更新信息来自官网还是 GitHub Releases（用于决定是否强制要求 SHA-256）。 */
+enum class UpdateSource {
+    WEBSITE,
+    GITHUB,
+}
+
 data class LatestVersionInfo(
     val versionCode: Int = 0,
     val versionName: String = "",
     val downloadUrl: String = "",
     val changelog: String = "",
+    /** 官网 update.json / Release 正文提供的 SHA-256（可为空，下载后仍会校验签名）。 */
+    val sha256: String = "",
+    val source: UpdateSource = UpdateSource.WEBSITE,
 )
 
 /**
