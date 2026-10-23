@@ -135,40 +135,63 @@ object SstvSync {
         val minPulseSamples = (syncSamples * MIN_PULSE_RATIO).toInt().coerceAtLeast(2)
         val targetHz = SstvMode.VIS_BREAK_HZ + hedrShiftHz
 
-        // 0. 先做 2 ms **零相位**滑动平均，再在**平滑流**上找同步段。
+        // 0. 段判定**首选原频率流**；原流找不够段时才退到 2 ms 零相位平滑流重扫。
         //
-        //    为什么要平滑：正交鉴频的逐样本频率噪声在真实信道录音上可达 σ≈56 Hz
-        //    （实测用户反馈的 Robot 36 录音：同步段内 std 56 Hz），而同步判据是
-        //    「|f − 1200| ≤ 60 Hz 且连续 ≥45% 同步时长」—— 逐样本流上的 1200 Hz
-        //    平台会被噪声打得千疮百孔，一个候选段都找不到，整段音频直接判
-        //    「未检测到足够的行同步脉冲」。2 ms 平均把噪声压低 √96 ≈ 10 倍
-        //    （σ≈6 Hz），平台恢复完整；实测同一段录音平滑后 240 个行同步
-        //    全部串成一条链（行周期拟合比 1.0000）。
+        //    为什么判定流必须是原流（075e280/5152b79 两次 CI 红灯的最终结论）：
+        //    平滑流上的判据是「均值 |f̄−1200| ≤ 60」，而平滑值在段边界附近是
+        //    **段内外内容的加权混合** —— 跨入/跨出点都向平台中心收缩，段被夹窄。
+        //    barsImage 这类「同步前恒黑 1500、后恒白 2300」的图像两侧混合速率
+        //    不同，每个脉冲中心被系统性推偏（实测 ROBOT_36 首脉冲中心偏 −13.5
+        //    样本 ≈ 2 像素），一次性解码整体错位，与流式通路（原流检测）不一致：
+        //    「实时 vs 一期」PSNR 从 ~30 掉到 23.7 dB，「低通收益」「黑白行数」
+        //    等相对断言全部贴地（本地临时 JVM 工程逐位复现 CI 数字后，用 8752626
+        //    版 SstvSync 同环境替换即全绿，证据链闭环）。
+        //    原流上同步平台 1200 Hz 距内容带 ≥ 1500−1260 = 140 Hz，判据带 ±60 Hz
+        //    远离内容电平，段边界无内容偏置；解调器基带本身已做 8 阶 Butterworth
+        //    低通，合成信号下与 8752626 逐位一致。
         //
-        //    为什么必须是**零相位（居中）**窗口：像素采样在**原频率流**上进行，
-        //    行首若被平滑偏移 (window−1)/2 ≈ 47.5 样本，Robot 36（6.6 样本/像素）
-        //    就整体水平错位约 7 个像素 —— 合成自环 PSNR 断言会全部崩掉（CI 实测）。
-        //    居中窗口让平滑流与原流下标 1:1 对齐，段中心无偏。
+        //    平滑流保留为**兜底通道**（075e280 的原始动机）：真实信道录音的逐样本
+        //    频率噪声 σ≈56 Hz 会把原流上的 1200 Hz 平台打得千疮百孔，原流找段
+        //    不足 MIN_PULSES_FOR_FIT 时，用 2 ms 零相位平均把噪声压低 ~10 倍
+        //    （σ≈6 Hz）再扫一遍。段中心从混合流取值确实有亚像素级偏置，但比起
+        //    「整段音频直接判失败」是可以接受的代价；偏移方向一致（收缩），行
+        //    周期拟合（斜率）几乎不受影响。
         //
         //    为什么放在这里而不是解调器里：像素采样有自己的零相位低通与积分窗，
-        //    全局平滑只会白损水平分辨率；同步搜索只需要「段在哪」，2 ms 的时间
-        //    模糊（远小于 5–9 ms 的同步脉冲宽度）对段中心的影响可忽略。
-        //    合成自环信号噪声接近零，平滑对它无影响，既有测试不受扰动。
-        val smoothWindow = (sampleRate * SYNC_SMOOTH_SECONDS).toInt().coerceAtLeast(1)
-        val syncFlow = movingAverage(freqs, smoothWindow)
-
-        // 1. 找出所有落在 1200 Hz 附近的连续段（在平滑流上判定，索引与原流对齐）
+        //    全局平滑只会白损水平分辨率；兜底扫描只需要「段在哪」。
         val candidates = ArrayList<Pulse>()
-        var i = startIndex.coerceIn(0, syncFlow.size)
-        while (i < syncFlow.size) {
-            if (isSync(syncFlow[i], targetHz)) {
-                val start = i
-                while (i < syncFlow.size && isSync(syncFlow[i], targetHz)) i++
-                if (i - start >= minPulseSamples) {
-                    candidates.add(Pulse(start, i))
+        fun collectPulses(flow: FloatArray): Int {
+            var count = 0
+            var i = startIndex.coerceIn(0, flow.size)
+            while (i < flow.size) {
+                if (isSync(flow[i], targetHz)) {
+                    val start = i
+                    while (i < flow.size && isSync(flow[i], targetHz)) i++
+                    if (i - start >= minPulseSamples) {
+                        candidates.add(Pulse(start, i))
+                        count++
+                    }
+                } else {
+                    i++
                 }
-            } else {
-                i++
+            }
+            return count
+        }
+        var usedSmoothing = false
+        val rawFound = collectPulses(freqs)
+        if (rawFound < MIN_PULSES_FOR_FIT) {
+            // 真实录音兜底：原流被噪声打散时，在 2 ms 零相位平滑流上重扫
+            val smoothWindow = (sampleRate * SYNC_SMOOTH_SECONDS).toInt().coerceAtLeast(1)
+            if (smoothWindow > 1) {
+                candidates.clear()
+                val smoothed = movingAverage(freqs, smoothWindow)
+                val smoothFound = collectPulses(smoothed)
+                usedSmoothing = smoothFound >= rawFound && smoothFound > 0
+                if (!usedSmoothing) {
+                    // 平滑流反而更差（极端罕见）：恢复原流结果
+                    candidates.clear()
+                    collectPulses(freqs)
+                }
             }
         }
         if (candidates.size < MIN_PULSES_FOR_FIT) return null
@@ -264,15 +287,17 @@ object SstvSync {
 
         // 统计同步脉冲内的平均频率（只取段中部，避开两侧的频率过渡带），
         // 用于得到比 VIS leader 更精确的失谐量。
-        // 在**平滑流**上统计（与段判定同一数据源），并把索引夹紧到平滑流的
-        // 有效范围 —— 滑动平均的尾部会比原流短 smoothWindow−1 个样本。
+        // 与段判定同一数据源：兜底走了平滑流时在平滑流上统计（噪声已压低，
+        // 段中部均值无偏），否则直接在原流上统计 —— 两者的段中部均值一致，
+        // 但原流统计在无平滑路径上保持与 8752626 完全相同的行为。
+        val statFlow = if (usedSmoothing) movingAverage(freqs, (sampleRate * SYNC_SMOOTH_SECONDS).toInt().coerceAtLeast(1)) else freqs
         var frequencySum = 0.0
         var frequencyCount = 0
         for (pulse in chain) {
-            val from = (pulse.start + pulse.length / 4).coerceIn(0, syncFlow.size)
-            val to = (pulse.end - pulse.length / 4).coerceIn(from, syncFlow.size)
+            val from = (pulse.start + pulse.length / 4).coerceIn(0, statFlow.size)
+            val to = (pulse.end - pulse.length / 4).coerceIn(from, statFlow.size)
             for (idx in from until to) {
-                frequencySum += syncFlow[idx]
+                frequencySum += statFlow[idx]
                 frequencyCount++
             }
         }
