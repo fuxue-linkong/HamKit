@@ -135,7 +135,7 @@ object SstvSync {
         val minPulseSamples = (syncSamples * MIN_PULSE_RATIO).toInt().coerceAtLeast(2)
         val targetHz = SstvMode.VIS_BREAK_HZ + hedrShiftHz
 
-        // 0. 先做 2 ms 滑动平均，再在**平滑流**上找同步段。
+        // 0. 先做 2 ms **零相位**滑动平均，再在**平滑流**上找同步段。
         //
         //    为什么要平滑：正交鉴频的逐样本频率噪声在真实信道录音上可达 σ≈56 Hz
         //    （实测用户反馈的 Robot 36 录音：同步段内 std 56 Hz），而同步判据是
@@ -144,6 +144,11 @@ object SstvSync {
         //    「未检测到足够的行同步脉冲」。2 ms 平均把噪声压低 √96 ≈ 10 倍
         //    （σ≈6 Hz），平台恢复完整；实测同一段录音平滑后 240 个行同步
         //    全部串成一条链（行周期拟合比 1.0000）。
+        //
+        //    为什么必须是**零相位（居中）**窗口：像素采样在**原频率流**上进行，
+        //    行首若被平滑偏移 (window−1)/2 ≈ 47.5 样本，Robot 36（6.6 样本/像素）
+        //    就整体水平错位约 7 个像素 —— 合成自环 PSNR 断言会全部崩掉（CI 实测）。
+        //    居中窗口让平滑流与原流下标 1:1 对齐，段中心无偏。
         //
         //    为什么放在这里而不是解调器里：像素采样有自己的零相位低通与积分窗，
         //    全局平滑只会白损水平分辨率；同步搜索只需要「段在哪」，2 ms 的时间
@@ -293,24 +298,40 @@ object SstvSync {
         kotlin.math.abs(value - targetHz) <= SYNC_TOLERANCE_HZ
 
     /**
-     * 滑动平均（窗口 [window]，输出与输入**按起点对齐**，尾部短 window−1 项）。
+     * **零相位**滑动平均（居中窗口，输出与输入**下标 1:1 对齐**，长度不变）。
      *
-     * 刻意让输出下标 i 对应输入的 [i, i+window) 均值（而不是居中窗口）：同步段
-     * 的**起点**因此不被推迟，行位置拟合不受偏置影响；段尾部少 window−1 个样本
-     * 的模糊对「段中心 ≈ 段起点 + 半个同步脉冲」的估计只有亚毫秒级影响。
+     * 输出下标 i 对应输入 [i − half, i + half] 的均值（half = window/2，窗长取奇数），
+     * 即整条流被对称地低通、但**没有任何时间偏移**。这至关重要：像素采样在原流上
+     * 进行，若同步段位置被平滑推移，行首就会整体错位（窗长 96 样本 → Robot 36 错
+     * 约 7 像素，合成自环 PSNR 全崩）。
      *
-     * 累加用 Double 而非前缀和数组：同步流是逐样本访问的顺序扫描，单状态累加
-     * 没有随机访问需求，省掉一份 O(n) 的中间数组。
+     * 边界用「窗内实际已有的项数」归一（等价于部分窗平均），避免开头/结尾被 0 拉偏。
+     * 累加用单状态 Double 前向差分：顺序扫描、无随机访问，省掉 O(n) 中间数组。
      */
     private fun movingAverage(input: FloatArray, window: Int): FloatArray {
-        if (window <= 1 || input.size <= window) return input
-        val out = FloatArray(input.size - window + 1)
+        // 强制奇数窗长：居中窗口必须左右对称，否则残余相位偏移
+        val span = if (window % 2 == 1) window else window + 1
+        val half = span / 2
+        if (span <= 1 || input.size <= span) return input
+        val out = FloatArray(input.size)
         var sum = 0.0
-        for (i in 0 until window) sum += input[i]
-        out[0] = (sum / window).toFloat()
-        for (i in window until input.size) {
-            sum += input[i] - input[i - window]
-            out[i - window + 1] = (sum / window).toFloat()
+        // 初始窗：[0, span)，首个输出下标 = half
+        for (i in 0 until span) sum += input[i]
+        out[half] = (sum / span).toFloat()
+        for (i in half + 1 until input.size - half) {
+            sum += input[i + half] - input[i - half - 1]
+            out[i] = (sum / span).toFloat()
+        }
+        // 边界：前 half 项与后 half 项用「已有项数」归一的部分窗
+        for (i in 0 until half) {
+            var s = 0.0
+            for (k in 0..i + half) s += input[k]
+            out[i] = (s / (i + half + 1)).toFloat()
+        }
+        for (i in input.size - half until input.size) {
+            var s = 0.0
+            for (k in i - half until input.size) s += input[k]
+            out[i] = (s / (input.size - i + half)).toFloat()
         }
         return out
     }
