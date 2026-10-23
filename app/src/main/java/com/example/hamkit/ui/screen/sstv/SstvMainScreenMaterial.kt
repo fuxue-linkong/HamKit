@@ -92,6 +92,10 @@ fun SstvMainScreenMaterial(
         onDispose { viewModel.clearPreset() }
     }
 
+    // 图库的大图查看器与接收页共用应用级 ViewModel。进入接收页时先收起它，
+    // 这样从接收页返回图库（图 1）时看到的是列表，而不是上次留下的大图（图 3）。
+    LaunchedEffect(Unit) { viewModel.closeViewer() }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
