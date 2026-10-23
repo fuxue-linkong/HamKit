@@ -135,13 +135,30 @@ object SstvSync {
         val minPulseSamples = (syncSamples * MIN_PULSE_RATIO).toInt().coerceAtLeast(2)
         val targetHz = SstvMode.VIS_BREAK_HZ + hedrShiftHz
 
-        // 1. 找出所有落在 1200 Hz 附近的连续段
+        // 0. 先做 2 ms 滑动平均，再在**平滑流**上找同步段。
+        //
+        //    为什么要平滑：正交鉴频的逐样本频率噪声在真实信道录音上可达 σ≈56 Hz
+        //    （实测用户反馈的 Robot 36 录音：同步段内 std 56 Hz），而同步判据是
+        //    「|f − 1200| ≤ 60 Hz 且连续 ≥45% 同步时长」—— 逐样本流上的 1200 Hz
+        //    平台会被噪声打得千疮百孔，一个候选段都找不到，整段音频直接判
+        //    「未检测到足够的行同步脉冲」。2 ms 平均把噪声压低 √96 ≈ 10 倍
+        //    （σ≈6 Hz），平台恢复完整；实测同一段录音平滑后 240 个行同步
+        //    全部串成一条链（行周期拟合比 1.0000）。
+        //
+        //    为什么放在这里而不是解调器里：像素采样有自己的零相位低通与积分窗，
+        //    全局平滑只会白损水平分辨率；同步搜索只需要「段在哪」，2 ms 的时间
+        //    模糊（远小于 5–9 ms 的同步脉冲宽度）对段中心的影响可忽略。
+        //    合成自环信号噪声接近零，平滑对它无影响，既有测试不受扰动。
+        val smoothWindow = (sampleRate * SYNC_SMOOTH_SECONDS).toInt().coerceAtLeast(1)
+        val syncFlow = movingAverage(freqs, smoothWindow)
+
+        // 1. 找出所有落在 1200 Hz 附近的连续段（在平滑流上判定，索引与原流对齐）
         val candidates = ArrayList<Pulse>()
-        var i = startIndex.coerceIn(0, freqs.size)
-        while (i < freqs.size) {
-            if (isSync(freqs[i], targetHz)) {
+        var i = startIndex.coerceIn(0, syncFlow.size)
+        while (i < syncFlow.size) {
+            if (isSync(syncFlow[i], targetHz)) {
                 val start = i
-                while (i < freqs.size && isSync(freqs[i], targetHz)) i++
+                while (i < syncFlow.size && isSync(syncFlow[i], targetHz)) i++
                 if (i - start >= minPulseSamples) {
                     candidates.add(Pulse(start, i))
                 }
@@ -241,14 +258,16 @@ object SstvSync {
         val firstLineStart = intercept - syncSamples / 2.0 - syncOffsetSamples
 
         // 统计同步脉冲内的平均频率（只取段中部，避开两侧的频率过渡带），
-        // 用于得到比 VIS leader 更精确的失谐量
+        // 用于得到比 VIS leader 更精确的失谐量。
+        // 在**平滑流**上统计（与段判定同一数据源），并把索引夹紧到平滑流的
+        // 有效范围 —— 滑动平均的尾部会比原流短 smoothWindow−1 个样本。
         var frequencySum = 0.0
         var frequencyCount = 0
         for (pulse in chain) {
-            val from = pulse.start + pulse.length / 4
-            val to = pulse.end - pulse.length / 4
+            val from = (pulse.start + pulse.length / 4).coerceIn(0, syncFlow.size)
+            val to = (pulse.end - pulse.length / 4).coerceIn(from, syncFlow.size)
             for (idx in from until to) {
-                frequencySum += freqs[idx]
+                frequencySum += syncFlow[idx]
                 frequencyCount++
             }
         }
@@ -274,6 +293,29 @@ object SstvSync {
         kotlin.math.abs(value - targetHz) <= SYNC_TOLERANCE_HZ
 
     /**
+     * 滑动平均（窗口 [window]，输出与输入**按起点对齐**，尾部短 window−1 项）。
+     *
+     * 刻意让输出下标 i 对应输入的 [i, i+window) 均值（而不是居中窗口）：同步段
+     * 的**起点**因此不被推迟，行位置拟合不受偏置影响；段尾部少 window−1 个样本
+     * 的模糊对「段中心 ≈ 段起点 + 半个同步脉冲」的估计只有亚毫秒级影响。
+     *
+     * 累加用 Double 而非前缀和数组：同步流是逐样本访问的顺序扫描，单状态累加
+     * 没有随机访问需求，省掉一份 O(n) 的中间数组。
+     */
+    private fun movingAverage(input: FloatArray, window: Int): FloatArray {
+        if (window <= 1 || input.size <= window) return input
+        val out = FloatArray(input.size - window + 1)
+        var sum = 0.0
+        for (i in 0 until window) sum += input[i]
+        out[0] = (sum / window).toFloat()
+        for (i in window until input.size) {
+            sum += input[i] - input[i - window]
+            out[i - window + 1] = (sum / window).toFloat()
+        }
+        return out
+    }
+
+    /**
      * 逐行精调时，在拟合预测位置附近搜索实测脉冲的容差（行周期的倍数）。
      *
      * 三期 `SstvStreamDecoder` 判定某行是否「命中实测脉冲」（`LineEvent.locked`）
@@ -283,6 +325,15 @@ object SstvSync {
 
     /** 同步频率容差（Hz）。 */
     private const val SYNC_TOLERANCE_HZ = 60.0
+
+    /**
+     * 同步搜索前对频率流做滑动平均的窗长（秒）。
+     *
+     * 2 ms 实测够用：Robot 36 真实录音（用户反馈的失败样例）平滑后 240 个行同步
+     * 全部串成一条链，行周期拟合比 1.0000；更长的窗会把 5 ms 的同步脉冲与前后
+     * 图像内容互相污染，反而模糊段边界。
+     */
+    private const val SYNC_SMOOTH_SECONDS = 0.002
 
     /** 脉冲最短持续比例（相对标称同步时长）。 */
     private const val MIN_PULSE_RATIO = 0.45
