@@ -2,7 +2,6 @@ package com.example.hamkit.ui.screen.about
 
 import android.os.Build
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,7 +41,6 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -67,7 +65,6 @@ import com.example.hamkit.ui.component.miuix.effect.ColorBlendToken
 import com.example.hamkit.ui.theme.LocalEnableBlur
 import com.example.hamkit.ui.theme.isInDarkTheme
 import com.example.hamkit.ui.util.BlurredBar
-import com.example.hamkit.ui.util.rememberAppIconPainter
 import com.example.hamkit.ui.util.rememberBlurBackdrop
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
@@ -238,14 +235,12 @@ private fun AboutContent(
         }
     }
 
-    // Logo parallax/fade tracking
+    // Logo 区视差/淡出跟踪（图标已移除，仅保留应用名与版本号）
     var logoHeightDp by remember { mutableStateOf(300.dp) }
     var logoAreaY by remember { mutableFloatStateOf(0f) }
-    var iconY by remember { mutableFloatStateOf(0f) }
     var projectNameY by remember { mutableFloatStateOf(0f) }
     var versionCodeY by remember { mutableFloatStateOf(0f) }
 
-    var iconProgress by remember { mutableFloatStateOf(0f) }
     var projectNameProgress by remember { mutableFloatStateOf(0f) }
     var versionCodeProgress by remember { mutableFloatStateOf(0f) }
     var initialLogoAreaY by remember { mutableFloatStateOf(0f) }
@@ -254,7 +249,6 @@ private fun AboutContent(
         snapshotFlow { lazyListState.firstVisibleItemScrollOffset }
             .onEach { offset ->
                 if (lazyListState.firstVisibleItemIndex > 0) {
-                    if (iconProgress != 1f) iconProgress = 1f
                     if (projectNameProgress != 1f) projectNameProgress = 1f
                     if (versionCodeProgress != 1f) versionCodeProgress = 1f
                     return@onEach
@@ -267,14 +261,11 @@ private fun AboutContent(
 
                 val stage1TotalLength = refLogoAreaY - versionCodeY
                 val stage2TotalLength = versionCodeY - projectNameY
-                val stage3TotalLength = projectNameY - iconY
 
                 val versionCodeDelay = stage1TotalLength * 0.5f
                 versionCodeProgress = ((offset.toFloat() - versionCodeDelay) / (stage1TotalLength - versionCodeDelay).coerceAtLeast(1f))
                     .coerceIn(0f, 1f)
                 projectNameProgress = ((offset.toFloat() - stage1TotalLength) / stage2TotalLength.coerceAtLeast(1f))
-                    .coerceIn(0f, 1f)
-                iconProgress = ((offset.toFloat() - stage1TotalLength - stage2TotalLength) / stage3TotalLength.coerceAtLeast(1f))
                     .coerceIn(0f, 1f)
             }
             .collect { }
@@ -299,7 +290,7 @@ private fun AboutContent(
         effectBackground = effectBackground,
         alpha = { 1f - scrollProgress },
     ) {
-        // Logo area
+        // 标题区（应用名 / 版本号）
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -313,46 +304,6 @@ private fun AboutContent(
                 },
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .size(100.dp)
-                    .clipToBounds()
-                    .graphicsLayer {
-                        alpha = 1 - iconProgress
-                        scaleX = 1 - (iconProgress * 0.05f)
-                        scaleY = 1 - (iconProgress * 0.05f)
-                    }
-                    .onGloballyPositioned { coordinates ->
-                        if (iconY != 0f) return@onGloballyPositioned
-                        val y = coordinates.positionInWindow().y
-                        val size = coordinates.size
-                        iconY = y + size.height
-                    },
-            ) {
-                Image(
-                    // 尺寸必须与外层 100dp 的裁切容器一致：此处历史值为 245dp，
-                    // 配合外层的 clipToBounds() 会把整幅 Logo 裁成中心一小块（表现为「人物面部特写」）
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .then(
-                            if (enableBlur) {
-                                Modifier.textureBlur(
-                                    backdrop = backdrop,
-                                    shape = RoundedCornerShape(0.dp),
-                                    blurRadius = 150f,
-                                    colors = BlurColors(blendColors = logoBlend),
-                                    contentBlendMode = ComposeBlendMode.DstIn,
-                                    enabled = true,
-                                )
-                            } else Modifier
-                        ),
-                    painter = rememberAppIconPainter(),
-                    contentDescription = null,
-                    // 显式声明等比完整显示：禁止任何隐式缩放策略把图标裁成局部特写
-                    contentScale = ContentScale.Fit,
-                )
-            }
             Text(
                 modifier = Modifier
                     .padding(top = 12.dp, bottom = 5.dp)
