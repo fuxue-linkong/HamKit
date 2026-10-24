@@ -1,6 +1,5 @@
 package com.example.hamkit.ui.screen.about
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -45,7 +44,6 @@ import coil.compose.AsyncImage
 import com.example.hamkit.R
 import com.example.hamkit.ui.component.material.SegmentedColumn
 import com.example.hamkit.ui.component.material.SegmentedListItem
-import com.example.hamkit.ui.util.rememberAppIconPainter
 
 @Composable
 private fun ContributorRow(contributor: ContributorInfo) {
@@ -118,14 +116,6 @@ fun AboutScreenMaterial(
                         .padding(vertical = 48.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Image(
-                        painter = rememberAppIconPainter(),
-                        contentDescription = null,
-                        // 显式声明等比完整显示：禁止任何隐式缩放策略把图标裁成局部特写
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier
-                            .size(80.dp)
-                    )
                     Text(
                         modifier = Modifier.padding(top = 12.dp),
                         text = state.appName,
