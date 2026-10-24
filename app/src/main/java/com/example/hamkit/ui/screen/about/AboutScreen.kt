@@ -29,12 +29,23 @@ fun AboutScreen() {
         add(LinkInfo(stringResource(R.string.about_license), "$PROJECT_REPO/blob/miuix/LICENSE"))
     }
 
+    // 开发者与捐赠者名单（头像取自 GitHub，点击打开对应主页）
+    val developers = listOf(
+        ContributorInfo("覆雪凌空", null, "fuxue-linkong"),
+        ContributorInfo("2048lr", null, "2048lr"),
+    )
+    val donors = listOf(
+        ContributorInfo("starskyham", "BG7SJU", "starskyham"),
+    )
+
     val state = AboutUiState(
         title = stringResource(R.string.about),
         appName = stringResource(R.string.app_name),
         versionName = BuildConfig.VERSION_NAME,
         description = stringResource(R.string.about_description),
         links = links,
+        developers = developers,
+        donors = donors,
         disclaimer = stringResource(R.string.about_disclaimer),
     )
     val actions = AboutScreenActions(
