@@ -135,6 +135,8 @@
     <string name="about_privacy" translatable="false">隐私政策</string>
     <string name="about_disclaimer_title" translatable="false">免责声明</string>
     <string name="about_description_title" translatable="false">应用简介</string>
+    <string name="about_developers_title" translatable="false">开发者</string>
+    <string name="about_donors_title" translatable="false">捐赠者</string>
 
     <!-- 首次启动隐私同意（与 assets/privacy_policy_*.html 配套） -->
     <string name="privacy_policy_title" translatable="false">隐私政策</string>
