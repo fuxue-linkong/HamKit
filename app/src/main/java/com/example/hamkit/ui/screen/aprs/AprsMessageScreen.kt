@@ -1,5 +1,6 @@
 package com.example.hamkit.ui.screen.aprs
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -145,6 +146,9 @@ fun AprsMessageScreenMiuix(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 8.dp)
+                                // P1-4：会话条目点击后切换页内 selectedPartner，
+                                // 进入对话视图并触发 markConversationRead
+                                .clickable { selectedPartner = partner }
                         )
                     }
                 }

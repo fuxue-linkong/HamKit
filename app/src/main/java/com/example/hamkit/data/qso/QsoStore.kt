@@ -70,6 +70,13 @@ interface QsoDao {
             "AND is_complete = 0 AND qso_time >= :since ORDER BY qso_time DESC LIMIT 1"
     )
     suspend fun findRecentIncomplete(callsign: String, band: String, since: Long): QsoRecordEntity?
+
+    /** 自动记录收尾：不限呼号，取同频段、未完成且时间在窗口内的最近一条 */
+    @Query(
+        "SELECT * FROM qso_records WHERE band = :band " +
+            "AND is_complete = 0 AND qso_time >= :since ORDER BY qso_time DESC LIMIT 1"
+    )
+    suspend fun findAnyRecentIncomplete(band: String, since: Long): QsoRecordEntity?
 }
 
 @Database(
@@ -130,6 +137,10 @@ class QsoStore private constructor(
 
     suspend fun findRecentIncomplete(callsign: String, band: Ft8Band, since: Long): Ft8QsoRecord? =
         dao.findRecentIncomplete(callsign.trim().uppercase(), band.name, since)?.toModel()
+
+    /** 不限定呼号：取指定频段、时间窗口内最近一条未完成记录（用于「呼号 呼号 RR73」收尾消息） */
+    suspend fun findAnyRecentIncomplete(band: Ft8Band, since: Long): Ft8QsoRecord? =
+        dao.findAnyRecentIncomplete(band.name, since)?.toModel()
 
     private fun QsoRecordEntity.toModel() = Ft8QsoRecord(
         id = id,

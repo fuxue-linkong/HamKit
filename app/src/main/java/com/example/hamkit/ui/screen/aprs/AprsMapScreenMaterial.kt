@@ -30,6 +30,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.amap.api.maps.CameraUpdateFactory
 import com.amap.api.maps.MapView
 import com.amap.api.maps.model.LatLng
+import com.amap.api.maps.model.Marker
 import com.amap.api.maps.model.MarkerOptions
 import com.example.hamkit.data.aprs.AprsStation
 import com.example.hamkit.data.location.CoordinateConverter
@@ -58,8 +59,8 @@ fun AprsMapScreenMaterial(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val mapView = remember { MapView(context) }
-    // 已打点呼号集合：跨重组保留，用于增量去重
-    val addedCallsigns = remember { HashSet<String>() }
+    // 呼号 → Marker 缓存：跨重组保留，已有 marker 只更新坐标，不重复添加（P2-7）
+    val markersByCallsign = remember { mutableMapOf<String, Marker>() }
     val hasInitialized = remember { mutableStateOf(false) }
 
     DisposableEffect(lifecycleOwner) {
@@ -116,12 +117,19 @@ fun AprsMapScreenMaterial(
                     val aMap = mv.map
                     val myCallsign = config.fullCallsign
                     val myStation = stations.find { it.callsign == myCallsign }
-                    // 增量添加 marker：只添加未显示的站点，不 clear，避免用户交互丢失
+                    // 增量维护 marker：已存在的只 setPosition 跟随新坐标，不重复添加也不 clear（P2-7）
                     fun addMarkerFor(station: AprsStation, isMyStation: Boolean) {
-                        if (station.callsign in addedCallsigns) return
                         // APRS 站点坐标为 WGS84，高德地图需 GCJ02
                         val (mLat, mLng) = CoordinateConverter.wgs84ToGcj02(station.latitude, station.longitude)
-                        aMap.addMarker(
+                        val existing = markersByCallsign[station.callsign]
+                        if (existing != null) {
+                            // 坐标有变化才更新，避免每次重组都重绘
+                            if (existing.position.latitude != mLat || existing.position.longitude != mLng) {
+                                existing.position = LatLng(mLat, mLng)
+                            }
+                            return
+                        }
+                        val marker = aMap.addMarker(
                             MarkerOptions()
                                 .position(LatLng(mLat, mLng))
                                 .title(if (isMyStation) "${station.callsign}（本站）" else station.callsign)
@@ -141,7 +149,7 @@ fun AprsMapScreenMaterial(
                                     }
                                 )
                         )
-                        addedCallsigns.add(station.callsign)
+                        markersByCallsign[station.callsign] = marker
                     }
                     myStation?.let { addMarkerFor(it, true) }
                     stations.filter { it.callsign != myCallsign }.forEach { addMarkerFor(it, false) }

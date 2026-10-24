@@ -102,21 +102,26 @@ fun SstvMainScreenMaterial(
         if (granted) viewModel.startReceiving() else viewModel.onPermissionDenied()
     }
 
+    // 修复 P3-8：通知权限运行时请求（Android 13+ POST_NOTIFICATIONS）
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { }
+
     // 由卫星详情页或过境提醒进入时预置模式。必须与 startReceiving 同处一个 LaunchedEffect：
     // startReceiving 读的正是 applyPreset 刚写下的 presetOverride。
     LaunchedEffect(presetModeName, autoStart) {
         val mode = presetModeName?.let { name -> SstvMode.entries.find { it.name == name } }
         if (mode != null) viewModel.applyPreset(mode)
 
-        if (!autoStart) return@LaunchedEffect
-        val granted = ContextCompat.checkSelfPermission(
-            context, Manifest.permission.RECORD_AUDIO,
-        ) == PackageManager.PERMISSION_GRANTED
-        if (granted) {
-            viewModel.startReceiving()
-        } else {
-            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-        }
+        autoStartReceivingWithPermissions(
+            autoStart = autoStart,
+            context = context,
+            viewModel = viewModel,
+            requestAudioPermission = { permissionLauncher.launch(Manifest.permission.RECORD_AUDIO) },
+            requestNotificationPermission = {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            },
+        )
     }
 
     // 音频文件导入：OpenDocument 无需存储权限；WAV 的 mime 在不同提供方之间不统一，

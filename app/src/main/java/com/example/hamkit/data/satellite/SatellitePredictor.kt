@@ -378,10 +378,12 @@ class SatellitePredictor {
         aosMs: Long,
         losMs: Long
     ): Pair<Double, Int> {
-        // 在 maxElMs ± stepMs 邻域内以 1 分钟步长精化最大仰角
+        // 修复 P3-2：粗扫描步长 5 分钟，峰值可能落在命中点两侧各接近一个完整步长
+        // （非对称过境），原 ±5 分钟窗口边界情况会漏掉真实峰值。扩为 ±2 个步长
+        // （±10 分钟），保证窗口覆盖命中点相邻的完整采样间隔，再以 1 分钟细步长扫描。
         val fineStepMs = 60L * 1000L
-        val searchStart = maxOf(maxElMs - 5L * 60L * 1000L, aosMs)
-        val searchEnd = minOf(maxElMs + 5L * 60L * 1000L, losMs)
+        val searchStart = maxOf(maxElMs - 2L * SAMPLE_STEP_MINUTES * 60L * 1000L, aosMs)
+        val searchEnd = minOf(maxElMs + 2L * SAMPLE_STEP_MINUTES * 60L * 1000L, losMs)
         var bestEl = elevationAt(propagator, maxElMs)
         var bestMs = maxElMs
         var t = searchStart

@@ -684,8 +684,17 @@ class MainViewModel : ViewModel() {
      */
     suspend fun initializeIfNeeded() {
         if (initialized) return
+        try {
+            doInitialize()
+        } catch (e: CancellationException) {
+            // 协程被取消：初始化未完成，保持 initialized = false，下次可重新执行
+            throw e
+        }
+        // P2-14：全部初始化完成后才置位，避免中途取消后被永久跳过
         initialized = true
+    }
 
+    private suspend fun doInitialize() {
         // 启动时对齐一次提醒闹钟。
         // 迁移或后台 Worker 可能已经改动了提醒开关/提醒项，而本次启动若命中
         // 15 分钟的过境预测缓存，就不会走到 refreshRemindersFromPrediction，

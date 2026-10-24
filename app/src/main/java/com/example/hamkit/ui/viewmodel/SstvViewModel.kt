@@ -8,6 +8,8 @@ import android.graphics.Bitmap
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -385,6 +387,18 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
             }
             mediaProjection?.let { runCatching { it.stop() } }
             mediaProjection = projection
+            // P2-9：注册投影失效回调。系统从通知栏停止前台服务（或用户撤销授权）后
+            // 投影即失效；AudioRecord.read 只会静默返回 0，没有别的失效通知渠道。
+            // 这里在失效瞬间清掉 mediaProjection 引用，采集循环读到零数据时会据此
+            // 判定「播放捕获已失效」并停止接收（见 startPersistentReceiving 的 read==0 分支）。
+            projection.registerCallback(
+                object : MediaProjection.Callback() {
+                    override fun onStop() {
+                        mediaProjection = null
+                    }
+                },
+                Handler(Looper.getMainLooper()),
+            )
             settingsStore.audioSourceKind = SstvSettingsStore.AUDIO_SOURCE_PLAYBACK
             _uiState.update {
                 it.copy(
@@ -433,6 +447,19 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
         ) {
             PlaybackCaptureAudioSource(playback)
         } else {
+            // P3-6：设置里持久化为「播放捕获」但投影已失效（服务被停/未授权）时，
+            // 静默回退麦克风会让 UI 显示与实际收音脱节。这里把 audioSourceKind
+            // 回写为 MIC（含持久化）并同步 UI 状态，让设置页与实际音源一致。
+            if (_uiState.value.usesPlaybackCapture) {
+                settingsStore.audioSourceKind = SstvSettingsStore.AUDIO_SOURCE_MIC
+                _uiState.update {
+                    it.copy(
+                        audioSourceKind = SstvSettingsStore.AUDIO_SOURCE_MIC,
+                        playbackAuthorized = false,
+                        status = "播放捕获授权已失效，本次接收已回退麦克风",
+                    )
+                }
+            }
             MicrophoneAudioSource(context)
         }
     }
@@ -1088,6 +1115,29 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
                 val read = source.read(buffer)
                 if (read < 0) break
                 if (read == 0) {
+                    // P2-9：播放捕获期间前台服务被系统从通知栏停止后 MediaProjection
+                    // 已失效，AudioRecord.read 会「静默返回 0」——表面是伪读，实际永远
+                    // 不会再有数据。此时校验投影有效性：已失效就停止接收，清理音源/投影
+                    // 状态并把音源设置回写为麦克风，提示用户重新授权。
+                    if (_uiState.value.usesPlaybackCapture && mediaProjection == null) {
+                        consecutiveErrors++
+                        // 连续多次零读且投影已不在：判定为投影失效而非普通伪读
+                        if (consecutiveErrors >= 3) {
+                            withContext(Dispatchers.Main) {
+                                _uiState.update {
+                                    it.copy(
+                                        status = "播放捕获已失效（前台服务被系统停止），接收已停止；请重新授权播放捕获或改用麦克风",
+                                    )
+                                }
+                                // 复用 finishPlaybackCapture：停服务、释放投影、
+                                // 把 audioSourceKind 回写为 MIC 并同步 UI（音源状态清理）
+                                finishPlaybackCapture()
+                                _uiState.update { it.copy(isReceiving = false) }
+                                finishPersistentReceiving()
+                            }
+                            break
+                        }
+                    }
                     // 伪读（音频系统没数据）：让出线程并给出提示，避免界面看起来「卡住了」
                     consecutiveErrors++
                     if (consecutiveErrors % 20 == 0) {
@@ -1786,6 +1836,10 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
                 error = null,
             )
         }
+        // P2-10：导入会把 autoSaveAttempted 置为 true（上面），若此时接收仍在进行，
+        // 当前帧及后续帧的自动保存会被这一标志吞掉。导入展示完成后立即复位，
+        // 让接收中/后续帧照常自动保存 —— 保留导入与接收并存的原有功能。
+        autoSaveAttempted = false
         refreshGallery()
     }
 

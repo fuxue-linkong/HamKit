@@ -191,7 +191,10 @@ class SstvRecorder(
             pendingCount = stageCount
             stageCount = 0
         }
-        wavRecorder?.append(pending, pendingCount)
+        // append(samples, offset, count)：pending 是 stageCount 的完整拷贝，
+        // offset=0、count=pendingCount。曾误写成 append(pending, pendingCount)
+        // 把长度传到 offset 位 → count=0 → 录音文件全程零写入（静默空文件）。
+        wavRecorder?.append(pending, 0, pendingCount)
     }
 
     /** 收尾：落盘剩余暂存、回填 WAV 头、按模式改名，并回调结果。 */

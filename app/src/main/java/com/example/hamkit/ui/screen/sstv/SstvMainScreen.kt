@@ -110,6 +110,42 @@ fun SstvMainScreen(
     }
 }
 
+/**
+ * 修复 P3-8：SSTV 页面共用的「过境提醒直达接收」启动逻辑。
+ * 除麦克风（RECORD_AUDIO）外还需校验通知权限（Android 13+ POST_NOTIFICATIONS）——
+ * 前台服务通知在未授权时会被系统静默丢弃，直达接收将变成无提示的后台录制。
+ * 未授权时引导开启（沿用项目内现有的运行时请求方式，参照 MainActivity 的 launcher 模式）。
+ */
+internal fun autoStartReceivingWithPermissions(
+    autoStart: Boolean,
+    context: Context,
+    viewModel: SstvViewModel,
+    requestAudioPermission: () -> Unit,
+    requestNotificationPermission: () -> Unit,
+) {
+    if (!autoStart) return
+    // 先校验通知权限（仅 Android 13+ 需要运行时请求；13- 默认授予）
+    val notificationGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+        PackageManager.PERMISSION_GRANTED
+    // 再校验麦克风权限
+    val audioGranted = ContextCompat.checkSelfPermission(
+        context, Manifest.permission.RECORD_AUDIO,
+    ) == PackageManager.PERMISSION_GRANTED
+    when {
+        // 两个权限都已授予，直接进入接收态
+        notificationGranted && audioGranted -> viewModel.startReceiving()
+        // 麦克风缺失：弹系统授权（回调 granted 后由原逻辑开收）
+        !audioGranted -> requestAudioPermission()
+        // 仅缺通知权限：引导开启，麦克风已有则照常开收（前台服务仍可运行，
+        // 但提示用户开通知以看到接收状态）
+        else -> {
+            requestNotificationPermission()
+            viewModel.startReceiving()
+        }
+    }
+}
+
 /** Miuix（MIUI）风格实现。 */
 @Composable
 fun SstvMainScreenMiuix(
@@ -139,6 +175,11 @@ fun SstvMainScreenMiuix(
         if (granted) viewModel.startReceiving() else viewModel.onPermissionDenied()
     }
 
+    // 修复 P3-8：通知权限运行时请求（Android 13+ POST_NOTIFICATIONS）
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { }
+
     // 由卫星详情页或过境提醒进入时预置模式：ISS 等 SSTV 卫星可直接锁定其常用模式。
     // 走 applyPreset（不写设置）而非 setManualMode，并在离开页面时清除 ——
     // ViewModel 是应用级单例，否则预置会一直黏住，让首页进入也变成手动模式。
@@ -148,16 +189,16 @@ fun SstvMainScreenMiuix(
 
         // 二期 T8：卫星过境提醒直达接收态。必须与 applyPreset 同处一个 LaunchedEffect，
         // 因为 startReceiving 读的正是 applyPreset 刚写下的 presetOverride —— 拆到两个
-        // 协程里就没有先后保证了。权限已授予就直接开收，否则弹一次系统授权。
-        if (!autoStart) return@LaunchedEffect
-        val granted = ContextCompat.checkSelfPermission(
-            context, Manifest.permission.RECORD_AUDIO,
-        ) == PackageManager.PERMISSION_GRANTED
-        if (granted) {
-            viewModel.startReceiving()
-        } else {
-            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-        }
+        // 协程里就没有先后保证了。
+        autoStartReceivingWithPermissions(
+            autoStart = autoStart,
+            context = context,
+            viewModel = viewModel,
+            requestAudioPermission = { permissionLauncher.launch(Manifest.permission.RECORD_AUDIO) },
+            requestNotificationPermission = {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            },
+        )
     }
 
     // 音频文件导入：OpenDocument 无需存储权限；WAV 的 mime 在不同提供方之间不统一，
