@@ -682,8 +682,12 @@ class SstvViewModel(application: Application) : AndroidViewModel(application) {
                         totalLines = detected.mode?.imageLines ?: 0,
                         status = detected.mode?.let { mode ->
                             "已识别 ${mode.displayName}（VIS 0x${detected.visCode.toString(16).uppercase()}）"
-                        } ?: "识别到未支持的模式（VIS 0x${detected.visCode.toString(16).uppercase()}）",
-                        error = detected.mode?.let { _ -> null } ?: "该模式暂不支持解码",
+                        } ?: "识别到未收录的模式（VIS 0x${detected.visCode.toString(16).uppercase()}）",
+                        // 仅当 VIS 码未录入模式表时才报错（如私有/非标模式）；
+                        // 已收录模式即使信号差也走各自的解码失败路径，不在此处报错
+                        error = if (detected.mode == null) {
+                            "该 VIS 码未收录，暂不支持解码（0x${detected.visCode.toString(16).uppercase()}）"
+                        } else null,
                     )
                 }
             },
