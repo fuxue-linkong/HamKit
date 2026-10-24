@@ -325,9 +325,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        setIntent(intent)
         // 应用已在运行时点通知：解析新的直达请求，由 Compose 侧的 LaunchedEffect 消费
         consumeSstvLaunchIntent(intent)
+        // 消费后再 setIntent：此时 extra 已被剥离，重建后 getIntent() 不会再重复解析
+        setIntent(intent)
     }
 
     /**
@@ -342,6 +343,10 @@ class MainActivity : ComponentActivity() {
             presetModeName = SstvLaunchIntent.presetModeName(intent),
             autoStart = true,
         )
+        // 用后即剥离 extra（P1-6）：否则 Activity 重建时 onCreate 会重新解析同一
+        // Intent，再次置位 pendingSstvLaunch 导致 SSTV 页重复入栈。
+        intent?.removeExtra(SstvLaunchIntent.EXTRA_AUTO_START)
+        intent?.removeExtra(SstvLaunchIntent.EXTRA_PRESET_MODE)
     }
 
     private fun requestNotificationPermissionIfNeeded() {

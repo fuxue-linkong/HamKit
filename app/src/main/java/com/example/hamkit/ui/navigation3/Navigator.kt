@@ -145,7 +145,9 @@ class Navigator(
         val Saver: Saver<Navigator, Any> = listSaver(save = { navigator ->
             navigator.backStack.toList()
         }, restore = { savedList ->
-            val initialKey = savedList.firstOrNull() ?: Route.Home
+            // P3-9：兜底回退到启动路由 Route.Main（Route.Home 未在 entry 中注册，
+            // 空栈恢复到它会导致白屏/崩溃）
+            val initialKey = savedList.firstOrNull() ?: Route.Main
             val navigator = Navigator(initialKey)
             navigator.backStack.clear()
             navigator.backStack.addAll(savedList)

@@ -70,6 +70,29 @@ class SstvPhase2Test {
     }
 
     @Test
+    fun `VIS 码全表唯一且关键值与权威表一致`() {
+        // 唯一性：fromVisCode 用 firstOrNull 查表，重复码会让先定义的模式
+        // 永远遮住后定义的，收/发两侧都可能选错模式
+        val codes = SstvMode.entries.map { it.visCode }
+        assertEquals(
+            "存在重复的 VIS 码: ${codes.groupingBy { it }.eachCount().filterValues { it > 1 }}",
+            codes.size,
+            codes.toSet().size,
+        )
+        // 权威值抽查（KB4YZ VIS 表 / pySSTV / slowrx 三源一致）：
+        // PD-290 曾误写 0x64（未分配的码），导致真实 PD-290 信号无法识别
+        assertEquals(0x5E, SstvMode.PD_290.visCode)
+        assertEquals(0x5F, SstvMode.PD_120.visCode)
+        assertEquals(0x5D, SstvMode.PD_50.visCode)
+        assertEquals(0x08, SstvMode.ROBOT_36.visCode)
+        assertEquals(0x3C, SstvMode.SCOTTIE_1.visCode)
+        // 每个码都能反查回同一个模式
+        for (mode in SstvMode.entries) {
+            assertEquals(mode, SstvMode.fromVisCode(mode.visCode))
+        }
+    }
+
+    @Test
     fun `黑白模式为单通道且无 porch 无分隔`() {
         for (mode in listOf(SstvMode.ROBOT_8_BW, SstvMode.ROBOT_12_BW, SstvMode.ROBOT_24_BW)) {
             assertTrue("${mode.displayName} 应为灰度模式", mode.isMonochrome)

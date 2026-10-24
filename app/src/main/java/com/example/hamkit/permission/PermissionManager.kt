@@ -25,8 +25,8 @@ class PermissionManager(context: Context) {
     }
 
     /**
-     * 定位运行时权限：ACCESS_FINE_LOCATION（核心业务依赖，必需授权）。
-     * 同时声明了 ACCESS_COARSE_LOCATION 作为降级兜底，但 [PermissionState.location] 仅以 FINE 为准。
+     * 定位运行时权限：ACCESS_FINE_LOCATION（核心业务依赖，首选授权）。
+     * 与 [PermissionState.location] 口径一致：FINE 或 COARSE 任一授权即视为已授权。
      */
     fun locationRuntimePermission(): String = Manifest.permission.ACCESS_FINE_LOCATION
 
@@ -72,7 +72,9 @@ class PermissionManager(context: Context) {
         }
 
     private fun readState() = PermissionState(
-        location = hasPermission(Manifest.permission.ACCESS_FINE_LOCATION),
+        // 与 LocationHelper.hasPermission() 口径一致：FINE 或 COARSE 任一授权即视为已授权
+        location = hasPermission(Manifest.permission.ACCESS_FINE_LOCATION) ||
+            hasPermission(Manifest.permission.ACCESS_COARSE_LOCATION),
         // Android 13+ 必须运行时检查 POST_NOTIFICATIONS；13- 默认授予，视为已通过
         notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             hasPermission(Manifest.permission.POST_NOTIFICATIONS)

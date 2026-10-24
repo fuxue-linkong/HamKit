@@ -70,8 +70,10 @@ object AprsPacketParser {
             msgContent
         }
 
-        val isAck = cleanBody.startsWith("ack")
-        val isRej = cleanBody.startsWith("rej")
+        // P2-5：startsWith("ack") 过宽（如正文 "acknowledge" 会被误判为 ACK）。
+        // APRS ACK/REJ 正文格式为 ack/rej + 1~5 位字母数字编号，改为全串精确匹配。
+        val isAck = Regex("^ack[A-Za-z0-9]{1,5}$").matches(cleanBody)
+        val isRej = Regex("^rej[A-Za-z0-9]{1,5}$").matches(cleanBody)
 
         return ParsedMessage(
             source = source,

@@ -82,11 +82,14 @@ internal fun encode(text: String): String {
                 if (ch in morseMap) {
                     // ASCII 字符直接编码
                     listOf(morseMap[ch]!!)
-                } else {
-                    // 非摩斯字符（如中文）：转为 Unicode 十六进制后逐位编码
-                    // 用 U 前缀标识，便于 decode 时还原
+                } else if (ch.code <= 0x10FFFF) {
+                    // 非摩斯字符（如中文）才走转义：转为 Unicode 十六进制后逐位编码，
+                    // 用 U 前缀标识。表内字符（含 U 自身）已在上面直接编码，避免歧义。
                     val hex = Integer.toHexString(ch.code).uppercase()
                     listOf(morseMap['U']!!) + hex.map { morseMap[it]!! }
+                } else {
+                    // 超出 Unicode 范围的非法 Char，跳过
+                    emptyList()
                 }
             }.joinToString(" ")
         }
@@ -101,7 +104,8 @@ internal fun decode(morse: String): String {
             var i = 0
             while (i < codes.size) {
                 if (codes[i] == morseMap['U'] && i + 1 < codes.size) {
-                    // U 前缀：后续连续 hex 字符组成一个 Unicode 码点
+                    // U 前缀：后续连续 hex 字符组成一个 Unicode 码点。
+                    // 校验 hex 长度（≤6 位）与码点合法性，非法则按普通字符处理，不抛异常。
                     val hexBuilder = StringBuilder()
                     var j = i + 1
                     while (j < codes.size) {
@@ -111,12 +115,19 @@ internal fun decode(morse: String): String {
                             j++
                         } else break
                     }
-                    if (hexBuilder.isNotEmpty()) {
-                        val codePoint = Integer.parseInt(hexBuilder.toString(), 16)
+                    // hex 位数需为 UTF-16 码元/码点的合法范围（Char.code 最大 6 位十六进制）
+                    val hexStr = hexBuilder.toString()
+                    val codePoint = hexStr.toIntOrNull(16)
+                    if (hexStr.isNotEmpty() && hexStr.length <= 6 &&
+                        codePoint != null && Character.isValidCodePoint(codePoint) &&
+                        codePoint <= 0x10FFFF && !(codePoint in 0xD800..0xDFFF)
+                    ) {
                         sb.appendCodePoint(codePoint)
                         i = j
                     } else {
-                        i++  // U 后无 hex，按普通字符处理
+                        // 非法或无 hex：把 U 按普通字符还原，后续 hex 组照常逐个解码
+                        sb.append('U')
+                        i++
                     }
                 } else {
                     reverseMorseMap[codes[i]]?.let { sb.append(it) }

@@ -53,7 +53,9 @@ class SatellitePredictCacheStore(context: Context) {
                         losAzimuth = s.optInt("losAz", 0),
                         isCurrentlyVisible = s.optBoolean("visible", false),
                         source = s.optString("source", ""),
-                        status = s.optString("status", "")
+                        status = s.optString("status", ""),
+                        // 修复 P3-3：回填 isGeo（旧缓存缺该字段时默认 false，保持向后兼容）
+                        isGeo = s.optBoolean("isGeo", false)
                     )
                 )
             }
@@ -98,6 +100,8 @@ class SatellitePredictCacheStore(context: Context) {
             obj.put("visible", s.isCurrentlyVisible)
             obj.put("source", s.source)
             obj.put("status", s.status)
+            // 修复 P3-3：序列化 isGeo，回填时还原，避免缓存恢复后 GEO 卫星被误判为常规过境
+            obj.put("isGeo", s.isGeo)
             array.put(obj)
         }
         val root = JSONObject()

@@ -225,6 +225,24 @@ class Ft8ViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
             }
+            call0 == myCall && call1 == myCall -> {
+                // 对方发「我的呼号 我的呼号 RR73/73/RRR」（标准 FT8 收尾确认）：
+                // 消息里没有对方呼号，无法定位到具体会话，故直接把最近一条
+                // 未完成的自动会话标记为完成（与 upsertAutoRecord 的 30 分钟去重窗口一致）。
+                when (extra) {
+                    "RR73", "73" -> {
+                        viewModelScope.launch {
+                            // 消息中无对方呼号：取同频段最近一条未完成会话标完成
+                            qsoStore.findAnyRecentIncomplete(
+                                band = config.band,
+                                since = System.currentTimeMillis() - QSO_DEDUP_WINDOW_MS,
+                            )?.let { qsoStore.update(it.copy(isComplete = true)) }
+                        }
+                        null
+                    }
+                    else -> null // RRR 或其他：信息不足，跳过
+                }
+            }
             else -> null
         } ?: return
 

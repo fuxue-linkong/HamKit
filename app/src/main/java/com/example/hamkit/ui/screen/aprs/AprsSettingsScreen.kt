@@ -211,7 +211,8 @@ fun AprsSettingsScreenMiuix(
                     Spacer(Modifier.height(8.dp))
                     TextField(
                         value = config.transmitInterval.toString(),
-                        onValueChange = { it.toIntOrNull()?.let { i -> viewModel.updateSettings { c -> c.copy(transmitInterval = i) } } },
+                        // P2-12：写入前 clamp 到下限 30 秒，避免 0 形成定位+发报紧循环
+                        onValueChange = { it.toIntOrNull()?.let { i -> viewModel.updateSettings { c -> c.copy(transmitInterval = i.coerceAtLeast(30)) } } },
                         label = "发送间隔 (秒)",
                         modifier = Modifier.fillMaxWidth(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)

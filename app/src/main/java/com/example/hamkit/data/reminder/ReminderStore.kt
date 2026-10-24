@@ -100,8 +100,10 @@ class ReminderStore(context: Context) {
 
     /**
      * 同步更新单条提醒项（按 catalogNumber 匹配）。若不存在则追加。
+     * 修复 P2-11：读改写全程持有进程级锁，避免与后台 Worker 并发时
+     * 因丢失另一方的写入而复活已删除的提醒项。
      */
-    fun upsertItem(item: ReminderItem) {
+    fun upsertItem(item: ReminderItem) = synchronized(ITEMS_LOCK) {
         val current = loadItems().toMutableList()
         val idx = current.indexOfFirst { it.catalogNumber == item.catalogNumber }
         if (idx >= 0) current[idx] = item else current.add(item)
@@ -110,16 +112,18 @@ class ReminderStore(context: Context) {
 
     /**
      * 删除指定卫星的提醒项。
+     * 修复 P2-11：与 [upsertItem] 互斥，防止并发读改写把删除操作覆盖回去。
      */
-    fun removeItem(catalogNumber: Int) {
+    fun removeItem(catalogNumber: Int) = synchronized(ITEMS_LOCK) {
         val current = loadItems().filter { it.catalogNumber != catalogNumber }
         saveItems(current)
     }
 
     /**
      * 仅更新某颗卫星提醒的启用状态。返回更新后的列表。
+     * 修复 P2-11：读改写同样持锁，与上两项保持一致的互斥保护。
      */
-    fun setItemEnabled(catalogNumber: Int, enabled: Boolean): List<ReminderItem> {
+    fun setItemEnabled(catalogNumber: Int, enabled: Boolean): List<ReminderItem> = synchronized(ITEMS_LOCK) {
         val current = loadItems().map {
             if (it.catalogNumber == catalogNumber) it.copy(enabled = enabled) else it
         }
@@ -144,5 +148,11 @@ class ReminderStore(context: Context) {
         private const val KEY_ITEM_LOS_AZ = "los_az"
         private const val KEY_ITEM_MODES = "modes"
         private const val KEY_ITEM_ENABLED = "enabled"
+
+        /**
+         * 提醒项读改写的进程级互斥锁（参照 SatelliteCategoryStore.CONFIG_LOCK 模式）。
+         * 单例：跨 store 实例生效，保证 UI 线程与后台 Worker 串行读写 items。
+         */
+        private val ITEMS_LOCK = Any()
     }
 }

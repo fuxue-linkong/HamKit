@@ -34,6 +34,8 @@ class LocationHelper(private val context: Context) {
         private const val ACCURACY_THRESHOLD_METERS = 20f
         /** lastKnown 缓存最大可接受精度：超过此值的缓存视为不可用 */
         private const val CACHE_MAX_ACCURACY_METERS = 50f
+        /** lastKnown 缓存最大时效：超过 10 分钟的缓存视为过期，不可作为秒回结果 */
+        private const val CACHE_MAX_AGE_MS = 10 * 60 * 1000L
         /** 持续定位去重时间窗：此窗口内只保留精度最优的一次上报 */
         private const val DEDUP_WINDOW_MS = 1500L
     }
@@ -260,7 +262,8 @@ class LocationHelper(private val context: Context) {
                     return@suspendCancellableCoroutine
                 }
 
-                // lastKnown 精度筛选：仅接受精度优于阈值的缓存，按"时间×精度"综合排序取最优
+                // lastKnown 筛选：精度达标且时间未过期（10 分钟内）才可用，避免拿到数小时前的陈旧位置
+                val now = System.currentTimeMillis()
                 val bestCached = providers
                     .mapNotNull { p ->
                         try {
@@ -271,7 +274,10 @@ class LocationHelper(private val context: Context) {
                             null
                         }
                     }
-                    .filter { it.hasAccuracy() && it.accuracy <= CACHE_MAX_ACCURACY_METERS }
+                    .filter {
+                        it.hasAccuracy() && it.accuracy <= CACHE_MAX_ACCURACY_METERS &&
+                            now - it.time <= CACHE_MAX_AGE_MS
+                    }
                     .maxByOrNull { if (it.accuracy > 0) it.time / it.accuracy.toLong() else it.time }
 
                 if (bestCached != null && bestCached.accuracy <= ACCURACY_THRESHOLD_METERS) {

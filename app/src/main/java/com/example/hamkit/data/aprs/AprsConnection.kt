@@ -87,12 +87,19 @@ class AprsConnection(
                 listener.onDisconnected(e.message ?: "Disconnected")
             }
 
+            // P2-3：统一失败计数 —— 建连异常与 readLoop 断线（connected 已置 false）
+            // 两条路径都在此计数，确保 while 条件与退避生效。
+            if (!connected.get()) {
+                reconnectAttempts++
+            }
+
             cleanup()
 
             if (running.get() && reconnectAttempts < maxReconnectAttempts) {
-                val delay = (baseReconnectDelayMs * (1 shl reconnectAttempts.coerceAtMost(4)))
+                // P2-3：统一退避路径 —— 用已累计的 attempts 计算本次延迟（首连失败也有退避），
+                // 成功建连后 attempts 已在上方清零，断线后正常重试。
+                val delay = (baseReconnectDelayMs * (1 shl (reconnectAttempts - 1).coerceAtLeast(0).coerceAtMost(4)))
                     .coerceAtMost(maxReconnectDelayMs)
-                reconnectAttempts++
                 Log.d(TAG, "Reconnecting in ${delay}ms (attempt $reconnectAttempts)")
                 kotlinx.coroutines.delay(delay)
             }

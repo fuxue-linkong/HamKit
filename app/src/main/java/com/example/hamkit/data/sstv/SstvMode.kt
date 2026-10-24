@@ -414,10 +414,11 @@ enum class SstvMode(
      * PD-290：PD 族分辨率最高的模式（800×616，总长 289 s）。
      *
      * 单帧接近 5 分钟，只适合固定台长时间守听；收录它是为了让「模式表完整」，
-     * UI 侧按帧时长排序后它自然排在最末。VIS 码 `0x64`。
+     * UI 侧按帧时长排序后它自然排在最末。VIS 码 `0x5E`（94，与 pySSTV 的
+     * `PD290.VIS_CODE`、slowrx modespec 及 KB4YZ VIS 表一致）。
      */
     PD_290(
-        visCode = 0x64, displayName = "PD-290", linePixels = 800, imageLines = 616,
+        visCode = 0x5E, displayName = "PD-290", linePixels = 800, imageLines = 616,
         lineSeconds = 0.93728, syncSeconds = 0.020, porchSeconds = 0.00208,
         pixelSeconds = 0.000286, separatorSeconds = 0.0,
         layout = SstvChannelLayout.PD_FRAME, syncPosition = SstvSyncPosition.LINE_START,

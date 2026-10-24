@@ -147,10 +147,18 @@ class Ft8Recorder(
             }
             readThread.start()
 
-            // 解码线程：每 15 秒时隙解码一次
+            // 解码线程：每 15 秒时隙解码一次。
+            // 精确对齐 UTC 15 秒槽边界（而非固定 delay 轮询），避免调度抖动导致
+            // 解码窗口跨槽切割。
             var lastSlot = -1L
             while (isActive) {
-                delay(DECODE_INTERVAL_MS)
+                val now = System.currentTimeMillis()
+                val slotIndex = now / DECODE_INTERVAL_MS // 当前所处 15 秒槽序号
+                // 距下一槽边界的剩余毫秒数；负值说明本槽已过（罕见，如挂起恢复），立即处理
+                val delayMs = (slotIndex + 1) * DECODE_INTERVAL_MS - now
+                if (delayMs > 0) {
+                    delay(delayMs)
+                }
                 val nowSlot = (System.currentTimeMillis() / 1000) / 15
                 if (nowSlot != lastSlot) {
                     lastSlot = nowSlot
@@ -218,6 +226,7 @@ class Ft8Recorder(
         }
 
     companion object {
-        private const val DECODE_INTERVAL_MS = 1000L
+        /** FT8 时隙长度（毫秒），解码循环按此对齐 UTC 15 秒槽边界 */
+        private const val DECODE_INTERVAL_MS = 15000L
     }
 }
