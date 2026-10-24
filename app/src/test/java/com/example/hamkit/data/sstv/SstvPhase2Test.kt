@@ -147,7 +147,8 @@ class SstvPhase2Test {
             0x5D to SstvMode.PD_50,
             0x63 to SstvMode.PD_90,
             0x62 to SstvMode.PD_160,
-            0x64 to SstvMode.PD_290,
+            // P1-1 修复：PD-290 真实 VIS 码为 0x5E（0x64 从未被任何权威表分配）
+            0x5E to SstvMode.PD_290,
             0x02 to SstvMode.ROBOT_8_BW,
             0x06 to SstvMode.ROBOT_12_BW,
             0x0A to SstvMode.ROBOT_24_BW,
