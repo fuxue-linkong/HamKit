@@ -7,101 +7,81 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.systemBarsPadding
-import androidx.compose.foundation.layout.width
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.example.hamkit.R
+import com.example.hamkit.ui.LocalUiMode
+import com.example.hamkit.ui.UiMode
 
 /**
- * 离线隐私政策页。
+ * 离线隐私政策页（按 [UiMode] 分发）。
  *
  * 不依赖网络、不启用 JavaScript；内容随 APK 一起发布，保证首启同意时也能阅读全文。
+ *
+ * 两种风格共享 [PolicyWebView] 与 [PrivacyPolicyAssets]，只有顶栏不同：
+ * Miuix 用 SmallTopAppBar，Material 用与既有页面一致的轻量返回行。
  */
 @Composable
 fun PrivacyPolicyScreen(onBack: () -> Unit) {
     BackHandler(onBack = onBack)
-    val context = LocalContext.current
-    val html = remember(context) { PrivacyPolicyAssets.load(context) }
 
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background,
-    ) {
-        Column(modifier = Modifier.fillMaxSize().systemBarsPadding()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                TextButton(onClick = onBack) {
-                    Text(stringResource(R.string.back))
-                }
-                Spacer(Modifier.weight(1f))
-                Text(
-                    text = stringResource(R.string.privacy_policy_title),
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                Spacer(Modifier.weight(1f))
-                // 与左侧“返回”等宽，保证标题视觉居中
-                Spacer(Modifier.width(64.dp))
-            }
-
-            AndroidView(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                factory = { ctx ->
-                    WebView(ctx).apply {
-                        settings.javaScriptEnabled = false
-                        settings.allowFileAccess = false
-                        settings.allowContentAccess = false
-                        settings.domStorageEnabled = false
-                        setBackgroundColor(Color.TRANSPARENT)
-                        webViewClient = object : WebViewClient() {
-                            override fun shouldOverrideUrlLoading(
-                                view: WebView,
-                                request: WebResourceRequest,
-                            ): Boolean {
-                                val target = request.url.toString()
-                                if (target.startsWith("http://") ||
-                                    target.startsWith("https://") ||
-                                    target.startsWith("mailto:")
-                                ) {
-                                    runCatching {
-                                        ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target)))
-                                    }
-                                    return true
-                                }
-                                return false
-                            }
-                        }
-                        loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
-                    }
-                },
-            )
-        }
+    when (LocalUiMode.current) {
+        UiMode.Miuix -> PrivacyPolicyScreenMiuix(onBack = onBack)
+        UiMode.Material -> PrivacyPolicyScreenMaterial(onBack = onBack)
     }
 }
 
-private object PrivacyPolicyAssets {
+/**
+ * 政策全文的 WebView。
+ *
+ * 安全约束：禁用 JS、文件访问与 DOM 存储；站外链接（http/https/mailto）交给系统浏览器，
+ * 避免 WebView 内弹出无法返回的外部页面。
+ */
+@Composable
+internal fun PolicyWebView(html: String, modifier: Modifier = Modifier) {
+    AndroidView(
+        modifier = modifier,
+        factory = { ctx ->
+            WebView(ctx).apply {
+                settings.javaScriptEnabled = false
+                settings.allowFileAccess = false
+                settings.allowContentAccess = false
+                settings.domStorageEnabled = false
+                setBackgroundColor(Color.TRANSPARENT)
+                webViewClient = object : WebViewClient() {
+                    override fun shouldOverrideUrlLoading(
+                        view: WebView,
+                        request: WebResourceRequest,
+                    ): Boolean {
+                        val target = request.url.toString()
+                        if (target.startsWith("http://") ||
+                            target.startsWith("https://") ||
+                            target.startsWith("mailto:")
+                        ) {
+                            runCatching {
+                                ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target)))
+                            }
+                            return true
+                        }
+                        return false
+                    }
+                }
+                loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
+            }
+        },
+    )
+}
+
+/** 政策 HTML 资源读取（按语言回落到中文）。 */
+internal object PrivacyPolicyAssets {
+
+    @Composable
+    fun rememberHtml(): String {
+        val context = LocalContext.current
+        return remember(context) { load(context) }
+    }
 
     fun load(context: android.content.Context): String {
         val language = context.resources.configuration.locales[0].language

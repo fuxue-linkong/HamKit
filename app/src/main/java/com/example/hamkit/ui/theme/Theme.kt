@@ -52,6 +52,21 @@ data class AppSettings(
 )
 
 object ThemeController {
+
+    /**
+     * 读取本地 UI 模式偏好。
+     *
+     * 供首启隐私闸门使用：同意前还没有业务 ViewModel，但仍要决定渲染哪套 UI。
+     * `ui_mode` 只是本机界面偏好，不含任何个人信息，也不触发网络/SDK 初始化，
+     * 因此未同意时读取是安全的；首启 prefs 为空时返回默认值
+     * [UiMode.DEFAULT_VALUE]（Miuix），与主界面默认保持一致。
+     */
+    fun getUiMode(context: Context): UiMode =
+        UiMode.fromValue(
+            context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+                .getString("ui_mode", UiMode.DEFAULT_VALUE) ?: UiMode.DEFAULT_VALUE
+        )
+
     fun getAppSettings(context: Context): AppSettings {
         val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
         val uiMode = prefs.getString("ui_mode", UiMode.DEFAULT_VALUE) ?: UiMode.DEFAULT_VALUE

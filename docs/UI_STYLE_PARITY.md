@@ -84,6 +84,22 @@ fun XxxScreenMaterial(onBack: () -> Unit = {}) { /* Material 实现 */ }
 不要为了「传参方便」把状态从分发入口往下传：状态项往往有几十个，内联参数会把签名撑爆，
 而共享 ViewModel 已经解决了这个问题。
 
+### 例外：首启隐私闸门没有 ViewModel
+
+首次启动的隐私同意页（`ui/screen/privacy/PrivacyConsentScreen.kt`）出现在任何业务
+ViewModel 创建之前，因此它没有共享 ViewModel；三项勾选与「是否正在看政策全文」等
+**纯 UI 局部状态**由分发入口自己 `remember`，再以少量参数传给两套实现。
+
+与它相关的两条硬性要求：
+
+1. **闸门内必须自带主题**。`MainActivity` 在 `consentGranted == false` 时提前
+   `return@setContent`，走不到主界面的 `HamKitTheme`，所以闸门里要用
+   `CompositionLocalProvider(LocalUiMode provides …) { HamKitTheme(…) { … } }` 自行包裹，
+   否则页面会退回 Material 3 默认紫（这正是 2026-10-25 修复的问题）。
+2. **读取 `ui_mode` 是安全的**。`ui_mode` 只是本机界面偏好，不含个人信息、不触发网络或
+   SDK 初始化；用 `ThemeController.getUiMode(context)` 读取即可。首启 prefs 为空 → 返回
+   默认 `UiMode.Miuix`，与进入主界面后的观感一致。
+
 ## 四、Material 版的风格基准
 
 写 Material 版前先读这几份，保持一致：
@@ -110,7 +126,12 @@ fun XxxScreenMaterial(onBack: () -> Unit = {}) { /* Material 实现 */ }
 ## 五、当前覆盖情况
 
 已具备双风格的模块：about、home、settings、colorpalette、location、permission、satellite、
-SSTV、HF Fax、APRS、FT8、QSO 日志、提醒列表。
+SSTV、HF Fax、APRS、FT8、QSO 日志、提醒列表、隐私同意与隐私政策。
+
+隐私同意/隐私政策是 2026-10-25 补齐的：此前首启同意页硬编码
+`lightColorScheme()/darkColorScheme()` + Material 3 组件，在默认的 Miuix 模式下会显示一套
+紫色 Material 界面；现在按 `UiMode` 分发（`PrivacyConsentScreenMiuix/Material`、
+`PrivacyPolicyScreenMiuix/Material`），背景色也改为跟随用户主题色与暗色模式。
 
 其中 SSTV / APRS / FT8 / QSO / 提醒是 2026-10-11 补齐的（此前只有 Miuix 实现，在 Material
 模式下会整页显示 MIUI 风格）。
