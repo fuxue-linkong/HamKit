@@ -3,7 +3,9 @@ package com.example.hamkit.ui.screen.home
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -18,8 +20,11 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircleOutline
 import androidx.compose.material.icons.rounded.Cancel
@@ -97,47 +102,162 @@ fun HomePagerMiuix(
         popupHost = { },
         contentWindowInsets = WindowInsets.systemBars.add(WindowInsets.displayCutout).only(WindowInsetsSides.Horizontal)
     ) { innerPadding ->
-        Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
-            LazyColumn(
+        // 大屏适配：与 Material 版共用同一套内容区断点（见 HomeLayout）
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val columns = when {
+                maxWidth >= HomeLayout.ThreeColumnMinWidth -> 3
+                maxWidth >= HomeLayout.TwoColumnMinWidth -> 2
+                else -> 1
+            }
+            if (columns == 1) {
+                HomeCompactContentMiuix(
+                    permissionState = permissionState,
+                    businessState = businessState,
+                    actions = actions,
+                    innerPadding = innerPadding,
+                    bottomInnerPadding = bottomInnerPadding,
+                    backdrop = backdrop,
+                    scrollBehavior = scrollBehavior,
+                )
+            } else {
+                HomeWideContentMiuix(
+                    permissionState = permissionState,
+                    businessState = businessState,
+                    actions = actions,
+                    columns = columns,
+                    innerPadding = innerPadding,
+                    bottomInnerPadding = bottomInnerPadding,
+                    backdrop = backdrop,
+                    scrollBehavior = scrollBehavior,
+                )
+            }
+        }
+    }
+}
+
+/** 窄屏单列形态（Miuix）：保持既有 LazyColumn 滚动与毛玻璃行为。 */
+@Composable
+private fun HomeCompactContentMiuix(
+    permissionState: PermissionState,
+    businessState: HomeBusinessState,
+    actions: HomeActions,
+    innerPadding: PaddingValues,
+    bottomInnerPadding: Dp,
+    backdrop: LayerBackdrop?,
+    scrollBehavior: ScrollBehavior,
+) {
+    Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxHeight()
+                .scrollEndHaptic()
+                .overScrollVertical()
+                .nestedScroll(scrollBehavior.nestedScrollConnection)
+                .padding(horizontal = 12.dp),
+            contentPadding = innerPadding,
+            overscrollEffect = null,
+        ) {
+            item {
+                Column(
+                    modifier = Modifier.padding(vertical = 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    HomeCardsMiuix(permissionState, businessState, actions)
+                }
+                Spacer(Modifier.height(bottomInnerPadding))
+            }
+        }
+    }
+}
+
+/** 主页卡片组合：按定位授权状态决定展示内容（Material / Miuix 语义一致）。 */
+@Composable
+private fun HomeCardsMiuix(
+    permissionState: PermissionState,
+    businessState: HomeBusinessState,
+    actions: HomeActions,
+) {
+    if (permissionState.requiredGranted) {
+        HomeHeaderMiuix(businessState, actions.onRefreshWeather)
+        SatelliteListCardMiuix(businessState, actions)
+        LocationEntryCardMiuix(actions.onLocationDetailClick)
+        CwEntryCardMiuix(actions.onCWPracticeClick)
+        AprsEntryCardMiuix(actions.onAprsClick)
+        Ft8EntryCardMiuix(actions.onFt8Click)
+        SstvEntryCardMiuix(actions.onSstvClick)
+        QsoLogEntryCardMiuix(actions.onQsoLogClick)
+    } else {
+        PermissionCardMiuix(permissionState, actions.onPermissionsClick)
+    }
+}
+
+/** 宽屏主页（Miuix）：通栏时间卡 + 主列 / 侧列 + 底部入口行。 */
+@Composable
+private fun HomeWideContentMiuix(
+    permissionState: PermissionState,
+    businessState: HomeBusinessState,
+    actions: HomeActions,
+    columns: Int,
+    innerPadding: PaddingValues,
+    bottomInnerPadding: Dp,
+    backdrop: LayerBackdrop?,
+    scrollBehavior: ScrollBehavior,
+) {
+    val gap = HomeLayout.Gap
+    Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+            contentAlignment = Alignment.TopCenter,
+        ) {
+            Column(
                 modifier = Modifier
-                    .fillMaxHeight()
-                    .scrollEndHaptic()
-                    .overScrollVertical()
+                    .widthIn(max = HomeLayout.MaxContentWidth)
+                    .fillMaxWidth()
                     .nestedScroll(scrollBehavior.nestedScrollConnection)
-                    .padding(horizontal = 12.dp),
-                contentPadding = innerPadding,
-                overscrollEffect = null,
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = HomeLayout.ContentPadding),
+                verticalArrangement = Arrangement.spacedBy(gap),
             ) {
-                item {
-                    Column(
-                        modifier = Modifier.padding(vertical = 12.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                if (!permissionState.requiredGranted) {
+                    // 未授权时只有引导卡，宽屏下限宽避免铺满
+                    Box(
+                        modifier = Modifier
+                            .widthIn(max = HomeLayout.PermissionCardMaxWidth)
+                            .fillMaxWidth()
                     ) {
-                        // 条件卡：定位未授权 → 仅权限引导卡；定位已授权 → 时间排布 + 各功能入口
-                        if (permissionState.requiredGranted) {
-                            // 时间排布：时间卡（含每日言滚动）+ 紧贴的天气卡
-                            HomeHeaderMiuix(businessState, actions.onRefreshWeather)
-                            // 卫星列表卡：附近过境卫星
+                        PermissionCardMiuix(permissionState, actions.onPermissionsClick)
+                    }
+                } else {
+                    HomeHeaderMiuix(businessState, actions.onRefreshWeather)
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                        Box(modifier = Modifier.weight(1.55f)) {
                             SatelliteListCardMiuix(businessState, actions)
-                            // 定位详情入口：跳转到定位状态+地图子页面
-                            LocationEntryCardMiuix(actions.onLocationDetailClick)
-                            // CW 练习入口
-                            CwEntryCardMiuix(actions.onCWPracticeClick)
-                            // APRS 入口
-                            AprsEntryCardMiuix(actions.onAprsClick)
-                            Ft8EntryCardMiuix(actions.onFt8Click)
-                            // SSTV 慢扫描电视入口
-                            SstvEntryCardMiuix(actions.onSstvClick)
-                            // QSO 日志入口
-                            QsoLogEntryCardMiuix(actions.onQsoLogClick)
-                        } else {
-                            // 权限卡片：引导用户授权定位（未授权时隐藏其余卡片）
-                            PermissionCardMiuix(permissionState, actions.onPermissionsClick)
+                        }
+                        Column(
+                            modifier = Modifier.weight(if (columns >= 3) 2f else 1f),
+                            verticalArrangement = Arrangement.spacedBy(gap),
+                        ) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                                Box(Modifier.weight(1f)) { LocationEntryCardMiuix(actions.onLocationDetailClick) }
+                                Box(Modifier.weight(1f)) { CwEntryCardMiuix(actions.onCWPracticeClick) }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                                Box(Modifier.weight(1f)) { AprsEntryCardMiuix(actions.onAprsClick) }
+                                Box(Modifier.weight(1f)) { Ft8EntryCardMiuix(actions.onFt8Click) }
+                            }
                         }
                     }
-                    Spacer(Modifier.height(bottomInnerPadding))
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                        Box(Modifier.weight(if (columns >= 3) 2f else 1.55f)) { SstvEntryCardMiuix(actions.onSstvClick) }
+                        Box(Modifier.weight(1f)) { QsoLogEntryCardMiuix(actions.onQsoLogClick) }
+                    }
                 }
+                Spacer(Modifier.height(bottomInnerPadding))
             }
         }
     }

@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HamKit · 大屏布局试验台</title>
+<style>
+  :root {
+    --ink: #1b2420;
+    --ink-2: #5b6862;
+    --ink-3: #8a958f;
+    --line: rgba(24, 40, 32, .08);
+    --mint-1: #dcefe2;
+    --mint-2: #eef6f0;
+    --card: rgba(255, 255, 255, .78);
+    --bg: #eef1ec;
+    --accent: #2f9e63;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: "PingFang SC", "Noto Sans SC", "Source Han Sans SC", system-ui, -apple-system, sans-serif;
+    color: var(--ink);
+    background:
+      radial-gradient(1100px 700px at 8% -10%, #f7faf4 0%, transparent 60%),
+      radial-gradient(900px 600px at 100% 0%, #e8efe9 0%, transparent 55%),
+      var(--bg);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ============ 页面骨架 ============ */
+  .page { max-width: 1480px; margin: 0 auto; padding: 26px 28px 56px; }
+  .topbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; margin-bottom: 20px; }
+  .eyebrow { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 6px; }
+  h1 { font-size: 26px; font-weight: 650; letter-spacing: -.01em; }
+  h1 .thin { font-weight: 300; color: var(--ink-2); }
+  .topbar p { color: var(--ink-2); font-size: 13px; line-height: 1.7; max-width: 620px; margin-top: 6px; }
+  .topbar .meta { font-size: 12px; color: var(--ink-3); text-align: right; line-height: 1.9; }
+  .topbar .meta b { color: var(--ink); font-weight: 600; }
+
+  /* ============ 控制条 ============ */
+  .toolbar {
+    display: flex; align-items: center; gap: 22px; flex-wrap: wrap;
+    background: rgba(255,255,255,.66); backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,255,255,.85);
+    box-shadow: 0 18px 50px -34px rgba(20,45,30,.4);
+    border-radius: 18px; padding: 14px 18px; margin-bottom: 18px;
+  }
+  .presets { display: flex; gap: 8px; }
+  .presets button { font: inherit; font-size: 12px; padding: 9px 14px; border-radius: 11px;
+    border: 1px solid var(--line); background: #fff; color: var(--ink-2); cursor: pointer;
+    transition: all .18s ease; white-space: nowrap; }
+  .presets button:hover { border-color: rgba(24,40,32,.22); color: var(--ink); }
+  .presets button.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .presets button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .slider-box { flex: 1 1 260px; min-width: 220px; }
+  .slider-box .lab { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink-2); margin-bottom: 2px; }
+  .slider-box .lab b { font-variant-numeric: tabular-nums; color: var(--ink); font-size: 12px; }
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 24px; background: transparent; cursor: pointer; }
+  input[type=range]::-webkit-slider-runnable-track { height: 6px; border-radius: 3px;
+    background: linear-gradient(90deg, #cdd8d0, #9fc7b0); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; margin-top: -7px;
+    border-radius: 50%; background: #fff; border: 2px solid var(--ink); box-shadow: 0 3px 8px -3px rgba(20,45,30,.4); }
+  input[type=range]:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .readout { display: flex; gap: 10px; }
+  .readout .cell { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 8px 14px; min-width: 108px; }
+  .readout .k { font-size: 10px; letter-spacing: .08em; color: var(--ink-3); text-transform: uppercase; margin-bottom: 2px; }
+  .readout .v { font-size: 13px; font-weight: 650; white-space: nowrap; }
+  .readout .v small { font-weight: 400; color: var(--ink-2); font-size: 11px; }
+
+  /* ============ 设备 ============ */
+  .stage { overflow-x: auto; padding-bottom: 4px; }
+  .device-col { width: fit-content; min-width: 0; }
+  .device-label { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 12px; color: var(--ink-2); }
+  .device-label .size { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ink); background: #fff; border: 1px solid var(--line); padding: 3px 9px; border-radius: 999px; }
+  .device-shell { position: relative; width: fit-content; }
+  .device {
+    position: relative;
+    width: 1280px;
+    height: 720px;
+    border-radius: 26px;
+    background: #fbfcfa;
+    box-shadow:
+      0 1px 0 rgba(255,255,255,.9) inset,
+      0 0 0 1px rgba(24,40,32,.10),
+      0 24px 60px -24px rgba(20, 45, 30, .28),
+      0 8px 20px -12px rgba(20, 45, 30, .18);
+    transition: width .45s cubic-bezier(.22,.8,.28,1);
+    overflow: hidden;
+  }
+  .device.dragging { transition: none; }
+  .device::after {
+    content: ""; position: absolute; inset: 0; border-radius: inherit;
+    pointer-events: none;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.7);
+  }
+  .drag-handle {
+    position: absolute; top: 50%; right: -13px; transform: translateY(-50%);
+    width: 26px; height: 96px; border-radius: 13px;
+    background: #fff; border: 1px solid var(--line);
+    box-shadow: 0 6px 18px -8px rgba(20,45,30,.3);
+    cursor: ew-resize; z-index: 30; touch-action: none;
+    display: flex; align-items: center; justify-content: center; gap: 3px;
+    color: var(--ink-3); font-size: 11px; user-select: none;
+  }
+  .drag-handle i { display: block; width: 2px; height: 22px; border-radius: 2px; background: rgba(24,40,32,.16); }
+  .drag-handle:hover { border-color: rgba(24,40,32,.2); }
+  .drag-handle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ============ 断点标尺 + 图例 ============ */
+  .ruler { position: relative; margin-top: 16px; height: 30px; width: min(720px, 100%); margin-left: 14px; }
+  .ruler .track { position: absolute; top: 16px; left: 0; right: 0; height: 6px; border-radius: 3px;
+    background: linear-gradient(90deg, #d9e2da 0%, #cfe0d5 44%, #bcd8c8 44%, #b9d5c5 64.4%, #a9cdb8 64.4%, #a4c9b3 100%); }
+  .ruler .tick { position: absolute; top: 0; font-size: 10px; color: var(--ink-3); transform: translateX(-50%); font-variant-numeric: tabular-nums; }
+  .ruler .tick.first { transform: translateX(0); }
+  .ruler .tick.last { transform: translateX(-100%); }
+  .ruler .tick::after { content: ""; display: block; width: 1px; height: 7px; background: rgba(24,40,32,.25); margin: 2px auto 0; }
+  .ruler .marker { position: absolute; top: 11px; width: 3px; height: 16px; border-radius: 2px; background: var(--ink); transform: translateX(-50%); transition: left .45s cubic-bezier(.22,.8,.28,1); }
+  .ruler .zone { position: absolute; top: 24px; font-size: 10px; letter-spacing: .04em; color: var(--ink-3); transform: translateX(-50%); white-space: nowrap; }
+
+  .bp-strip { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .bp { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; color: var(--ink-2);
+    border: 1px solid var(--line); background: rgba(255,255,255,.6); border-radius: 999px; padding: 5px 12px 5px 10px; }
+  .bp .w { font-variant-numeric: tabular-nums; font-weight: 650; color: var(--ink); }
+  .bp .dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(24,40,32,.16); }
+  .bp.now { border-color: rgba(47,158,99,.35); background: rgba(220,239,226,.65); color: var(--ink); }
+  .bp.now .dot { background: var(--accent); box-shadow: 0 0 0 3px rgba(47,158,99,.15); }
+
+  /* ================================================================
+     应用本体（窗口模拟）—— 容器查询驱动，1px = 1dp
+     ================================================================ */
+  .screen { height: 100%; container-type: inline-size; background: #f6f8f5; }
+  .app { position: relative; height: 100%; display: flex; overflow: hidden; }
+
+  /* ---------- 侧边导航栏（≥600dp 出现） ---------- */
+  .rail {
+    display: none; flex-direction: column; align-items: center;
+    width: 86px; flex: 0 0 86px; height: 100%;
+    padding: 22px 0 26px;
+    background: rgba(255,255,255,.74);
+    border-right: 1px solid var(--line);
+  }
+  .rail .brand { width: 34px; height: 34px; border-radius: 11px; background: var(--ink); color: #fff;
+    display: grid; place-items: center; font-size: 12px; font-weight: 700; letter-spacing: .02em; }
+  .rail nav { display: flex; flex-direction: column; gap: 6px; width: 100%; align-items: center; margin: auto 0; }
+  .rail a { position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px;
+    width: 68px; padding: 10px 0 8px; border-radius: 14px; color: var(--ink-3); text-decoration: none;
+    font-size: 11px; letter-spacing: .02em; }
+  .rail a svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .rail a:hover { color: var(--ink-2); background: rgba(24,40,32,.04); }
+  .rail a.on { color: var(--ink); background: var(--mint-1); }
+
+  /* ---------- 主内容 ---------- */
+  .main { position: relative; flex: 1; min-width: 0; height: 100%; overflow-y: auto; overscroll-behavior: contain; }
+  .main::-webkit-scrollbar { width: 6px; }
+  .main::-webkit-scrollbar-thumb { background: rgba(24,40,32,.14); border-radius: 3px; }
+
+  .head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 22px 22px 0; }
+  .head h2 { font-size: 21px; font-weight: 650; letter-spacing: -.01em; }
+  .head .date { font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+  .content { display: grid; grid-template-columns: 1fr; gap: 14px; padding: 16px 22px 96px; }
+
+  .card { background: var(--card); border: 1px solid rgba(255,255,255,.9); border-radius: 18px;
+    box-shadow: 0 1px 0 rgba(255,255,255,.8) inset, 0 10px 30px -22px rgba(20,45,30,.35);
+    padding: 16px 18px; min-width: 0; }
+
+  /* 时间 + 天气合并卡 */
+  .time { background: linear-gradient(135deg, var(--mint-1) 0%, var(--mint-2) 58%, #f3f8f2 100%);
+    border: 1px solid rgba(255,255,255,.75); }
+  .time .clock { font-size: 46px; font-weight: 250; letter-spacing: -.02em; line-height: 1.05;
+    font-variant-numeric: tabular-nums; color: #17352a; }
+  .time .utc { font-size: 13px; color: #587067; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .time .weather { display: flex; align-items: center; gap: 7px; margin-top: 12px; font-size: 13px; color: #3d5c4f; }
+  .time .weather svg { width: 17px; height: 17px; stroke: currentColor; fill: none; stroke-width: 1.6; }
+  .time .quote { margin-top: 10px; font-size: 11.5px; color: #6d8078; border-top: 1px solid rgba(23,53,42,.08); padding-top: 9px; }
+
+  /* 卫星卡 */
+  .sat { display: flex; flex-direction: column; }
+  .sat .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+  .sat-foot { margin-top: auto; padding-top: 10px; border-top: 1px solid rgba(24,40,32,.07); font-size: 11px; color: var(--ink-3); }
+  .sat h3 { font-size: 14px; font-weight: 650; }
+  .chip { font: inherit; font-size: 11px; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--line);
+    background: #fff; color: var(--ink-2); text-decoration: none; white-space: nowrap; }
+  .chip:hover { color: var(--ink); border-color: rgba(24,40,32,.2); }
+  .sat-empty { display: flex; gap: 11px; align-items: flex-start; padding: 2px 0 4px; }
+  .sat-empty .ico { flex: 0 0 34px; width: 34px; height: 34px; border-radius: 10px; background: #f1f5f1;
+    display: grid; place-items: center; color: #7d9186; }
+  .sat-empty .ico svg { width: 17px; height: 17px; stroke: currentColor; fill: none; stroke-width: 1.6; }
+  .sat-empty b { display: block; font-size: 12.5px; font-weight: 600; color: var(--ink); }
+  .sat-empty span { display: block; margin-top: 3px; font-size: 11px; color: var(--ink-3); line-height: 1.55; }
+
+  /* 右侧小卡堆叠 */
+  .side { display: grid; grid-template-columns: 1fr; gap: 14px; min-width: 0; align-content: start; }
+  .mini { display: flex; flex-direction: column; gap: 3px; padding: 13px 15px; }
+  .mini .t { font-size: 13px; font-weight: 650; display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+  .mini .t svg { flex: 0 0 auto; width: 16px; height: 16px; stroke: var(--accent); fill: none; stroke-width: 1.8; stroke-linecap: round; }
+  .mini .d { font-size: 11px; color: var(--ink-3); line-height: 1.5; }
+  .mini .stat { font-size: 10.5px; color: var(--accent); font-weight: 600; margin-top: 3px; white-space: nowrap; }
+
+  /* 底部入口卡 */
+  .entry { display: flex; flex-direction: column; gap: 4px; }
+  .entry h3 { font-size: 13.5px; font-weight: 650; }
+  .entry p { font-size: 11.5px; color: var(--ink-3); line-height: 1.55; }
+  .entry .go { margin-top: 8px; font-size: 11px; color: var(--accent); font-weight: 600; }
+
+  /* ---------- 底部导航（<600dp） ---------- */
+  .bottom {
+    position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 4px; padding: 7px;
+    background: rgba(255,255,255,.86); backdrop-filter: blur(16px);
+    border: 1px solid rgba(255,255,255,.9); border-radius: 999px;
+    box-shadow: 0 12px 30px -14px rgba(20,45,30,.35);
+    z-index: 20;
+  }
+  .bottom a { display: flex; flex-direction: column; align-items: center; gap: 3px;
+    width: 92px; padding: 8px 0 6px; border-radius: 999px; text-decoration: none;
+    color: var(--ink-3); font-size: 10.5px; }
+  .bottom a svg { width: 21px; height: 21px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .bottom a.on { color: var(--ink); background: var(--mint-1); }
+
+  /* ================================================================
+     断点：容器宽度 = 窗口宽度（dp）
+     ================================================================ */
+
+  /* Medium：侧栏 + 主列 / 侧卡两列 */
+  @container (min-width: 600px) {
+    .rail { display: flex; }
+    .bottom { display: none; }
+    .head { padding: 26px 30px 0; }
+    .content { grid-template-columns: 1.55fr 1fr; padding: 18px 30px 34px; gap: 16px; }
+    .time { grid-column: 1 / -1; }
+    .sat { grid-column: 1; }
+    .side { grid-column: 2; grid-template-columns: 1fr 1fr; }
+  }
+
+  /* Expanded：三栏，入口卡横跨 */
+  @container (min-width: 1080px) {
+    .content { grid-template-columns: 1.55fr 1fr 1fr; grid-template-areas:
+      "time time time"
+      "sat  side side"
+      "sstv sstv qso"; }
+    .time { grid-area: time; }
+    .sat { grid-area: sat; }
+    .side { grid-area: side; }
+    .entry.sstv { grid-area: sstv; }
+    .entry.qso { grid-area: qso; }
+    .head h2 { font-size: 23px; }
+    .time .clock { font-size: 52px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .device, .ruler .marker { transition: none; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="topbar">
+    <div>
+      <div class="eyebrow">HamKit · Adaptive Layout Lab</div>
+      <h1>大屏布局试验台 <span class="thin">/ 仿 Cirno 侧栏 + 卡片网格</span></h1>
+      <p>拖动设备右缘或滑杆改变窗口宽度，观察 600dp / 1080dp 两个断点下导航形态与内容列数的变化。此页只模拟布局，不含业务逻辑。</p>
+    </div>
+    <div class="meta">
+      基准设备 <b>1280 × 720 dp</b><br>
+      断点 <b>600 / 1080 dp</b><br>
+      1 px = 1 dp
+    </div>
+  </header>
+
+  <section class="toolbar" aria-label="窗口控制">
+    <div class="presets" role="group" aria-label="预设窗口">
+      <button data-width="412">手机</button>
+      <button data-width="800">平板竖屏</button>
+      <button data-width="1280" class="on">平板横屏</button>
+    </div>
+    <div class="slider-box">
+      <div class="lab"><span>窗口宽度</span><b><span id="wVal">1280</span> dp</b></div>
+      <input id="slider" type="range" min="360" max="1440" step="1" value="1280" aria-label="窗口宽度">
+    </div>
+    <div class="readout">
+      <div class="cell">
+        <div class="k">导航形态</div>
+        <div class="v" id="navType">侧栏 · 常驻</div>
+      </div>
+      <div class="cell">
+        <div class="k">内容列数</div>
+        <div class="v" id="cols">3 <small>列</small></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="stage">
+    <div class="device-col">
+      <div class="device-label">
+        <span class="size" id="sizeLabel">1280 × 720 dp</span>
+        <span id="formLabel">平板横屏</span>
+      </div>
+
+      <div class="device-shell">
+        <div class="device" id="device">
+          <div class="screen" id="screen">
+            <div class="app">
+              <!-- 侧栏导航 -->
+              <aside class="rail">
+                <div class="brand">HK</div>
+                <nav>
+                  <a href="#" class="on">
+                    <svg viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v9h13v-9"/></svg>
+                    主页
+                  </a>
+                  <a href="#">
+                    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.2"/><path d="M12 3.5a8.5 8.5 0 0 1 8.5 8.5M12 20.5A8.5 8.5 0 0 1 3.5 12"/><path d="m15.5 8.5 4.2-1.6-1.3 4.3"/></svg>
+                    卫星
+                  </a>
+                  <a href="#">
+                    <svg viewBox="0 0 24 24"><path d="M5 4.5h14v15H5z"/><path d="M8.5 9h7M8.5 12.5h7M8.5 16h4"/></svg>
+                    日志
+                  </a>
+                  <a href="#">
+                    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.9 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1.03-1.56V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9c.2.6.76 1.03 1.56 1.03H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.56 1.03z"/></svg>
+                    设置
+                  </a>
+                </nav>
+              </aside>
+
+              <!-- 主内容 -->
+              <div class="main">
+                <div class="head">
+                  <h2>HamKit</h2>
+                  <span class="date">10月25日 周日 · 杭州</span>
+                </div>
+
+                <div class="content">
+                  <article class="card time">
+                    <div class="clock" id="clock">11:02:15</div>
+                    <div class="utc" id="utc">03:02:15 UTC</div>
+                    <div class="weather">
+                      <svg viewBox="0 0 24 24"><path d="M6.5 18.5h10a3.5 3.5 0 0 0 .4-6.98A5.5 5.5 0 0 0 6.3 10.6a4 4 0 0 0 .2 7.9z"/></svg>
+                      <span>31.0°C · 多云 · 东南风 2 级</span>
+                    </div>
+                    <div class="quote">卫星过境时分，是业余无线电人最美的时刻。</div>
+                  </article>
+
+                  <article class="card sat">
+                    <div class="row">
+                      <h3>附近卫星</h3>
+                      <a class="chip" href="#">卫星详情</a>
+                    </div>
+                    <div class="sat-empty">
+                      <span class="ico">
+                        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.2"/><path d="M12 3.5a8.5 8.5 0 0 1 8.5 8.5M12 20.5A8.5 8.5 0 0 1 3.5 12"/><path d="m15.5 8.5 4.2-1.6-1.3 4.3"/></svg>
+                      </span>
+                      <div>
+                        <b>未来 6 小时内无过境</b>
+                        <span>上次过境 AO-91 · 21:40 · 最大仰角 46°</span>
+                      </div>
+                    </div>
+                    <div class="sat-foot">收藏 12 颗 · 全部过境时间见「卫星详情」</div>
+                  </article>
+
+                  <div class="side">
+                    <article class="card mini">
+                      <div class="t">
+                        <svg viewBox="0 0 24 24"><path d="M12 21s-7-5.2-7-11a7 7 0 0 1 14 0c0 5.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+                        定位状态
+                      </div>
+                      <div class="d">精度与位置地图</div>
+                      <div class="stat">±18 m · 已授权</div>
+                    </article>
+                    <article class="card mini">
+                      <div class="t">
+                        <svg viewBox="0 0 24 24"><path d="M4 17h16M6 13v4M10 9v8M14 6v11M18 11v6"/></svg>
+                        CW 练习
+                      </div>
+                      <div class="d">听抄与拍发</div>
+                    </article>
+                    <article class="card mini">
+                      <div class="t">
+                        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.6"/><path d="M4.5 12a7.5 7.5 0 0 1 15 0"/><path d="M7.5 15a4.5 4.5 0 0 1 9 0"/></svg>
+                        APRS
+                      </div>
+                      <div class="d">位置报告与消息</div>
+                    </article>
+                    <article class="card mini">
+                      <div class="t">
+                        <svg viewBox="0 0 24 24"><path d="M4 16.5c2.5-2 5-2 7.5 0s5 2 8.5 0"/><path d="M4 12c2.5-2 5-2 7.5 0s5 2 8.5 0"/></svg>
+                        FT8
+                      </div>
+                      <div class="d">数字通联与解码</div>
+                    </article>
+                  </div>
+
+                  <article class="card entry sstv">
+                    <h3>SSTV</h3>
+                    <p>慢扫描电视图片接收与发送，支持图库管理</p>
+                    <span class="go">进入 →</span>
+                  </article>
+                  <article class="card entry qso">
+                    <h3>QSO 日志</h3>
+                    <p>记录通联并导出 ADIF，按呼号与频段检索</p>
+                    <span class="go">进入 →</span>
+                  </article>
+                </div>
+              </div>
+
+              <!-- 底部导航（窄窗口） -->
+              <nav class="bottom">
+                <a href="#" class="on">
+                  <svg viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v9h13v-9"/></svg>
+                  主页
+                </a>
+                <a href="#">
+                  <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.9 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1.03-1.56V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9c.2.6.76 1.03 1.56 1.03H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.56 1.03z"/></svg>
+                  设置
+                </a>
+              </nav>
+            </div>
+          </div>
+        </div>
+
+        <div class="drag-handle" id="handle" role="slider" tabindex="0" aria-label="调整窗口宽度"
+             aria-valuemin="360" aria-valuemax="1440" aria-valuenow="1280">
+          <i></i><i></i>
+        </div>
+      </div>
+
+      <div class="ruler" aria-hidden="true">
+        <div class="track"></div>
+        <div class="tick first" style="left:0%">360</div>
+        <div class="tick" style="left:22.22%">600</div>
+        <div class="tick" style="left:66.66%">1080</div>
+        <div class="tick last" style="left:100%">1440</div>
+        <div class="marker" id="marker" style="left:85.19%"></div>
+        <div class="zone" style="left:11%">Compact</div>
+        <div class="zone" style="left:44%">Medium</div>
+        <div class="zone" style="left:84%">Expanded</div>
+      </div>
+
+      <div class="bp-strip">
+        <span class="bp" id="bp1"><span class="dot"></span><span class="w">&lt; 600</span>底部胶囊导航 · 单列</span>
+        <span class="bp" id="bp2"><span class="dot"></span><span class="w">600 – 1080</span>侧栏 · 主列 + 侧卡</span>
+        <span class="bp" id="bp3"><span class="dot"></span><span class="w">≥ 1080</span>侧栏 · 三栏网格</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var device = document.getElementById('device');
+  var handle = document.getElementById('handle');
+  var slider = document.getElementById('slider');
+  var wVal = document.getElementById('wVal');
+  var sizeLabel = document.getElementById('sizeLabel');
+  var formLabel = document.getElementById('formLabel');
+  var marker = document.getElementById('marker');
+  var navType = document.getElementById('navType');
+  var cols = document.getElementById('cols');
+  var MIN = 360, MAX = 1440;
+
+  // 当前宽度状态，供滑杆、拖拽、预设三种入口共用
+  var width = 1280;
+
+  function clamp(v) { return Math.max(MIN, Math.min(MAX, Math.round(v))); }
+
+  function paint() {
+    var w = width;
+    device.style.width = w + 'px';
+    wVal.textContent = w;
+    sizeLabel.textContent = w + ' × 720 dp';
+    slider.value = w;
+    handle.setAttribute('aria-valuenow', w);
+    marker.style.left = ((w - MIN) / (MAX - MIN) * 100).toFixed(2) + '%';
+
+    // 形态文案
+    var nav, ncol;
+    if (w < 600) {
+      nav = '底部胶囊导航'; ncol = '1 <small>列</small>';
+      formLabel.textContent = w < 500 ? '手机' : '窄窗口';
+    } else if (w < 1080) {
+      nav = '侧栏 · 常驻'; ncol = '2 <small>列</small>';
+      formLabel.textContent = w < 900 ? '平板竖屏' : '平板横屏';
+    } else {
+      nav = '侧栏 · 常驻'; ncol = '3 <small>列</small>';
+      formLabel.textContent = '平板横屏';
+    }
+    navType.textContent = nav;
+    cols.innerHTML = ncol;
+
+    // 高亮当前断点
+    document.getElementById('bp1').classList.toggle('now', w < 600);
+    document.getElementById('bp2').classList.toggle('now', w >= 600 && w < 1080);
+    document.getElementById('bp3').classList.toggle('now', w >= 1080);
+
+    // 预设按钮态
+    document.querySelectorAll('.presets button').forEach(function (b) {
+      var target = parseInt(b.dataset.width, 10);
+      b.classList.toggle('on', Math.abs(target - w) < 6);
+    });
+  }
+
+  function setWidth(v) { width = clamp(v); paint(); }
+
+  slider.addEventListener('input', function (e) { setWidth(e.target.value); });
+  document.querySelectorAll('.presets button').forEach(function (b) {
+    b.addEventListener('click', function () { setWidth(b.dataset.width); });
+  });
+
+  // 右侧拖拽改变窗口宽度
+  var dragging = false, startX = 0, startW = 0;
+  handle.addEventListener('pointerdown', function (e) {
+    dragging = true;
+    startX = e.clientX;
+    startW = width;
+    device.classList.add('dragging');
+    handle.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  handle.addEventListener('pointermove', function (e) {
+    if (!dragging) return;
+    setWidth(startW + (e.clientX - startX));
+  });
+  function endDrag() {
+    dragging = false;
+    device.classList.remove('dragging');
+  }
+  handle.addEventListener('pointerup', endDrag);
+  handle.addEventListener('pointercancel', endDrag);
+
+  // 键盘可访问：左右方向键微调
+  handle.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowLeft') { setWidth(width - 20); e.preventDefault(); }
+    if (e.key === 'ArrowRight') { setWidth(width + 20); e.preventDefault(); }
+    if (e.key === 'Home') { setWidth(MIN); e.preventDefault(); }
+    if (e.key === 'End') { setWidth(MAX); e.preventDefault(); }
+  });
+
+  // 时钟：让时间卡保持真实感
+  function pad(n) { return String(n).padStart(2, '0'); }
+  function tick() {
+    var now = new Date();
+    document.getElementById('clock').textContent = pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
+    var u = new Date(now.getTime() + now.getTimezoneOffset() * 60000);
+    document.getElementById('utc').textContent = pad(u.getHours()) + ':' + pad(u.getMinutes()) + ':' + pad(u.getSeconds()) + ' UTC';
+    var d = document.querySelector('.head .date');
+    if (d) d.textContent = (now.getMonth() + 1) + '月' + now.getDate() + '日 周' + '日一二三四五六'[now.getDay()] + ' · 杭州';
+  }
+  tick();
+  setInterval(tick, 1000);
+
+  paint();
+})();
+</script>
+</body>
+</html>

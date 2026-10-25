@@ -3,16 +3,19 @@ package com.example.hamkit.ui.screen.home
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -76,34 +79,133 @@ fun HomePagerMaterial(
         topBar = { TopBar(scrollBehavior = scrollBehavior) },
         contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
     ) { innerPadding ->
-        Column(
+        // 大屏适配：以「内容区实际宽度」（已扣除侧栏）判断列数，
+        // 窄屏保持原有单列形态，避免手机端回归。
+        BoxWithConstraints(
             modifier = Modifier
                 .padding(innerPadding)
                 .nestedScroll(scrollBehavior.nestedScrollConnection)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .fillMaxSize()
         ) {
-            // 业务卡片全部是 material3 实现（含天气卡的 Material 变体），无需再包 MiuixTheme
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                // 条件卡：定位未授权 → 仅权限引导卡；定位已授权 → 时间排布 + 各功能入口
-                if (permissionState.requiredGranted) {
-                    // 时间排布：时间卡（含每日言滚动）+ 紧贴的天气卡
-                    HomeHeaderMaterial(businessState, actions.onRefreshWeather)
-                    // 卫星列表卡：附近过境卫星
-                    SatelliteListCard(businessState, actions)
-                    // 定位详情入口
-                    LocationEntryCard(actions.onLocationDetailClick)
-                    CwEntryCard(actions.onCWPracticeClick)
-                    AprsEntryCard(actions.onAprsClick)
-                    Ft8EntryCard(actions.onFt8Click)
-                    // SSTV 慢扫描电视入口
-                    SstvEntryCard(actions.onSstvClick)
-                    // QSO 日志入口
-                    QsoLogEntryCard(actions.onQsoLogClick)
-                } else {
-                    // 权限卡片：引导用户授权定位（未授权时隐藏其余卡片）
+            val columns = when {
+                maxWidth >= HomeLayout.ThreeColumnMinWidth -> 3
+                maxWidth >= HomeLayout.TwoColumnMinWidth -> 2
+                else -> 1
+            }
+            if (columns == 1) {
+                HomeCompactContentMaterial(permissionState, businessState, actions, bottomInnerPadding)
+            } else {
+                HomeWideContentMaterial(permissionState, businessState, actions, columns, bottomInnerPadding)
+            }
+        }
+    }
+}
+
+/**
+ * 窄屏（手机竖屏 / 窄分屏）主页：单列卡片流，保持既有形态。
+ */
+@Composable
+private fun HomeCompactContentMaterial(
+    permissionState: PermissionState,
+    businessState: HomeBusinessState,
+    actions: HomeActions,
+    bottomInnerPadding: Dp,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // 业务卡片全部是 material3 实现（含天气卡的 Material 变体），无需再包 MiuixTheme
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            // 条件卡：定位未授权 → 仅权限引导卡；定位已授权 → 时间排布 + 各功能入口
+            if (permissionState.requiredGranted) {
+                // 时间排布：时间卡（含每日言滚动）+ 紧贴的天气卡
+                HomeHeaderMaterial(businessState, actions.onRefreshWeather)
+                // 卫星列表卡：附近过境卫星
+                SatelliteListCard(businessState, actions)
+                // 定位详情入口
+                LocationEntryCard(actions.onLocationDetailClick)
+                CwEntryCard(actions.onCWPracticeClick)
+                AprsEntryCard(actions.onAprsClick)
+                Ft8EntryCard(actions.onFt8Click)
+                // SSTV 慢扫描电视入口
+                SstvEntryCard(actions.onSstvClick)
+                // QSO 日志入口
+                QsoLogEntryCard(actions.onQsoLogClick)
+            } else {
+                // 权限卡片：引导用户授权定位（未授权时隐藏其余卡片）
+                PermissionCard(permissionState, actions.onPermissionsClick)
+            }
+        }
+        Spacer(Modifier.height(bottomInnerPadding))
+    }
+}
+
+/**
+ * 宽屏（窗口 ≥600dp）主页：通栏时间卡 + 主列 / 侧列 + 底部入口行。
+ *
+ * 布局对齐平板设计稿：
+ * - 时间天气卡通栏，承担页面主视觉；
+ * - 卫星卡占主列（1.55 份宽），右侧按 2×2 摆放入口卡（三栏时侧列占两列）；
+ * - 底部 SSTV / QSO 按主列比例收尾。
+ */
+@Composable
+private fun HomeWideContentMaterial(
+    permissionState: PermissionState,
+    businessState: HomeBusinessState,
+    actions: HomeActions,
+    columns: Int,
+    bottomInnerPadding: Dp,
+) {
+    val gap = HomeLayout.Gap
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        Column(
+            modifier = Modifier
+                .widthIn(max = HomeLayout.MaxContentWidth)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = HomeLayout.ContentPadding),
+            verticalArrangement = Arrangement.spacedBy(gap),
+        ) {
+            if (!permissionState.requiredGranted) {
+                // 未授权时只有引导卡，宽屏下铺满会显得空旷，限宽处理
+                Box(
+                    modifier = Modifier
+                        .widthIn(max = HomeLayout.PermissionCardMaxWidth)
+                        .fillMaxWidth()
+                ) {
                     PermissionCard(permissionState, actions.onPermissionsClick)
+                }
+            } else {
+                HomeHeaderMaterial(businessState, actions.onRefreshWeather)
+
+                // 主列：卫星卡；右侧：功能入口 2×2，三栏时侧列占两列
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                    Box(modifier = Modifier.weight(1.55f)) {
+                        SatelliteListCard(businessState, actions)
+                    }
+                    Column(
+                        modifier = Modifier.weight(if (columns >= 3) 2f else 1f),
+                        verticalArrangement = Arrangement.spacedBy(gap),
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                            Box(Modifier.weight(1f)) { LocationEntryCard(actions.onLocationDetailClick) }
+                            Box(Modifier.weight(1f)) { CwEntryCard(actions.onCWPracticeClick) }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                            Box(Modifier.weight(1f)) { AprsEntryCard(actions.onAprsClick) }
+                            Box(Modifier.weight(1f)) { Ft8EntryCard(actions.onFt8Click) }
+                        }
+                    }
+                }
+
+                // 底部入口行：SSTV 宽、QSO 窄，与上方主列宽度呼应
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                    Box(Modifier.weight(if (columns >= 3) 2f else 1.55f)) { SstvEntryCard(actions.onSstvClick) }
+                    Box(Modifier.weight(1f)) { QsoLogEntryCard(actions.onQsoLogClick) }
                 }
             }
             Spacer(Modifier.height(bottomInnerPadding))

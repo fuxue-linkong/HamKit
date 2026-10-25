@@ -4,7 +4,6 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.Application
 import android.content.Intent
-import android.content.res.Configuration
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -422,8 +421,12 @@ fun MainScreen(
 
     MainScreenBackHandler(mainPagerState, navController)
 
-    val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
-    val useNavigationRail = isLandscape && !(uiMode == UiMode.Miuix && enableFloatingBottomBar)
+    // 大屏适配：按「窗口宽度」而非「屏幕方向」决定导航形态。
+    // 600dp 与 Material 大屏规范的 Medium 断点一致：平板竖屏、折叠屏展开、
+    // 桌面/分屏窗口变宽时都进侧栏；分屏变窄（<600dp）时自动回到底部导航。
+    val windowWidthDp = LocalConfiguration.current.screenWidthDp
+    val useNavigationRail = windowWidthDp >= WIDE_WINDOW_WIDTH_DP &&
+        !(uiMode == UiMode.Miuix && enableFloatingBottomBar)
 
     CompositionLocalProvider(
         LocalMainPagerState provides mainPagerState
@@ -599,6 +602,9 @@ private fun RootBackHandler(navigator: Navigator) {
 
 /** 双击返回退出的时间窗 */
 private const val EXIT_BACK_INTERVAL_MS = 2000L
+
+/** 大屏断点：窗口宽度 ≥ 该值（dp）时使用左侧常驻导航栏 */
+private const val WIDE_WINDOW_WIDTH_DP = 600
 
 /**
  * 包装 [ViewModelStoreOwner]，在其 [defaultViewModelCreationExtras] 中注入 [ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY]。
