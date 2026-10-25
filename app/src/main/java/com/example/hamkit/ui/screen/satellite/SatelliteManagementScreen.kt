@@ -157,7 +157,14 @@ fun SatelliteManagementMiuix() {
             categoryConfig = categoryConfig,
             statusTracker = mainViewModel.statusTracker,
             onSatelliteClick = { catalogNumber ->
-                navigator.push(Route.SatelliteDetail(catalogNumber))
+                val detailRoute = Route.SatelliteDetail(catalogNumber)
+                // 宽屏双栏下右侧已经在显示详情：此时点列表项应替换详情，
+                // 否则返回栈会变成「列表 → 详情 → 详情」，双栏配对失败退回单页。
+                if (navigator.backStack.lastOrNull() is Route.SatelliteDetail) {
+                    navigator.replace(detailRoute)
+                } else {
+                    navigator.push(detailRoute)
+                }
             },
             onNameQueryChange = { query ->
                 mainViewModel.updateSatelliteFilter(filter.copy(nameQuery = query))

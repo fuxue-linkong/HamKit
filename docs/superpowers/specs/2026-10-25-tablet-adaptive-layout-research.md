@@ -327,3 +327,15 @@ if (useWideLayout) {
   - 「自动」沿用旧规则（Miuix 且开启悬浮底栏 → 胶囊，否则侧栏），保证老用户可选回原行为。
   - 持久化在 `wide_nav_style`，两套主题的设置页均提供入口。
 - 「主题设置」子页面（`ColorPaletteScreenMiuix/Material`）内容限宽 840dp 居中，与设置主页一致。
+
+---
+
+## 12. 阶段二：列表-详情双栏（已实现）
+
+- 新增 `ui/navigation3/TwoPaneScene.kt`：
+  - `TwoPaneScene`：把栈顶两个 entry 按 0.9 : 1.1 并排渲染；
+  - `TwoPaneSceneStrategy`：窗口 ≥ **840dp** 且栈顶两层角色恰为「列表 + 详情」时启用，否则回落到常规单页；
+  - `TwoPaneScene.twoPane(role)` 提供路由元数据，`rememberTwoPaneSceneStrategy()` 随窗口宽度重建。
+- 首批接入：**卫星管理 → 卫星详情**。宽屏并排、窄屏行为不变；详情已展示时再点列表项改用 `navigator.replace`，避免返回栈叠出「详情 → 详情」导致双栏失效。
+- 未覆盖：APRS 站点/消息、QSO 日志当前没有独立详情路由（列表项点击就地处理），双栏基建已通用，后续新增详情页时给路由补两个 metadata 即可接入。
+- 回退路径：详情页内的雷达/地图等二级页面不带双栏元数据，会回到全屏；返回后双栏自动恢复。

@@ -77,7 +77,10 @@ import com.example.hamkit.ui.component.bottombar.rememberMainPagerState
 import com.example.hamkit.ui.navigation3.LocalNavigator
 import com.example.hamkit.ui.navigation3.Navigator
 import com.example.hamkit.ui.navigation3.Route
+import com.example.hamkit.ui.navigation3.TwoPaneScene
+import com.example.hamkit.ui.navigation3.TwoPaneRole
 import com.example.hamkit.ui.navigation3.rememberNavigator
+import com.example.hamkit.ui.navigation3.rememberTwoPaneSceneStrategy
 import com.example.hamkit.ui.cw.CWPracticeRouteScreen
 import com.example.hamkit.ui.screen.about.AboutScreen
 import com.example.hamkit.ui.screen.colorpalette.ColorPaletteScreen
@@ -264,6 +267,8 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
+                    val twoPaneSceneStrategy = rememberTwoPaneSceneStrategy()
+
                     val navDisplay = @Composable {
                         NavDisplay(
                             backStack = navigator.backStack,
@@ -271,6 +276,8 @@ class MainActivity : ComponentActivity() {
                                 rememberSaveableStateHolderNavEntryDecorator(),
                                 rememberViewModelStoreNavEntryDecorator()
                             ),
+                            // 宽屏「列表-详情」双栏：仅当栈顶两层都声明 twoPane 时并排
+                            sceneStrategies = listOf(twoPaneSceneStrategy),
                             onBack = {
                                 navigator.pop()
                             },
@@ -287,9 +294,15 @@ class MainActivity : ComponentActivity() {
                                 entry<Route.Home> { WithApplicationViewModelStoreOwner { mainScreenEntry() } }
                                 entry<Route.Settings> { WithApplicationViewModelStoreOwner { mainScreenEntry() } }
                                 entry<Route.CWPractice> { WithApplicationViewModelStoreOwner { CWPracticeRouteScreen() } }
-                                entry<Route.SatelliteManagement> { WithApplicationViewModelStoreOwner { SatelliteManagementScreen() } }
+                                entry<Route.SatelliteManagement>(
+                                    metadata = TwoPaneScene.twoPane(TwoPaneRole.List)
+                                ) {
+                                    WithApplicationViewModelStoreOwner { SatelliteManagementScreen() }
+                                }
                                 entry<Route.SatelliteFilter> { WithApplicationViewModelStoreOwner { SatelliteFilterScreen() } }
-                                entry<Route.SatelliteDetail> { route ->
+                                entry<Route.SatelliteDetail>(
+                                    metadata = TwoPaneScene.twoPane(TwoPaneRole.Detail)
+                                ) { route ->
                                     WithApplicationViewModelStoreOwner {
                                         SatelliteDetailScreen(catalogNumber = route.catalogNumber, onBack = { navigator.pop() })
                                     }
