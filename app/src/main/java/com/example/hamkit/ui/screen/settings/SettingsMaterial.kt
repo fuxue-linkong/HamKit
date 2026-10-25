@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Update
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.rounded.Dashboard
+import androidx.compose.material.icons.rounded.ViewSidebar
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
@@ -47,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import com.example.hamkit.R
 import com.example.hamkit.data.reminder.RepeatMode
 import com.example.hamkit.ui.UiMode
+import com.example.hamkit.ui.WideNavStyle
 import com.example.hamkit.ui.component.material.SegmentedColumn
 import com.example.hamkit.ui.component.material.SegmentedDropdownItem
 import com.example.hamkit.ui.component.material.SegmentedListItem
@@ -131,6 +133,25 @@ fun SettingPagerMaterial(
                                 items = UiMode.entries.map { it.name },
                                 selectedIndex = if (uiState.uiMode == UiMode.Material.value) 1 else 0,
                                 onItemSelected = actions.onSetUiModeIndex
+                            )
+                        }
+                        add {
+                            // 大屏导航形态：自动 / 侧边栏 / 底部导航
+                            SegmentedDropdownItem(
+                                icon = Icons.Rounded.ViewSidebar,
+                                title = stringResource(id = R.string.settings_wide_nav),
+                                summary = stringResource(id = R.string.settings_wide_nav_summary),
+                                items = WideNavStyle.entries.map { style ->
+                                    stringResource(
+                                        when (style) {
+                                            WideNavStyle.Auto -> R.string.wide_nav_auto
+                                            WideNavStyle.Rail -> R.string.wide_nav_rail
+                                            WideNavStyle.BottomBar -> R.string.wide_nav_bottom
+                                        }
+                                    )
+                                },
+                                selectedIndex = WideNavStyle.fromValue(uiState.wideNavStyle).ordinal,
+                                onItemSelected = actions.onSetWideNavStyleIndex
                             )
                         }
                         add {

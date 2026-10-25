@@ -6,6 +6,7 @@ import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
 import com.example.hamkit.radioApp
 import com.example.hamkit.ui.UiMode
+import com.example.hamkit.ui.WideNavStyle
 
 class SettingsRepositoryImpl : SettingsRepository {
 
@@ -56,6 +57,12 @@ class SettingsRepositoryImpl : SettingsRepository {
     override var enableFloatingBottomBarBlur: Boolean
         get() = prefs.getBoolean("enable_floating_bottom_bar_blur", true)
         set(value) = prefs.edit { putBoolean("enable_floating_bottom_bar_blur", value) }
+
+    override var wideNavStyle: String
+        // 默认侧栏：平板/大屏优先使用 NavigationRail（Material 大屏规范），
+        // 想用悬浮胶囊的平板上用户可在设置里显式选择「底部导航」
+        get() = prefs.getString("wide_nav_style", WideNavStyle.Rail.value) ?: WideNavStyle.Rail.value
+        set(value) = prefs.edit { putString("wide_nav_style", value) }
 
     override var pageScale: Float
         get() = prefs.getFloat("page_scale", 1.0f)

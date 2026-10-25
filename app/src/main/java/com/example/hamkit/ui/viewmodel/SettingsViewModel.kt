@@ -18,6 +18,7 @@ import com.example.hamkit.radioApp
 import com.example.hamkit.data.repository.SettingsRepository
 import com.example.hamkit.data.repository.SettingsRepositoryImpl
 import com.example.hamkit.ui.screen.settings.SettingsUiState
+import com.example.hamkit.ui.WideNavStyle
 import com.example.hamkit.ui.theme.ColorMode
 import com.example.hamkit.ui.util.ApkVerifier
 import com.example.hamkit.ui.util.LatestVersionInfo
@@ -48,6 +49,7 @@ class SettingsViewModel(
             val enableBlur = repo.enableBlur
             val enableFloatingBottomBar = repo.enableFloatingBottomBar
             val enableFloatingBottomBarBlur = repo.enableFloatingBottomBarBlur
+            val wideNavStyle = repo.wideNavStyle
             val pageScale = repo.pageScale
             val colorStyle = repo.colorStyle
             val colorSpec = repo.colorSpec
@@ -65,6 +67,7 @@ class SettingsViewModel(
                     enableBlur = enableBlur,
                     enableFloatingBottomBar = enableFloatingBottomBar,
                     enableFloatingBottomBarBlur = enableFloatingBottomBarBlur,
+                    wideNavStyle = wideNavStyle,
                     pageScale = pageScale,
                     colorStyle = colorStyle,
                     colorSpec = colorSpec,
@@ -171,6 +174,13 @@ class SettingsViewModel(
     fun setEnableFloatingBottomBarBlur(enabled: Boolean) {
         repo.enableFloatingBottomBarBlur = enabled
         _uiState.update { it.copy(enableFloatingBottomBarBlur = enabled) }
+    }
+
+    /** 设置大屏导航形态；索引越界时回退为「自动」 */
+    fun setWideNavStyleIndex(index: Int) {
+        val style = WideNavStyle.entries.getOrNull(index) ?: WideNavStyle.Auto
+        repo.wideNavStyle = style.value
+        _uiState.update { it.copy(wideNavStyle = style.value) }
     }
 
     fun setPageScale(scale: Float) {

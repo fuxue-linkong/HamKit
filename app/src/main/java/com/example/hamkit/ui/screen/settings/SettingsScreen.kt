@@ -117,6 +117,7 @@ fun SettingPager(
         onSetUiModeIndex = { index ->
             settingsViewModel.setUiMode(if (index == 0) UiMode.Miuix.value else UiMode.Material.value)
         },
+        onSetWideNavStyleIndex = settingsViewModel::setWideNavStyleIndex,
         onOpenAbout = { navigator.push(Route.About) },
         onOpenPrivacy = { navigator.push(Route.PrivacyPolicy) },
         onUpdateReminderSettings = mainViewModel::updateReminderSettings,

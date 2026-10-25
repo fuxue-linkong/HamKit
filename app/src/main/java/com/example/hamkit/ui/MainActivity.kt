@@ -114,6 +114,7 @@ import com.example.hamkit.ui.theme.LocalColorMode
 import com.example.hamkit.ui.theme.LocalEnableBlur
 import com.example.hamkit.ui.theme.LocalEnableFloatingBottomBar
 import com.example.hamkit.ui.theme.LocalEnableFloatingBottomBarBlur
+import com.example.hamkit.ui.theme.ThemeController
 import com.example.hamkit.ui.util.rememberBlurBackdrop
 import com.example.hamkit.ui.viewmodel.MainActivityViewModel
 import com.example.hamkit.ui.viewmodel.MainPagerConfig
@@ -158,18 +159,28 @@ class MainActivity : ComponentActivity() {
 
             // 首启隐私闸门：同意前不创建业务 ViewModel、不请求权限、不初始化高德 SDK。
             if (!consentGranted) {
-                PrivacyConsentScreen(
-                    onAgree = { aprsPublic ->
-                        PrivacyConsentStore.accept(
-                            context = context,
-                            location = true,
-                            aprsPublic = aprsPublic,
+                // 闸门内也要有主题：隐私页按 UiMode 分发（默认 Miuix），
+                // 且配色应跟随已有的颜色/暗色设置，不能退回 Material 默认紫。
+                // 这里只读本地 UI 偏好（不含个人信息，不触发网络与 SDK），
+                // 首启 prefs 为空 → 走默认 Miuix，与进入主界面后的观感一致。
+                val bootUiMode = remember { ThemeController.getUiMode(context) }
+                val bootAppSettings = remember { ThemeController.getAppSettings(context) }
+                CompositionLocalProvider(LocalUiMode provides bootUiMode) {
+                    HamKitTheme(appSettings = bootAppSettings, uiMode = bootUiMode) {
+                        PrivacyConsentScreen(
+                            onAgree = { aprsPublic ->
+                                PrivacyConsentStore.accept(
+                                    context = context,
+                                    location = true,
+                                    aprsPublic = aprsPublic,
+                                )
+                                AmapPrivacyInitializer.initialize(context)
+                                consentGranted = true
+                            },
+                            onDecline = { (context as? Activity)?.finishAffinity() },
                         )
-                        AmapPrivacyInitializer.initialize(context)
-                        consentGranted = true
-                    },
-                    onDecline = { (context as? Activity)?.finishAffinity() },
-                )
+                    }
+                }
                 return@setContent
             }
 
@@ -424,9 +435,14 @@ fun MainScreen(
     // 大屏适配：按「窗口宽度」而非「屏幕方向」决定导航形态。
     // 600dp 与 Material 大屏规范的 Medium 断点一致：平板竖屏、折叠屏展开、
     // 桌面/分屏窗口变宽时都进侧栏；分屏变窄（<600dp）时自动回到底部导航。
+    // 宽屏下用户可显式选择侧栏 / 底部导航（见 WideNavStyle），避免开关隐式决定。
     val windowWidthDp = LocalConfiguration.current.screenWidthDp
     val useNavigationRail = windowWidthDp >= WIDE_WINDOW_WIDTH_DP &&
-        !(uiMode == UiMode.Miuix && enableFloatingBottomBar)
+        when (WideNavStyle.fromValue(settingsUiState.wideNavStyle)) {
+            WideNavStyle.Rail -> true
+            WideNavStyle.BottomBar -> false
+            WideNavStyle.Auto -> !(uiMode == UiMode.Miuix && enableFloatingBottomBar)
+        }
 
     CompositionLocalProvider(
         LocalMainPagerState provides mainPagerState

@@ -7,6 +7,7 @@ import com.example.hamkit.ui.util.LatestVersionInfo
 import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
 import com.example.hamkit.ui.UiMode
+import com.example.hamkit.ui.WideNavStyle
 
 @Immutable
 data class SettingsUiState(
@@ -21,6 +22,8 @@ data class SettingsUiState(
     val enableBlur: Boolean = true,
     val enableFloatingBottomBar: Boolean = true,
     val enableFloatingBottomBarBlur: Boolean = true,
+    /** 大屏导航形态（auto / rail / bottom），见 [WideNavStyle]；默认侧栏 */
+    val wideNavStyle: String = WideNavStyle.Rail.value,
     val pageScale: Float = 1.0f,
     val customBackgroundUri: String = "",
     // ── 更新检查与下载 ──
@@ -49,6 +52,8 @@ data class SettingsScreenActions(
     val onSetCheckUpdate: (Boolean) -> Unit,
     val onOpenTheme: () -> Unit,
     val onSetUiModeIndex: (Int) -> Unit,
+    /** 大屏导航形态索引：0=自动、1=侧边栏、2=底部导航 */
+    val onSetWideNavStyleIndex: (Int) -> Unit = {},
     val onOpenAbout: () -> Unit,
     val onOpenPrivacy: () -> Unit = {},
     // 业务相关回调

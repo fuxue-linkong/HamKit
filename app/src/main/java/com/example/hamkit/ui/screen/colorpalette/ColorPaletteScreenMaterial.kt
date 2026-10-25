@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -162,267 +163,276 @@ fun ColorPaletteScreenMaterial(
         val navBars = WindowInsets.navigationBars.asPaddingValues()
         val captionBar = WindowInsets.captionBar.asPaddingValues()
 
-        Column(
+        // 大屏适配：主题设置内容限宽居中，与设置主页保持一致的 840dp
+        Box(
             modifier = Modifier
                 .padding(paddingValues)
-                .nestedScroll(scrollBehavior.nestedScrollConnection)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .fillMaxWidth(),
+            contentAlignment = Alignment.TopCenter,
         ) {
-            val isDark = currentColorMode.isDark || currentColorMode.isSystem && isSystemInDarkTheme()
-            ThemePreviewCard(
-                keyColor = currentKeyColor,
-                isDark = isDark,
-                paletteStyle = colorStyle,
-                colorSpec = colorSpec,
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            LazyRow(
-                modifier = Modifier.fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                item {
-                    ColorButtonMaterial(
-                        color = Color.Unspecified,
-                        isSelected = currentKeyColor == 0,
-                        isDark = isDark,
-                        paletteStyle = colorStyle,
-                        colorSpec = colorSpec,
-                        onClick = {
-                            actions.onSetKeyColor(0)
-                        }
-                    )
-                }
-
-                items(keyColorOptions) { color ->
-                    ColorButtonMaterial(
-                        color = Color(color),
-                        isSelected = currentKeyColor == color,
-                        isDark = isDark,
-                        paletteStyle = colorStyle,
-                        colorSpec = colorSpec,
-                        onClick = {
-                            actions.onSetKeyColor(color)
-                        }
-                    )
-                }
-            }
-
             Column(
                 modifier = Modifier
+                    .widthIn(max = 840.dp)
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
+                    .nestedScroll(scrollBehavior.nestedScrollConnection)
+                    .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                val options = listOf(
-                    listOf(ColorMode.SYSTEM) to stringResource(R.string.settings_theme_mode_system),
-                    listOf(ColorMode.LIGHT) to stringResource(R.string.settings_theme_mode_light),
-                    listOf(ColorMode.DARK) to stringResource(R.string.settings_theme_mode_dark),
-                    listOf(ColorMode.DARK_AMOLED) to stringResource(R.string.settings_theme_mode_dark)
+                val isDark = currentColorMode.isDark || currentColorMode.isSystem && isSystemInDarkTheme()
+                ThemePreviewCard(
+                    keyColor = currentKeyColor,
+                    isDark = isDark,
+                    paletteStyle = colorStyle,
+                    colorSpec = colorSpec,
                 )
 
-                options.chunked(4).forEach { rowOptions ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
-                    ) {
-                        rowOptions.forEachIndexed { index, (modes, label) ->
-                            ToggleButton(
-                                checked = currentColorMode in modes,
-                                onCheckedChange = {
-                                    if (it) {
-                                        haptic.performHapticFeedback(HapticFeedbackType.VirtualKey)
-                                        actions.onSetColorMode(modes.first())
-                                    }
-                                },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .semantics { role = Role.RadioButton },
-                                shapes = when (index) {
-                                    0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
-                                    rowOptions.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
-                                    else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
-                                },
-                            ) {
-                                Icon(
-                                    imageVector = when (modes.first()) {
-                                        ColorMode.SYSTEM -> Icons.Filled.Brightness4
-                                        ColorMode.LIGHT -> Icons.Filled.Brightness7
-                                        ColorMode.DARK -> Icons.Filled.Brightness3
-                                        ColorMode.DARK_AMOLED -> Icons.Filled.Brightness1
-                                        else -> Icons.Filled.Brightness4
-                                    },
-                                    contentDescription = label
-                                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    item {
+                        ColorButtonMaterial(
+                            color = Color.Unspecified,
+                            isSelected = currentKeyColor == 0,
+                            isDark = isDark,
+                            paletteStyle = colorStyle,
+                            colorSpec = colorSpec,
+                            onClick = {
+                                actions.onSetKeyColor(0)
                             }
-                        }
+                        )
+                    }
+
+                    items(keyColorOptions) { color ->
+                        ColorButtonMaterial(
+                            color = Color(color),
+                            isSelected = currentKeyColor == color,
+                            isDark = isDark,
+                            paletteStyle = colorStyle,
+                            colorSpec = colorSpec,
+                            onClick = {
+                                actions.onSetKeyColor(color)
+                            }
+                        )
                     }
                 }
 
-                SegmentedColumn(
-                    modifier = Modifier.padding(top = 4.dp),
-                    content = listOf(
-                        {
-                            val styles = PaletteStyle.entries
-                            SegmentedDropdownItem(
-                                icon = Icons.Rounded.Style,
-                                title = stringResource(R.string.settings_color_style),
-                                items = styles.map { it.name },
-                                selectedIndex = styles.indexOf(colorStyle),
-                                onItemSelected = { index ->
-                                    actions.onSetColorStyle(styles[index].name)
-                                }
-                            )
-                        },
-                        {
-                            val specs = ColorSpec.SpecVersion.entries
-                            SegmentedDropdownItem(
-                                icon = Icons.Rounded.DesignServices,
-                                title = stringResource(R.string.settings_color_spec),
-                                items = specs.map { it.name },
-                                selectedIndex = specs.indexOf(colorSpec).coerceAtLeast(0),
-                                onItemSelected = { index ->
-                                    actions.onSetColorSpec(specs[index].name)
-                                }
-                            )
-                        }
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val options = listOf(
+                        listOf(ColorMode.SYSTEM) to stringResource(R.string.settings_theme_mode_system),
+                        listOf(ColorMode.LIGHT) to stringResource(R.string.settings_theme_mode_light),
+                        listOf(ColorMode.DARK) to stringResource(R.string.settings_theme_mode_dark),
+                        listOf(ColorMode.DARK_AMOLED) to stringResource(R.string.settings_theme_mode_dark)
                     )
-                )
 
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    options.chunked(4).forEach { rowOptions ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+                        ) {
+                            rowOptions.forEachIndexed { index, (modes, label) ->
+                                ToggleButton(
+                                    checked = currentColorMode in modes,
+                                    onCheckedChange = {
+                                        if (it) {
+                                            haptic.performHapticFeedback(HapticFeedbackType.VirtualKey)
+                                            actions.onSetColorMode(modes.first())
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .semantics { role = Role.RadioButton },
+                                    shapes = when (index) {
+                                        0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                        rowOptions.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                        else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                                    },
+                                ) {
+                                    Icon(
+                                        imageVector = when (modes.first()) {
+                                            ColorMode.SYSTEM -> Icons.Filled.Brightness4
+                                            ColorMode.LIGHT -> Icons.Filled.Brightness7
+                                            ColorMode.DARK -> Icons.Filled.Brightness3
+                                            ColorMode.DARK_AMOLED -> Icons.Filled.Brightness1
+                                            else -> Icons.Filled.Brightness4
+                                        },
+                                        contentDescription = label
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     SegmentedColumn(
                         modifier = Modifier.padding(top = 4.dp),
                         content = listOf(
                             {
-                                SegmentedSwitchItem(
-                                    icon = Icons.AutoMirrored.Rounded.MenuOpen,
-                                    title = stringResource(id = R.string.settings_enable_predictive_back),
-                                    summary = stringResource(id = R.string.settings_enable_predictive_back_summary),
-                                    checked = uiState.enablePredictiveBack,
-                                    onCheckedChange = actions.onSetEnablePredictiveBack
+                                val styles = PaletteStyle.entries
+                                SegmentedDropdownItem(
+                                    icon = Icons.Rounded.Style,
+                                    title = stringResource(R.string.settings_color_style),
+                                    items = styles.map { it.name },
+                                    selectedIndex = styles.indexOf(colorStyle),
+                                    onItemSelected = { index ->
+                                        actions.onSetColorStyle(styles[index].name)
+                                    }
+                                )
+                            },
+                            {
+                                val specs = ColorSpec.SpecVersion.entries
+                                SegmentedDropdownItem(
+                                    icon = Icons.Rounded.DesignServices,
+                                    title = stringResource(R.string.settings_color_spec),
+                                    items = specs.map { it.name },
+                                    selectedIndex = specs.indexOf(colorSpec).coerceAtLeast(0),
+                                    onItemSelected = { index ->
+                                        actions.onSetColorSpec(specs[index].name)
+                                    }
                                 )
                             }
                         )
                     )
-                }
 
-                TonalCard(modifier = Modifier.padding(top = 4.dp)) {
-                    var sliderValue by remember(uiState.pageScale) { mutableFloatStateOf(uiState.pageScale) }
-
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                Icons.Rounded.AspectRatio,
-                                contentDescription = stringResource(id = R.string.settings_page_scale),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                        SegmentedColumn(
+                            modifier = Modifier.padding(top = 4.dp),
+                            content = listOf(
+                                {
+                                    SegmentedSwitchItem(
+                                        icon = Icons.AutoMirrored.Rounded.MenuOpen,
+                                        title = stringResource(id = R.string.settings_enable_predictive_back),
+                                        summary = stringResource(id = R.string.settings_enable_predictive_back_summary),
+                                        checked = uiState.enablePredictiveBack,
+                                        onCheckedChange = actions.onSetEnablePredictiveBack
+                                    )
+                                }
                             )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column(
-                                modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    TonalCard(modifier = Modifier.padding(top = 4.dp)) {
+                        var sliderValue by remember(uiState.pageScale) { mutableFloatStateOf(uiState.pageScale) }
+
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    text = stringResource(R.string.settings_page_scale),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSurface
+                                Icon(
+                                    Icons.Rounded.AspectRatio,
+                                    contentDescription = stringResource(id = R.string.settings_page_scale),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.settings_page_scale),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = stringResource(id = R.string.settings_page_scale_summary),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.outline
+                                    )
+                                }
                                 Text(
-                                    text = stringResource(id = R.string.settings_page_scale_summary),
+                                    text = "${(sliderValue * 100).toInt()}%",
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.outline
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            Text(
-                                text = "${(sliderValue * 100).toInt()}%",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+
+                            Slider(
+                                value = sliderValue,
+                                onValueChange = { sliderValue = it },
+                                onValueChangeFinished = { actions.onSetPageScale(sliderValue) },
+                                valueRange = 0.8f..1.1f,
+                                modifier = Modifier.fillMaxWidth()
                             )
                         }
-
-                        Slider(
-                            value = sliderValue,
-                            onValueChange = { sliderValue = it },
-                            onValueChangeFinished = { actions.onSetPageScale(sliderValue) },
-                            valueRange = 0.8f..1.1f,
-                            modifier = Modifier.fillMaxWidth()
-                        )
                     }
                 }
-            }
 
-            SegmentedColumn(
-                modifier = Modifier.padding(top = 4.dp),
-                content = listOf(
-                    {
-                        SegmentedListItem(
-                            onClick = {
-                                // 经 actions 打开图库：ColorPaletteScreen 会先登记
-                                // in-flight 状态，吞掉图库期间派发回来的返回事件
-                                actions.onOpenImagePicker()
-                            },
-                            headlineContent = {
-                                Text(
-                                    stringResource(id = R.string.settings_custom_background)
-                                )
-                            },
-                            supportingContent = {
-                                Text(
-                                    if (uiState.customBackgroundUri.isNotEmpty()) {
-                                        stringResource(id = R.string.settings_custom_background_set)
-                                    } else {
-                                        stringResource(id = R.string.settings_custom_background_summary)
-                                    }
-                                )
-                            },
-                            leadingContent = {
-                                Icon(
-                                    imageVector = Icons.Rounded.AspectRatio,
-                                    contentDescription = stringResource(id = R.string.settings_custom_background)
-                                )
-                            },
-                        )
-                    }
-                )
-            )
-
-            if (uiState.customBackgroundUri.isNotEmpty()) {
                 SegmentedColumn(
                     modifier = Modifier.padding(top = 4.dp),
                     content = listOf(
                         {
                             SegmentedListItem(
-                                onClick = actions.onClearCustomBackground,
+                                onClick = {
+                                    // 经 actions 打开图库：ColorPaletteScreen 会先登记
+                                    // in-flight 状态，吞掉图库期间派发回来的返回事件
+                                    actions.onOpenImagePicker()
+                                },
                                 headlineContent = {
                                     Text(
-                                        stringResource(id = R.string.settings_clear_background)
+                                        stringResource(id = R.string.settings_custom_background)
                                     )
                                 },
                                 supportingContent = {
                                     Text(
-                                        stringResource(id = R.string.settings_clear_background_summary)
+                                        if (uiState.customBackgroundUri.isNotEmpty()) {
+                                            stringResource(id = R.string.settings_custom_background_set)
+                                        } else {
+                                            stringResource(id = R.string.settings_custom_background_summary)
+                                        }
                                     )
                                 },
                                 leadingContent = {
                                     Icon(
                                         imageVector = Icons.Rounded.AspectRatio,
-                                        contentDescription = stringResource(id = R.string.settings_clear_background)
+                                        contentDescription = stringResource(id = R.string.settings_custom_background)
                                     )
                                 },
                             )
                         }
                     )
                 )
-            }
 
-            Spacer(modifier = Modifier.height(16.dp + navBars.calculateBottomPadding() + captionBar.calculateBottomPadding()))
+                if (uiState.customBackgroundUri.isNotEmpty()) {
+                    SegmentedColumn(
+                        modifier = Modifier.padding(top = 4.dp),
+                        content = listOf(
+                            {
+                                SegmentedListItem(
+                                    onClick = actions.onClearCustomBackground,
+                                    headlineContent = {
+                                        Text(
+                                            stringResource(id = R.string.settings_clear_background)
+                                        )
+                                    },
+                                    supportingContent = {
+                                        Text(
+                                            stringResource(id = R.string.settings_clear_background_summary)
+                                        )
+                                    },
+                                    leadingContent = {
+                                        Icon(
+                                            imageVector = Icons.Rounded.AspectRatio,
+                                            contentDescription = stringResource(id = R.string.settings_clear_background)
+                                        )
+                                    },
+                                )
+                            }
+                        )
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp + navBars.calculateBottomPadding() + captionBar.calculateBottomPadding()))
+            }
         }
     }
 }

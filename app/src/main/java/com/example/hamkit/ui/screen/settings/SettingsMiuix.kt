@@ -25,6 +25,7 @@ import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Update
 import androidx.compose.material.icons.rounded.Upload
+import androidx.compose.material.icons.rounded.ViewSidebar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -38,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import com.example.hamkit.R
 import com.example.hamkit.data.reminder.RepeatMode
 import com.example.hamkit.ui.UiMode
+import com.example.hamkit.ui.WideNavStyle
 import com.example.hamkit.ui.component.dialog.rememberLoadingDialog
 import com.example.hamkit.ui.component.miuix.SendLogDialog
 import com.example.hamkit.ui.theme.LocalEnableBlur
@@ -156,6 +158,30 @@ fun SettingPagerMiuix(
                                 },
                                 selectedIndex = if (uiState.uiMode == UiMode.Material.value) 1 else 0,
                                 onSelectedIndexChange = actions.onSetUiModeIndex
+                            )
+                            // 大屏导航形态：自动 / 侧边栏 / 底部导航
+                            OverlayDropdownPreference(
+                                title = stringResource(id = R.string.settings_wide_nav),
+                                summary = stringResource(id = R.string.settings_wide_nav_summary),
+                                items = WideNavStyle.entries.map { style ->
+                                    stringResource(
+                                        when (style) {
+                                            WideNavStyle.Auto -> R.string.wide_nav_auto
+                                            WideNavStyle.Rail -> R.string.wide_nav_rail
+                                            WideNavStyle.BottomBar -> R.string.wide_nav_bottom
+                                        }
+                                    )
+                                },
+                                startAction = {
+                                    Icon(
+                                        Icons.Rounded.ViewSidebar,
+                                        modifier = Modifier.padding(end = 6.dp),
+                                        contentDescription = stringResource(id = R.string.settings_wide_nav),
+                                        tint = colorScheme.onBackground
+                                    )
+                                },
+                                selectedIndex = WideNavStyle.fromValue(uiState.wideNavStyle).ordinal,
+                                onSelectedIndexChange = actions.onSetWideNavStyleIndex
                             )
                             ArrowPreference(
                                 title = stringResource(id = R.string.settings_theme),

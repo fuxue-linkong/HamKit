@@ -1,8 +1,9 @@
-﻿package com.example.hamkit.ui.viewmodel
+package com.example.hamkit.ui.viewmodel
 
 import com.example.hamkit.HamKitApplication
 import com.example.hamkit.data.repository.SettingsRepository
 import com.example.hamkit.ui.UiMode
+import com.example.hamkit.ui.WideNavStyle
 import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
 import kotlinx.coroutines.Dispatchers
@@ -39,6 +40,7 @@ class FakeSettingsRepository : SettingsRepository {
     override var enableBlur: Boolean = true
     override var enableFloatingBottomBar: Boolean = true
     override var enableFloatingBottomBarBlur: Boolean = true
+    override var wideNavStyle: String = WideNavStyle.Auto.value
     override var pageScale: Float = 1.0f
     override var customBackgroundUri: String = ""
 }
