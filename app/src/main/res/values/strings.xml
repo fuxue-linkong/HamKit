@@ -471,4 +471,13 @@
     <string name="ai_settings_tools">Tool permissions</string>
     <string name="ai_settings_confirm">Confirm before side effects</string>
     <string name="ai_settings_fetch_models">Fetch model list</string>
+    <string name="ai_sample_1">How are CQ zones divided?</string>
+    <string name="ai_sample_2">What do 73 and RR73 mean in FT8?</string>
+    <string name="ai_sample_3">Which mode does ISS SSTV usually use?</string>
+    <string name="ai_sample_4">When does ISS pass over me?</string>
+    <string name="ai_settings_save">Save settings</string>
+    <string name="ai_settings_test">Test connection</string>
+    <string name="ai_settings_clear_history">Clear all conversations</string>
+    <string name="ai_settings_clear">Clear</string>
+    <string name="ai_settings_save_key">Save key</string>
 </resources>

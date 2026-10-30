@@ -114,4 +114,13 @@
     <string name="ai_settings_tools">工具权限</string>
     <string name="ai_settings_confirm">执行副作用前确认</string>
     <string name="ai_settings_fetch_models">获取模型列表</string>
+    <string name="ai_sample_1">业余无线电 CQ 分区怎么划分？</string>
+    <string name="ai_sample_2">FT8 的 73 和 RR73 是什么意思？</string>
+    <string name="ai_sample_3">ISS 的 SSTV 活动一般用什么模式？</string>
+    <string name="ai_sample_4">ISS 什么时候过境？</string>
+    <string name="ai_settings_save">保存设置</string>
+    <string name="ai_settings_test">测试连接</string>
+    <string name="ai_settings_clear_history">清除所有对话</string>
+    <string name="ai_settings_clear">清除</string>
+    <string name="ai_settings_save_key">保存 Key</string>
 </resources>

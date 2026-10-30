@@ -194,9 +194,9 @@ fun AiSettingsScreenMiuix(onBack: () -> Unit = {}) {
                             enabled = keyInput.isNotBlank(),
                             colors = ButtonDefaults.buttonColorsPrimary(),
                         ) {
-                            Text("保存 Key")
+                            Text(stringResource(R.string.ai_settings_save_key))
                         }
-                        TextButton(text = "清除", onClick = viewModel::clearKey)
+                        TextButton(text = stringResource(R.string.ai_settings_clear), onClick = viewModel::clearKey)
                     }
                     Spacer(Modifier.height(6.dp))
                     Text(
@@ -224,7 +224,7 @@ fun AiSettingsScreenMiuix(onBack: () -> Unit = {}) {
                         onCheckedChange = viewModel::setSaveHistory,
                     )
                     ArrowPreference(
-                        title = "清除所有对话",
+                        title = stringResource(R.string.ai_settings_clear_history),
                         summary = "删除本机加密历史，不可恢复。",
                         onClick = viewModel::clearHistory,
                     )
@@ -301,14 +301,14 @@ fun AiSettingsScreenMiuix(onBack: () -> Unit = {}) {
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColorsPrimary(),
                 ) {
-                    Text("保存设置")
+                    Text(stringResource(R.string.ai_settings_save))
                 }
                 Button(
                     onClick = viewModel::testConnection,
                     modifier = Modifier.weight(1f),
                     enabled = !state.testing,
                 ) {
-                    Text(if (state.testing) "测试中…" else "测试连接")
+                    Text(if (state.testing) "测试中…" else stringResource(R.string.ai_settings_test))
                 }
             }
 
