@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -30,6 +31,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
@@ -39,17 +41,23 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
 import com.example.hamkit.data.ai.AiAttachment
 import com.example.hamkit.data.ai.AiAttachmentStatus
 import com.example.hamkit.data.ai.AiRole
+import com.example.hamkit.data.ai.AiSessionSummary
 import com.example.hamkit.data.ai.tool.AiCard
 import com.example.hamkit.data.ai.tool.SatelliteCardData
 import com.example.hamkit.data.ai.tool.ZoneCardData
@@ -68,9 +76,11 @@ import com.example.hamkit.ui.viewmodel.AiChatUiState
 import com.example.hamkit.ui.viewmodel.AiToolUi
 import com.example.hamkit.ui.viewmodel.AiToolUiState
 import com.example.hamkit.ui.viewmodel.SstvViewModel
-import java.time.Instant
 import java.time.ZoneId
+import kotlinx.coroutines.launch
+import java.io.File
 import java.time.format.DateTimeFormatter
+import java.time.Instant
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
@@ -104,6 +114,8 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
     val viewModel = appViewModel<AiAssistantViewModel>()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val navigator = LocalNavigator.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val mainViewModel = LocalMainViewModel.current
     val facade = remember(mainViewModel, navigator) { AiAppFacadeImpl(mainViewModel, navigator) }
     val sstvViewModel = appViewModel<SstvViewModel>()
@@ -118,6 +130,21 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
     val filePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments(),
     ) { uris -> if (uris.isNotEmpty()) viewModel.addAttachments(uris) }
+    var showHistory by remember { mutableStateOf(false) }
+    var pendingExport by remember { mutableStateOf<String?>(null) }
+    val exportPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/markdown"),
+    ) { uri ->
+        val content = pendingExport
+        if (uri != null && content != null) {
+            runCatching {
+                context.contentResolver.openOutputStream(uri)?.use { out ->
+                    out.write(content.toByteArray(Charsets.UTF_8))
+                }
+            }
+        }
+        pendingExport = null
+    }
     val listState = rememberLazyListState()
     // 底部导航是 pager 外层 Scaffold 的 bottomBar，AI 页必须自己让出这段高度；
     // 键盘弹出时取两者较大值，避免输入框被导航栏或 IME 遮挡。
@@ -134,6 +161,14 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
             TopAppBar(
                 title = "AI 助手",
                 actions = {
+                    Text(
+                        "历史",
+                        style = MiuixTheme.textStyles.body1,
+                        color = colorScheme.primary,
+                        modifier = Modifier
+                            .clickable { viewModel.refreshSessions(); showHistory = true }
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                    )
                     Text(
                         "新对话",
                         style = MiuixTheme.textStyles.body1,
@@ -199,6 +234,21 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
 
             if (state.messages.isEmpty()) Spacer(Modifier.weight(1f))
 
+            if (showHistory) {
+                AiHistoryDialogMiuix(
+                    sessions = state.sessions,
+                    onDismiss = { showHistory = false },
+                    onLoad = { id -> viewModel.loadSession(id); showHistory = false },
+                    onDelete = viewModel::deleteSession,
+                    onExport = { id ->
+                        scope.launch {
+                            val markdown = viewModel.exportMarkdown(id) ?: return@launch
+                            pendingExport = markdown
+                            exportPicker.launch("hamkit-ai.md")
+                        }
+                    },
+                )
+            }
             ComposerMiuix(
                 modifier = Modifier.padding(bottom = bottomInset),
                 input = state.input,
@@ -393,10 +443,7 @@ private fun MessageItemMiuix(message: AiChatMessageUi) {
                 when (card) {
                     is AiCard.Satellite -> SatelliteCardMiuix(card.data)
                     is AiCard.Zone -> ZoneCardMiuix(card.data)
-                    is AiCard.Sstv -> InfoCardMiuix(
-                        title = "SSTV 接收已开始",
-                        detail = card.mode?.let { "模式：$it" } ?: "模式：VIS 自动识别",
-                    )
+                    is AiCard.Sstv -> SstvCardMiuix(card.mode, card.imagePath)
                     is AiCard.Reminder -> InfoCardMiuix(
                         title = "过境提醒已创建",
                         detail = card.nextAos?.let { "${card.satellite} · 下次 AOS ${formatAiTime(it)}" }
@@ -761,6 +808,100 @@ private fun SatelliteCardMiuix(data: SatelliteCardData) {
                 TextButton(
                     text = "雷达图",
                     onClick = { navigator.push(Route.SatelliteRadar(data.catalogNumber)) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AiHistoryDialogMiuix(
+    sessions: List<AiSessionSummary>,
+    onDismiss: () -> Unit,
+    onLoad: (String) -> Unit,
+    onDelete: (String) -> Unit,
+    onExport: (String) -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 460.dp)
+                .background(colorScheme.surface, RoundedCornerShape(20.dp))
+                .padding(16.dp),
+        ) {
+            Text("对话历史", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(8.dp))
+            if (sessions.isEmpty()) {
+                Text(
+                    "还没有历史会话",
+                    fontSize = 12.sp,
+                    color = colorScheme.onSurfaceVariantSummary,
+                )
+            } else {
+                LazyColumn(Modifier.weight(1f, fill = false)) {
+                    items(sessions, key = { it.id }) { session ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onLoad(session.id) }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(session.title, fontSize = 13.sp, maxLines = 1)
+                                Text(
+                                    "${formatAiTime(Instant.ofEpochMilli(session.updatedAt))} · " +
+                                        "${session.messageCount} 条",
+                                    fontSize = 10.sp,
+                                    color = colorScheme.onSurfaceVariantSummary,
+                                )
+                            }
+                            Text(
+                                "导出",
+                                fontSize = 11.sp,
+                                color = colorScheme.primary,
+                                modifier = Modifier
+                                    .clickable { onExport(session.id) }
+                                    .padding(6.dp),
+                            )
+                            Text(
+                                "删除",
+                                fontSize = 11.sp,
+                                color = colorScheme.error,
+                                modifier = Modifier
+                                    .clickable { onDelete(session.id) }
+                                    .padding(6.dp),
+                            )
+                        }
+                    }
+                }
+            }
+            TextButton(text = "关闭", onClick = onDismiss)
+        }
+    }
+}
+
+@Composable
+private fun SstvCardMiuix(mode: String?, imagePath: String?) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Text("SSTV 图像", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                mode?.let { "模式：$it" } ?: "模式：VIS 自动识别",
+                fontSize = 10.sp,
+                color = colorScheme.onSurfaceVariantSummary,
+            )
+            if (imagePath != null && File(imagePath).isFile) {
+                Spacer(Modifier.height(8.dp))
+                AsyncImage(
+                    model = File(imagePath),
+                    contentDescription = "SSTV 解码图像",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(150.dp)
+                        .clip(RoundedCornerShape(10.dp)),
                 )
             }
         }

@@ -3,6 +3,9 @@ package com.example.hamkit.ui.screen.ai
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -18,6 +21,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -28,6 +32,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -47,19 +52,28 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import java.io.File
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
 import com.example.hamkit.data.ai.AiAttachment
 import com.example.hamkit.data.ai.AiAttachmentStatus
 import com.example.hamkit.data.ai.AiRole
+import com.example.hamkit.data.ai.AiSessionSummary
 import com.example.hamkit.data.ai.tool.AiCard
 import com.example.hamkit.data.ai.tool.SatelliteCardData
 import com.example.hamkit.data.ai.tool.ZoneCardData
@@ -97,6 +111,23 @@ fun AiAssistantScreenMaterial(bottomInnerPadding: Dp = 0.dp) {
     val filePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments(),
     ) { uris -> if (uris.isNotEmpty()) viewModel.addAttachments(uris) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var showHistory by remember { mutableStateOf(false) }
+    var pendingExport by remember { mutableStateOf<String?>(null) }
+    val exportPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/markdown"),
+    ) { uri ->
+        val content = pendingExport
+        if (uri != null && content != null) {
+            runCatching {
+                context.contentResolver.openOutputStream(uri)?.use { out ->
+                    out.write(content.toByteArray(Charsets.UTF_8))
+                }
+            }
+        }
+        pendingExport = null
+    }
     val listState = rememberLazyListState()
     // 与 Miuix 版一致：让出底部导航高度，键盘弹出时取 ime 与导航栏的较大值
     val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
@@ -111,6 +142,9 @@ fun AiAssistantScreenMaterial(bottomInnerPadding: Dp = 0.dp) {
             TopAppBar(
                 title = { Text("AI 助手", fontWeight = FontWeight.SemiBold) },
                 actions = {
+                    TextButton(onClick = { viewModel.refreshSessions(); showHistory = true }) {
+                        Text("历史")
+                    }
                     TextButton(onClick = viewModel::newSession) { Text("新对话") }
                     TextButton(onClick = { navigator.push(Route.AiSettings) }) { Text("设置") }
                 },
@@ -154,6 +188,21 @@ fun AiAssistantScreenMaterial(bottomInnerPadding: Dp = 0.dp) {
                 }
             }
 
+            if (showHistory) {
+                AiHistoryDialogMaterial(
+                    sessions = state.sessions,
+                    onDismiss = { showHistory = false },
+                    onLoad = { id -> viewModel.loadSession(id); showHistory = false },
+                    onDelete = viewModel::deleteSession,
+                    onExport = { id ->
+                        scope.launch {
+                            val markdown = viewModel.exportMarkdown(id) ?: return@launch
+                            pendingExport = markdown
+                            exportPicker.launch("hamkit-ai.md")
+                        }
+                    },
+                )
+            }
             ComposerMaterial(
                 modifier = Modifier.padding(bottom = bottomInset),
                 input = state.input,
@@ -361,10 +410,7 @@ private fun MessageItemMaterial(message: AiChatMessageUi) {
                 when (card) {
                     is AiCard.Satellite -> SatelliteCardMaterial(card.data)
                     is AiCard.Zone -> ZoneCardMaterial(card.data)
-                    is AiCard.Sstv -> InfoCardMaterial(
-                        title = "SSTV 接收已开始",
-                        detail = card.mode?.let { "模式：$it" } ?: "模式：VIS 自动识别",
-                    )
+                    is AiCard.Sstv -> SstvCardMaterial(card.mode, card.imagePath)
                     is AiCard.Reminder -> InfoCardMaterial(
                         title = "过境提醒已创建",
                         detail = card.nextAos?.let { "${card.satellite} · 下次 AOS ${formatAiTimeMaterial(it)}" }
@@ -745,6 +791,83 @@ private fun SatelliteCardMaterial(data: SatelliteCardData) {
                 TextButton(onClick = { navigator.push(Route.SatelliteRadar(data.catalogNumber)) }) {
                     Text("雷达图")
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AiHistoryDialogMaterial(
+    sessions: List<AiSessionSummary>,
+    onDismiss: () -> Unit,
+    onLoad: (String) -> Unit,
+    onDelete: (String) -> Unit,
+    onExport: (String) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("对话历史") },
+        text = {
+            if (sessions.isEmpty()) {
+                Text("还没有历史会话")
+            } else {
+                LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                    items(sessions, key = { it.id }) { session ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onLoad(session.id) }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(session.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+                                Text(
+                                    "${formatAiTimeMaterial(Instant.ofEpochMilli(session.updatedAt))} · " +
+                                        "${session.messageCount} 条",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            TextButton(onClick = { onExport(session.id) }) { Text("导出") }
+                            TextButton(onClick = { onDelete(session.id) }) { Text("删除") }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("关闭") }
+        },
+    )
+}
+
+@Composable
+private fun SstvCardMaterial(mode: String?, imagePath: String?) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Text("SSTV 图像", style = MaterialTheme.typography.titleSmall)
+            Text(
+                mode?.let { "模式：$it" } ?: "模式：VIS 自动识别",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (imagePath != null && File(imagePath).isFile) {
+                Spacer(Modifier.height(8.dp))
+                AsyncImage(
+                    model = File(imagePath),
+                    contentDescription = "SSTV 解码图像",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(150.dp)
+                        .clip(MaterialTheme.shapes.medium),
+                )
             }
         }
     }

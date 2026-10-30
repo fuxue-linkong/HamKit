@@ -109,7 +109,7 @@ data class ToolOutcome(
 sealed interface AiCard {
     data class Satellite(val data: SatelliteCardData) : AiCard
     data class Zone(val data: ZoneCardData) : AiCard
-    data class Sstv(val mode: String?) : AiCard
+    data class Sstv(val mode: String?, val imagePath: String? = null) : AiCard
     data class Reminder(val satellite: String, val nextAos: Instant?) : AiCard
     data class Error(val message: String) : AiCard
 }
