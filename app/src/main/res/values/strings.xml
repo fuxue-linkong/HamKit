@@ -480,4 +480,16 @@
     <string name="ai_settings_clear_history">Clear all conversations</string>
     <string name="ai_settings_clear">Clear</string>
     <string name="ai_settings_save_key">Save key</string>
+    <string name="ai_err_no_key">No API key configured. Open AI settings to add one.</string>
+    <string name="ai_err_parsing">Attachments are still being parsed, please wait.</string>
+    <string name="ai_err_not_ready">AI page is not ready yet, please retry.</string>
+    <string name="ai_err_key_read">Failed to read API key, please save it again.</string>
+    <string name="ai_err_auth">API key invalid or unauthorized (HTTP %1$s).</string>
+    <string name="ai_err_rate">Too many requests, please retry later.</string>
+    <string name="ai_err_invalid">Request rejected by provider: %1$s</string>
+    <string name="ai_err_server">Provider unavailable: %1$s</string>
+    <string name="ai_err_network">Network unavailable: %1$s</string>
+    <string name="ai_err_timeout">Request timed out, check your network and retry.</string>
+    <string name="ai_err_parse">Failed to parse response: %1$s</string>
+    <string name="ai_err_empty">Provider returned no text (stop reason: %1$s). Check the model, protocol and base URL.</string>
 </resources>
