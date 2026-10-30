@@ -22,6 +22,7 @@
 - **AI 助手（P1）**（底部导航第 3 项；OpenAI Chat Completions / Anthropic Messages / Gemini 三协议流式对话；自带 API Key，Key 与对话历史 Android Keystore AES-GCM 加密；支持内网 http / 自签证书）
   - **工具调用**：双区定位、卫星过境/实时追踪/转发器/AMSAT、搜索卫星、天气/UTC、摩斯编码、页面跳转、开始 SSTV 接收、过境提醒
   - 对话内嵌**卫星详情卡**（实时数值、过境时间、转发器）与工具执行进度条
+  - 回答支持 **Markdown 渲染**（标题 / 列表 / 代码块 / 引用 / 链接），设置页可**自动获取模型列表**
 
 ### 短期计划
 

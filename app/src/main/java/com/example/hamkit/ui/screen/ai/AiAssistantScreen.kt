@@ -46,6 +46,8 @@ import com.example.hamkit.data.ai.AiRole
 import com.example.hamkit.data.ai.tool.AiCard
 import com.example.hamkit.data.ai.tool.SatelliteCardData
 import com.example.hamkit.data.ai.tool.ZoneCardData
+import com.example.hamkit.ui.component.markdown.MarkdownPalette
+import com.example.hamkit.ui.component.markdown.MarkdownText
 import com.example.hamkit.ui.LocalMainViewModel
 import com.example.hamkit.ui.navigation3.LocalNavigator
 import com.example.hamkit.ui.LocalUiMode
@@ -323,16 +325,30 @@ private fun MessageItemMiuix(message: AiChatMessageUi) {
                 }
             }
             Spacer(Modifier.height(6.dp))
-            Text(
-                message.text.ifBlank { if (message.isStreaming) "…" else "（无文本输出）" },
-                fontSize = 14.sp,
-                lineHeight = 22.sp,
-                color = if (message.text.isBlank() && !message.isStreaming) {
-                    colorScheme.onSurfaceVariantSummary
-                } else {
-                    colorScheme.onSurface
-                },
-            )
+            if (!message.isStreaming && message.text.isNotBlank()) {
+                // 生成完成后用 Compose 原生 Markdown 渲染（流式阶段保持纯文本，避免频繁重排）
+                MarkdownText(
+                    markdown = message.text,
+                    colors = MarkdownPalette(
+                        text = colorScheme.onSurface,
+                        secondary = colorScheme.onSurfaceVariantSummary,
+                        primary = colorScheme.primary,
+                        codeBackground = colorScheme.surfaceVariant,
+                        divider = colorScheme.onSurface.copy(alpha = 0.12f),
+                    ),
+                )
+            } else {
+                Text(
+                    message.text.ifBlank { if (message.isStreaming) "…" else "（无文本输出）" },
+                    fontSize = 14.sp,
+                    lineHeight = 22.sp,
+                    color = if (message.text.isBlank() && !message.isStreaming) {
+                        colorScheme.onSurfaceVariantSummary
+                    } else {
+                        colorScheme.onSurface
+                    },
+                )
+            }
             message.error?.let { error ->
                 Spacer(Modifier.height(4.dp))
                 Text(error, fontSize = 11.sp, color = colorScheme.error)
