@@ -378,7 +378,7 @@ private fun ResultTextMaterial(state: AiSettingsUiState) {
     }
     state.probe?.toolsSupported?.let { supported ->
         Text(
-            if (supported) "工具调用：可用" else "工具调用：该模型不支持（只能问答）",
+            if (supported) stringResource(R.string.ai_settings_tool_ok) else stringResource(R.string.ai_settings_tool_unsupported),
             style = MaterialTheme.typography.bodySmall,
             color = if (supported) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -386,9 +386,9 @@ private fun ResultTextMaterial(state: AiSettingsUiState) {
     state.probe?.let { probe ->
         Text(
             if (probe.ok) {
-                "连接成功，首包延迟 ${probe.latencyMs} ms"
+                stringResource(R.string.ai_settings_probe_ok, probe.latencyMs.toInt())
             } else {
-                "连接失败：${probe.error?.message ?: "未知错误"}"
+                stringResource(R.string.ai_settings_probe_fail, probe.error?.message ?: "?")
             },
             style = MaterialTheme.typography.bodySmall,
             color = if (probe.ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,

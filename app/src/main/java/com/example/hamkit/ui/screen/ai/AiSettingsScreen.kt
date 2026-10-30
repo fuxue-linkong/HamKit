@@ -425,7 +425,7 @@ private fun ProbeResultMiuix(state: com.example.hamkit.ui.viewmodel.AiSettingsUi
     }
     probe?.toolsSupported?.let { supported ->
         Text(
-            if (supported) "工具调用：可用" else "工具调用：该模型不支持（只能问答）",
+            if (supported) stringResource(R.string.ai_settings_tool_ok) else stringResource(R.string.ai_settings_tool_unsupported),
             fontSize = 11.sp,
             color = if (supported) colorScheme.primary else colorScheme.onSurfaceVariantSummary,
         )
@@ -433,9 +433,9 @@ private fun ProbeResultMiuix(state: com.example.hamkit.ui.viewmodel.AiSettingsUi
     if (probe != null) {
         Text(
             if (probe.ok) {
-                "连接成功，首包延迟 ${probe.latencyMs} ms"
+                stringResource(R.string.ai_settings_probe_ok, probe.latencyMs.toInt())
             } else {
-                "连接失败：${probe.error?.message ?: "未知错误"}"
+                stringResource(R.string.ai_settings_probe_fail, probe.error?.message ?: "?")
             },
             fontSize = 11.sp,
             color = if (probe.ok) colorScheme.primary else colorScheme.error,
