@@ -193,9 +193,7 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
             when (kind) {
                 AiAttachmentKind.TEXT -> viewModelScope.launch { parseTextAttachment(attachment) }
                 AiAttachmentKind.AUDIO -> viewModelScope.launch { parseAudioAttachment(attachment) }
-                AiAttachmentKind.IMAGE -> updateAttachment(attachment.id) {
-                    it.copy(status = AiAttachmentStatus.ERROR, error = "图片暂不支持，请上传文本或音频")
-                }
+                AiAttachmentKind.IMAGE -> viewModelScope.launch { parseImageAttachment(attachment) }
                 AiAttachmentKind.UNSUPPORTED -> updateAttachment(attachment.id) {
                     it.copy(status = AiAttachmentStatus.ERROR, error = "暂不支持该文件类型")
                 }
@@ -267,6 +265,19 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
                 it.copy(status = AiAttachmentStatus.ERROR, error = "无法读取文本内容（编码或权限问题）")
             } else {
                 it.copy(status = AiAttachmentStatus.READY, text = text)
+            }
+        }
+    }
+
+    private suspend fun parseImageAttachment(attachment: AiAttachment) {
+        val base64 = withContext(Dispatchers.IO) {
+            AiAttachmentParser.readImageBase64(getApplication(), attachment.uri)
+        }
+        updateAttachment(attachment.id) {
+            if (base64.isNullOrBlank()) {
+                it.copy(status = AiAttachmentStatus.ERROR, error = "图片读取失败（文件损坏或权限不足）")
+            } else {
+                it.copy(status = AiAttachmentStatus.READY, imageBase64 = base64)
             }
         }
     }
@@ -371,7 +382,17 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
             .filter { (it.role == AiRole.USER || it.role == AiRole.ASSISTANT) && it.text.isNotBlank() }
             .takeLast(MAX_CONTEXT_MESSAGES)
             .map { AiMessage(it.role, listOf(AiBlock.Text(it.text))) }
-        conversation += AiMessage.user(text + buildAttachmentContext(state.attachments))
+        val userBlocks = buildList {
+            add(AiBlock.Text(text + buildAttachmentContext(state.attachments)))
+            state.attachments
+                .filter { it.kind == AiAttachmentKind.IMAGE && it.status == AiAttachmentStatus.READY }
+                .forEach { image ->
+                    image.imageBase64?.let {
+                        add(AiBlock.Image(it, image.mime.ifBlank { "image/jpeg" }))
+                    }
+                }
+        }
+        conversation += AiMessage(AiRole.USER, userBlocks)
 
         val userMessage = AiChatMessageUi(
             id = UUID.randomUUID().toString(),
@@ -875,6 +896,10 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
                     append("\n\n[附件：${attachment.name}]\n```\n")
                     append(text.take(MAX_ATTACHMENT_TEXT_CHARS))
                     append("\n```")
+                }
+
+                AiAttachmentKind.IMAGE -> {
+                    append("\n\n[图片附件：${attachment.name}]已作为图像输入。")
                 }
 
                 AiAttachmentKind.AUDIO -> {

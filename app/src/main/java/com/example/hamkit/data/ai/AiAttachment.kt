@@ -1,7 +1,10 @@
 package com.example.hamkit.data.ai
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
+import android.util.Base64
 import java.io.ByteArrayOutputStream
 
 /** 附件类型（决定解析方式）。 */
@@ -22,6 +25,7 @@ data class AiAttachment(
     val error: String? = null,
     val sstvMode: String? = null,
     val sstvFile: String? = null,
+    val imageBase64: String? = null,
 )
 
 /**
@@ -69,6 +73,40 @@ object AiAttachmentParser {
                 String(output.toByteArray(), Charsets.UTF_8).take(maxChars)
             }
         }.getOrNull()
+
+    /**
+     * 读取图片并压缩成 JPEG base64（长边 ≤ [maxDimension]，体积尽量 ≤ 1.5MB）。
+     * 失败返回 null（调用方标记附件错误）。
+     */
+    fun readImageBase64(context: Context, uri: Uri, maxDimension: Int = 1024): String? {
+        return runCatching {
+            val resolver = context.contentResolver
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
+
+            var sample = 1
+            while (bounds.outWidth / sample > maxDimension || bounds.outHeight / sample > maxDimension) {
+                sample *= 2
+            }
+            val options = BitmapFactory.Options().apply { inSampleSize = sample }
+            val bitmap = resolver.openInputStream(uri)?.use {
+                BitmapFactory.decodeStream(it, null, options)
+            } ?: return@runCatching null
+
+            val output = ByteArrayOutputStream()
+            var quality = 85
+            bitmap.compress(Bitmap.CompressFormat.JPEG, quality, output)
+            while (output.size() > 1_500_000 && quality > 40) {
+                output.reset()
+                quality -= 15
+                bitmap.compress(Bitmap.CompressFormat.JPEG, quality, output)
+            }
+            val bytes = output.toByteArray()
+            bitmap.recycle()
+            Base64.encodeToString(bytes, Base64.NO_WRAP)
+        }.getOrNull()
+    }
 
     const val MAX_TEXT_CHARS = 20_000
 }

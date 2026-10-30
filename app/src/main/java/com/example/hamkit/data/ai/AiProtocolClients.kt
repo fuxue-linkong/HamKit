@@ -225,8 +225,32 @@ object OpenAiChatClient : AiProtocolClient {
             when (message.role) {
                 AiRole.USER -> {
                     val text = message.text
-                    if (text.isNotBlank()) {
-                        messages.put(JSONObject().put("role", "user").put("content", text))
+                    val images = message.blocks.filterIsInstance<AiBlock.Image>()
+                    if (images.isEmpty()) {
+                        if (text.isNotBlank()) {
+                            messages.put(JSONObject().put("role", "user").put("content", text))
+                        }
+                    } else {
+                        messages.put(JSONObject().apply {
+                            put("role", "user")
+                            put("content", JSONArray().apply {
+                                if (text.isNotBlank()) {
+                                    put(JSONObject().put("type", "text").put("text", text))
+                                }
+                                images.forEach { image ->
+                                    put(JSONObject().apply {
+                                        put("type", "image_url")
+                                        put(
+                                            "image_url",
+                                            JSONObject().put(
+                                                "url",
+                                                "data:${image.mime};base64,${image.base64}",
+                                            ),
+                                        )
+                                    })
+                                }
+                            })
+                        })
                     }
                 }
 
@@ -531,14 +555,26 @@ object AnthropicClient : AiProtocolClient {
             when (message.role) {
                 AiRole.USER -> {
                     val text = message.text
+                    val images = message.blocks.filterIsInstance<AiBlock.Image>()
+                    val blocks = JSONArray()
                     if (text.isNotBlank()) {
-                        messages.put(JSONObject().apply {
-                            put("role", "user")
+                        blocks.put(JSONObject().put("type", "text").put("text", text))
+                    }
+                    images.forEach { image ->
+                        blocks.put(JSONObject().apply {
+                            put("type", "image")
                             put(
-                                "content",
-                                JSONArray().put(JSONObject().put("type", "text").put("text", text)),
+                                "source",
+                                JSONObject().apply {
+                                    put("type", "base64")
+                                    put("media_type", image.mime)
+                                    put("data", image.base64)
+                                },
                             )
                         })
+                    }
+                    if (blocks.length() > 0) {
+                        messages.put(JSONObject().put("role", "user").put("content", blocks))
                     }
                 }
 
@@ -720,11 +756,22 @@ object GeminiClient : AiProtocolClient {
             when (message.role) {
                 AiRole.USER -> {
                     val text = message.text
-                    if (text.isNotBlank()) {
-                        contents.put(JSONObject().apply {
-                            put("role", "user")
-                            put("parts", JSONArray().put(JSONObject().put("text", text)))
+                    val images = message.blocks.filterIsInstance<AiBlock.Image>()
+                    val parts = JSONArray()
+                    if (text.isNotBlank()) parts.put(JSONObject().put("text", text))
+                    images.forEach { image ->
+                        parts.put(JSONObject().apply {
+                            put(
+                                "inlineData",
+                                JSONObject().apply {
+                                    put("mimeType", image.mime)
+                                    put("data", image.base64)
+                                },
+                            )
                         })
+                    }
+                    if (parts.length() > 0) {
+                        contents.put(JSONObject().put("role", "user").put("parts", parts))
                     }
                 }
 

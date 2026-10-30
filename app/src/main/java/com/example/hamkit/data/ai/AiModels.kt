@@ -163,6 +163,9 @@ sealed interface AiBlock {
     ) : AiBlock
 
     data class Reasoning(val text: String) : AiBlock
+
+    /** 多模态图片（base64，不含 data: 前缀）。 */
+    data class Image(val base64: String, val mime: String = "image/jpeg") : AiBlock
 }
 
 data class AiMessage(val role: AiRole, val blocks: List<AiBlock>) {
