@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
 import android.provider.OpenableColumns
+import androidx.annotation.StringRes
+import com.example.hamkit.R
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.hamkit.data.ai.AiAttachment
@@ -360,15 +362,15 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
         if (text.isEmpty()) return
         val activeFacade = facade
         if (activeFacade == null) {
-            _uiState.update { it.copy(error = "AI 页面尚未就绪，请稍后重试") }
+            _uiState.update { it.copy(error = str(R.string.ai_err_not_ready)) }
             return
         }
         if (!state.hasKey) {
-            _uiState.update { it.copy(error = "还没有配置 API Key，请先到「AI 设置」填写") }
+            _uiState.update { it.copy(error = str(R.string.ai_err_no_key)) }
             return
         }
         if (state.attachments.any { it.status == AiAttachmentStatus.PARSING }) {
-            _uiState.update { it.copy(error = "附件还在解析中，请稍候再发送") }
+            _uiState.update { it.copy(error = str(R.string.ai_err_parsing)) }
             return
         }
         AiNetworkPolicy.validate(state.config.baseUrl, state.config.allowCleartext)?.let { reason ->
@@ -551,7 +553,7 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
     private suspend fun runConversation(activeFacade: AiAppFacade) {
         val apiKey = withContext(Dispatchers.IO) { keyStore.load() }
         if (apiKey.isNullOrBlank()) {
-            finishStreaming("", null, "API Key 读取失败，请重新保存", 0L)
+            finishStreaming("", null, str(R.string.ai_err_key_read), 0L)
             return
         }
 
@@ -634,7 +636,7 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
                 finishCancelled()
             } else {
                 val effectiveError = errorText ?: if (finalText.isBlank() && textDeltaCount == 0) {
-                    "服务商返回了空内容（结束原因 ${lastStop?.name ?: "未知"}）。请检查模型名、API 协议与 Base URL 是否匹配。"
+                    str(R.string.ai_err_empty, lastStop?.name ?: "?")
                 } else {
                     null
                 }
@@ -918,14 +920,17 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    private fun str(@StringRes id: Int, vararg args: Any): String =
+        getApplication<Application>().getString(id, *args)
+
     private fun humanize(error: AiError): String = when (error.kind) {
-        AiErrorKind.AUTH -> "API Key 无效或没有权限（HTTP ${error.status ?: "?"}）"
-        AiErrorKind.RATE_LIMIT -> "请求过于频繁，请稍后再试"
-        AiErrorKind.INVALID_REQUEST -> "请求被服务商拒绝：${error.message}"
-        AiErrorKind.SERVER -> "服务商暂时不可用：${error.message}"
-        AiErrorKind.NETWORK -> "网络不可用：${error.message}"
-        AiErrorKind.TIMEOUT -> "请求超时，请检查网络后重试"
-        AiErrorKind.PARSE -> "响应解析失败：${error.message}"
+        AiErrorKind.AUTH -> str(R.string.ai_err_auth, error.status ?: "?")
+        AiErrorKind.RATE_LIMIT -> str(R.string.ai_err_rate)
+        AiErrorKind.INVALID_REQUEST -> str(R.string.ai_err_invalid, error.message)
+        AiErrorKind.SERVER -> str(R.string.ai_err_server, error.message)
+        AiErrorKind.NETWORK -> str(R.string.ai_err_network, error.message)
+        AiErrorKind.TIMEOUT -> str(R.string.ai_err_timeout)
+        AiErrorKind.PARSE -> str(R.string.ai_err_parse, error.message)
         AiErrorKind.NO_CONFIG -> error.message
     }
 
