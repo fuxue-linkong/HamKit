@@ -1,7 +1,11 @@
 package com.example.hamkit.ui.screen.ai
 
 import androidx.compose.foundation.background
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,6 +29,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
@@ -42,6 +47,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.hamkit.data.ai.AiAttachment
+import com.example.hamkit.data.ai.AiAttachmentStatus
 import com.example.hamkit.data.ai.AiRole
 import com.example.hamkit.data.ai.tool.AiCard
 import com.example.hamkit.data.ai.tool.SatelliteCardData
@@ -60,6 +67,7 @@ import com.example.hamkit.ui.viewmodel.AiChatMessageUi
 import com.example.hamkit.ui.viewmodel.AiChatUiState
 import com.example.hamkit.ui.viewmodel.AiToolUi
 import com.example.hamkit.ui.viewmodel.AiToolUiState
+import com.example.hamkit.ui.viewmodel.SstvViewModel
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -98,10 +106,18 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
     val navigator = LocalNavigator.current
     val mainViewModel = LocalMainViewModel.current
     val facade = remember(mainViewModel, navigator) { AiAppFacadeImpl(mainViewModel, navigator) }
-    DisposableEffect(facade) {
+    val sstvViewModel = appViewModel<SstvViewModel>()
+    DisposableEffect(facade, sstvViewModel) {
         viewModel.attachFacade(facade)
-        onDispose { viewModel.detachFacade() }
+        viewModel.attachSstv(sstvViewModel)
+        onDispose {
+            viewModel.detachFacade()
+            viewModel.detachSstv()
+        }
     }
+    val filePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris -> if (uris.isNotEmpty()) viewModel.addAttachments(uris) }
     val listState = rememberLazyListState()
     // 底部导航是 pager 外层 Scaffold 的 bottomBar，AI 页必须自己让出这段高度；
     // 键盘弹出时取两者较大值，避免输入框被导航栏或 IME 遮挡。
@@ -187,7 +203,10 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
                 modifier = Modifier.padding(bottom = bottomInset),
                 input = state.input,
                 streaming = state.isStreaming,
+                attachments = state.attachments,
                 onInputChange = viewModel::onInputChange,
+                onPickFiles = { filePicker.launch(arrayOf("*/*")) },
+                onRemoveAttachment = viewModel::removeAttachment,
                 onSend = viewModel::send,
                 onStop = viewModel::stop,
             )
@@ -386,46 +405,135 @@ private fun ComposerMiuix(
     modifier: Modifier = Modifier,
     input: String,
     streaming: Boolean,
+    attachments: List<AiAttachment>,
     onInputChange: (String) -> Unit,
+    onPickFiles: () -> Unit,
+    onRemoveAttachment: (String) -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit,
 ) {
-    Row(
+    val canSend = input.isNotBlank() || attachments.any { it.status == AiAttachmentStatus.READY }
+    Column(
         modifier = modifier
             .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .background(colorScheme.surface, RoundedCornerShape(24.dp))
             .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.weight(1f)) {
+        if (attachments.isNotEmpty()) {
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                attachments.forEach { attachment ->
+                    AttachmentChipMiuix(attachment, onRemoveAttachment)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+
+        Box {
             TextField(
                 value = input,
                 onValueChange = onInputChange,
                 modifier = Modifier.fillMaxWidth(),
-                maxLines = 4,
+                maxLines = 6,
             )
             if (input.isEmpty()) {
                 Text(
-                    "问问业余无线电…",
+                    "描述你想问的内容，+ 上传文档或录音…",
                     fontSize = 14.sp,
                     color = colorScheme.onSurfaceVariantSummary,
                     modifier = Modifier.padding(start = 16.dp, top = 16.dp),
                 )
             }
         }
-        Spacer(Modifier.width(8.dp))
-        if (streaming) {
-            Button(onClick = onStop) {
-                Text("停止")
-            }
-        } else {
-            Button(
-                onClick = onSend,
-                enabled = input.isNotBlank(),
-                colors = ButtonDefaults.buttonColorsPrimary(),
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "+",
+                fontSize = 24.sp,
+                color = colorScheme.primary,
+                modifier = Modifier
+                    .clickable(onClick = onPickFiles)
+                    .padding(horizontal = 8.dp, vertical = 2.dp),
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                "文档 / 录音（音频自动 SSTV 解码）",
+                fontSize = 9.sp,
+                color = colorScheme.onSurfaceVariantSummary,
+            )
+            Spacer(Modifier.width(8.dp))
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .background(
+                        when {
+                            streaming -> colorScheme.surfaceVariant
+                            canSend -> colorScheme.primary
+                            else -> colorScheme.surfaceVariant
+                        },
+                        CircleShape,
+                    )
+                    .clickable {
+                        if (streaming) onStop() else if (canSend) onSend()
+                    },
+                contentAlignment = Alignment.Center,
             ) {
-                Text("发送")
+                Text(
+                    if (streaming) "■" else "↑",
+                    fontSize = 16.sp,
+                    color = if (streaming || !canSend) {
+                        colorScheme.onSurfaceVariantSummary
+                    } else {
+                        colorScheme.onPrimary
+                    },
+                )
             }
         }
+    }
+}
+
+@Composable
+private fun AttachmentChipMiuix(attachment: AiAttachment, onRemove: (String) -> Unit) {
+    Row(
+        modifier = Modifier
+            .background(colorScheme.surfaceVariant, RoundedCornerShape(50))
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            attachment.name,
+            fontSize = 11.sp,
+            maxLines = 1,
+            modifier = Modifier.widthIn(max = 140.dp),
+        )
+        when (attachment.status) {
+            AiAttachmentStatus.PARSING -> {
+                Spacer(Modifier.width(4.dp))
+                Text("解析中…", fontSize = 9.sp, color = colorScheme.onSurfaceVariantSummary)
+            }
+            AiAttachmentStatus.ERROR -> {
+                Spacer(Modifier.width(4.dp))
+                Text("失败", fontSize = 9.sp, color = colorScheme.error)
+            }
+            AiAttachmentStatus.READY -> Unit
+        }
+        Spacer(Modifier.width(6.dp))
+        Text(
+            "×",
+            fontSize = 14.sp,
+            color = colorScheme.onSurfaceVariantSummary,
+            modifier = Modifier
+                .clickable { onRemove(attachment.id) }
+                .padding(2.dp),
+        )
     }
 }
 

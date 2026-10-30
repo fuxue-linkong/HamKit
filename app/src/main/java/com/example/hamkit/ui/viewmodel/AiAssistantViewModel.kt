@@ -3,8 +3,14 @@ package com.example.hamkit.ui.viewmodel
 import android.app.Application
 import android.content.Context
 import android.content.SharedPreferences
+import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.hamkit.data.ai.AiAttachment
+import com.example.hamkit.data.ai.AiAttachmentKind
+import com.example.hamkit.data.ai.AiAttachmentParser
+import com.example.hamkit.data.ai.AiAttachmentStatus
 import com.example.hamkit.data.ai.AiBlock
 import com.example.hamkit.data.ai.AiChatMessage
 import com.example.hamkit.data.ai.AiClientFactory
@@ -16,6 +22,7 @@ import com.example.hamkit.data.ai.AiEvent
 import com.example.hamkit.data.ai.AiKeyStore
 import com.example.hamkit.data.ai.AiMessage
 import com.example.hamkit.data.ai.AiNetworkPolicy
+import com.example.hamkit.data.ai.AiPrompts
 import com.example.hamkit.data.ai.AiRequest
 import com.example.hamkit.data.ai.AiRole
 import com.example.hamkit.data.ai.AiSession
@@ -37,9 +44,12 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.UUID
 
 /** 工具卡状态。 */
@@ -68,6 +78,7 @@ data class AiChatMessageUi(
     val elapsedMs: Long? = null,
     val tools: List<AiToolUi> = emptyList(),
     val cards: List<AiCard> = emptyList(),
+    val attachments: List<AiAttachment> = emptyList(),
 )
 
 /** 对话页状态。 */
@@ -80,6 +91,8 @@ data class AiChatUiState(
     val sessionId: String? = null,
     val initialized: Boolean = false,
     val error: String? = null,
+    /** 待发送附件（文本已读入 / 音频已由 SSTV 解码）。 */
+    val attachments: List<AiAttachment> = emptyList(),
 )
 
 /**
@@ -99,6 +112,9 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
 
     /** 由 UI 层注入（页面销毁时置空），工具通过它访问 App 能力。 */
     private var facade: AiAppFacade? = null
+
+    /** SSTV 解码器（音频附件解析用）；页面销毁时置空。 */
+    private var sstv: SstvViewModel? = null
 
     private val _uiState = MutableStateFlow(AiChatUiState())
     val uiState: StateFlow<AiChatUiState> = _uiState.asStateFlow()
@@ -135,6 +151,127 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
 
     fun detachFacade() {
         facade = null
+    }
+
+    fun attachSstv(value: SstvViewModel) {
+        sstv = value
+    }
+
+    fun detachSstv() {
+        sstv = null
+    }
+
+    fun addAttachments(uris: List<Uri>) {
+        uris.take(MAX_ATTACHMENTS).forEach { uri ->
+            val meta = queryMeta(uri)
+            val kind = AiAttachmentParser.kindOf(meta.name, meta.mime)
+            val attachment = AiAttachment(
+                id = UUID.randomUUID().toString(),
+                uri = uri,
+                name = meta.name,
+                mime = meta.mime,
+                sizeBytes = meta.size,
+                kind = kind,
+            )
+            _uiState.update {
+                it.copy(attachments = (it.attachments + attachment).take(MAX_ATTACHMENTS))
+            }
+            when (kind) {
+                AiAttachmentKind.TEXT -> viewModelScope.launch { parseTextAttachment(attachment) }
+                AiAttachmentKind.AUDIO -> viewModelScope.launch { parseAudioAttachment(attachment) }
+                AiAttachmentKind.IMAGE -> updateAttachment(attachment.id) {
+                    it.copy(status = AiAttachmentStatus.ERROR, error = "图片暂不支持，请上传文本或音频")
+                }
+                AiAttachmentKind.UNSUPPORTED -> updateAttachment(attachment.id) {
+                    it.copy(status = AiAttachmentStatus.ERROR, error = "暂不支持该文件类型")
+                }
+            }
+        }
+    }
+
+    fun removeAttachment(id: String) {
+        _uiState.update { state ->
+            state.copy(attachments = state.attachments.filterNot { it.id == id })
+        }
+    }
+
+    private data class AttachmentMeta(val name: String, val mime: String, val size: Long)
+
+    private fun queryMeta(uri: Uri): AttachmentMeta {
+        val resolver = getApplication<Application>().contentResolver
+        var name = uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() } ?: "附件"
+        var size = 0L
+        runCatching {
+            resolver.query(
+                uri,
+                arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
+                null, null, null,
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (nameIndex >= 0) cursor.getString(nameIndex)?.takeIf { it.isNotBlank() }?.let { name = it }
+                    val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                    if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) size = cursor.getLong(sizeIndex)
+                }
+            }
+        }
+        val mime = resolver.getType(uri) ?: "application/octet-stream"
+        return AttachmentMeta(name, mime, size)
+    }
+
+    private suspend fun parseTextAttachment(attachment: AiAttachment) {
+        val text = withContext(Dispatchers.IO) {
+            AiAttachmentParser.readText(getApplication(), attachment.uri)
+        }
+        updateAttachment(attachment.id) {
+            if (text.isNullOrBlank()) {
+                it.copy(status = AiAttachmentStatus.ERROR, error = "无法读取文本内容（编码或权限问题）")
+            } else {
+                it.copy(status = AiAttachmentStatus.READY, text = text)
+            }
+        }
+    }
+
+    private suspend fun parseAudioAttachment(attachment: AiAttachment) {
+        val decoder = sstv
+        if (decoder == null) {
+            updateAttachment(attachment.id) {
+                it.copy(status = AiAttachmentStatus.ERROR, error = "SSTV 模块未就绪，请稍后重试")
+            }
+            return
+        }
+        val finished = withTimeoutOrNull(SSTV_DECODE_TIMEOUT_MS) {
+            decoder.importAudio(attachment.uri)
+            snapshotFlow { decoder.uiState.value.importing }.first { !it }
+            true
+        } ?: false
+        val state = decoder.uiState.value
+        updateAttachment(attachment.id) {
+            when {
+                !finished -> it.copy(status = AiAttachmentStatus.ERROR, error = "SSTV 解码超时")
+                state.error != null -> it.copy(status = AiAttachmentStatus.ERROR, error = state.error)
+                state.savedFileName == null -> it.copy(
+                    status = AiAttachmentStatus.READY,
+                    sstvMode = state.mode?.name,
+                    error = "已解码但未保存（可能未识别到有效图像）",
+                )
+                else -> it.copy(
+                    status = AiAttachmentStatus.READY,
+                    sstvMode = state.mode?.name,
+                    sstvFile = state.savedFileName,
+                )
+            }
+        }
+    }
+
+    private fun updateAttachment(id: String, transform: (AiAttachment) -> AiAttachment) {
+        _uiState.update { state ->
+            state.copy(
+                attachments = state.attachments.map {
+                    if (it.id == id) transform(it) else it
+                },
+            )
+        }
     }
 
     fun onInputChange(value: String) {
@@ -188,12 +325,13 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
             .filter { (it.role == AiRole.USER || it.role == AiRole.ASSISTANT) && it.text.isNotBlank() }
             .takeLast(MAX_CONTEXT_MESSAGES)
             .map { AiMessage(it.role, listOf(AiBlock.Text(it.text))) }
-        conversation += AiMessage.user(text)
+        conversation += AiMessage.user(text + buildAttachmentContext(state.attachments))
 
         val userMessage = AiChatMessageUi(
             id = UUID.randomUUID().toString(),
             role = AiRole.USER,
             text = text,
+            attachments = state.attachments,
         )
         val assistantMessage = AiChatMessageUi(
             id = UUID.randomUUID().toString(),
@@ -205,6 +343,7 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
             it.copy(
                 messages = it.messages + userMessage + assistantMessage,
                 input = "",
+                attachments = emptyList(),
                 isStreaming = true,
                 error = null,
             )
@@ -413,7 +552,11 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
         apiKey: String,
     ): StreamResult {
         val config = _uiState.value.config
-        val request = AiRequest(system = SYSTEM_PROMPT, messages = messages, tools = tools)
+        val request = AiRequest(
+            system = _uiState.value.config.systemPrompt.ifBlank { AiPrompts.DEFAULT_SYSTEM_PROMPT },
+            messages = messages,
+            tools = tools,
+        )
         val text = StringBuilder()
         val calls = LinkedHashMap<Int, PendingCall>()
         var usage: AiUsage? = null
@@ -592,6 +735,28 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
         streamJob = null
     }
 
+    /** 把 READY 附件拼进用户消息（文本内容 / 音频解码结果）。 */
+    private fun buildAttachmentContext(attachments: List<AiAttachment>): String = buildString {
+        attachments.filter { it.status == AiAttachmentStatus.READY }.forEach { attachment ->
+            when (attachment.kind) {
+                AiAttachmentKind.TEXT -> attachment.text?.let { text ->
+                    append("\n\n[附件：${attachment.name}]\n```\n")
+                    append(text.take(MAX_ATTACHMENT_TEXT_CHARS))
+                    append("\n```")
+                }
+
+                AiAttachmentKind.AUDIO -> {
+                    append("\n\n[音频附件：${attachment.name}]")
+                    append("已由 App 的 SSTV 解码器离线解码")
+                    attachment.sstvMode?.let { append("，模式 $it") }
+                    attachment.sstvFile?.let { append("，图片已保存到图库（$it）") }
+                }
+
+                else -> Unit
+            }
+        }
+    }
+
     private fun humanize(error: AiError): String = when (error.kind) {
         AiErrorKind.AUTH -> "API Key 无效或没有权限（HTTP ${error.status ?: "?"}）"
         AiErrorKind.RATE_LIMIT -> "请求过于频繁，请稍后再试"
@@ -626,22 +791,8 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
         const val MAX_CONTEXT_MESSAGES = 24
         const val MAX_TOOL_ROUNDS = 4
 
-        /** P1 系统提示：明确工具能力与"不要编造实时数据"。 */
-        val SYSTEM_PROMPT = """
-            你是 HamKit 内置的业余无线电助手。HamKit 是一个 Android 端的业余无线电工具箱，
-            提供双区定位（CQ/ITU 分区与 Maidenhead 网格）、卫星过境预测、SSTV 收发、
-            CW 摩尔斯、FT8、APRS、QSO 日志等功能。
-
-            你可以调用工具获取真实数据（定位、卫星过境/实时位置/转发器/AMSAT、天气、时间），
-            也可以打开页面、开始 SSTV 接收、创建过境提醒。
-
-            规则：
-            1. 涉及用户位置/网格 → get_zone_info；卫星过境/频率/实时位置 → 对应卫星工具；
-               需要打开页面或开始接收 → 对应动作工具。
-            2. 不要编造工具没有返回的数据（过境时间、频率、状态）；工具失败就如实说明。
-            3. 工具返回的数字可以转述，但不要虚构额外细节。
-            4. 中文提问用中文回答，英文提问用英文回答；简洁，必要时用列表与 Markdown。
-            5. 一次回答不要调用过多工具，优先用最少的工具解决问题。
-        """.trimIndent()
+        const val MAX_ATTACHMENTS = 5
+        const val MAX_ATTACHMENT_TEXT_CHARS = 8_000
+        const val SSTV_DECODE_TIMEOUT_MS = 180_000L
     }
 }

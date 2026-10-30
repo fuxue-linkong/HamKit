@@ -107,6 +107,10 @@ class AiSettingsViewModel(application: Application) : AndroidViewModel(applicati
         _uiState.update { it.copy(config = it.config.copy(saveHistory = enabled)) }
     }
 
+    fun setSystemPrompt(value: String) {
+        _uiState.update { it.copy(config = it.config.copy(systemPrompt = value)) }
+    }
+
     fun setAllowCleartext(enabled: Boolean) {
         _uiState.update { it.copy(config = it.config.copy(allowCleartext = enabled), error = null) }
     }
