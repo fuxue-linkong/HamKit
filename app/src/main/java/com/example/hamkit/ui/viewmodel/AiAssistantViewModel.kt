@@ -26,6 +26,7 @@ import com.example.hamkit.data.ai.AiPrompts
 import com.example.hamkit.data.ai.AiRequest
 import com.example.hamkit.data.ai.AiRole
 import com.example.hamkit.data.ai.AiSession
+import com.example.hamkit.data.ai.AiSessionSummary
 import com.example.hamkit.data.ai.AiSessionStore
 import com.example.hamkit.data.ai.AiStopReason
 import com.example.hamkit.data.ai.AiUsage
@@ -50,6 +51,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import java.io.File
 import java.util.UUID
 
 /** 工具卡状态。 */
@@ -79,6 +81,8 @@ data class AiChatMessageUi(
     val tools: List<AiToolUi> = emptyList(),
     val cards: List<AiCard> = emptyList(),
     val attachments: List<AiAttachment> = emptyList(),
+    /** 历史会话列表（最近在前）。 */
+    val sessions: List<AiSessionSummary> = emptyList(),
 )
 
 /** 对话页状态。 */
@@ -93,6 +97,8 @@ data class AiChatUiState(
     val error: String? = null,
     /** 待发送附件（文本已读入 / 音频已由 SSTV 解码）。 */
     val attachments: List<AiAttachment> = emptyList(),
+    /** 历史会话列表（最近在前）。 */
+    val sessions: List<AiSessionSummary> = emptyList(),
 )
 
 /**
@@ -258,7 +264,10 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
                 else -> it.copy(
                     status = AiAttachmentStatus.READY,
                     sstvMode = state.mode?.name,
-                    sstvFile = state.savedFileName,
+                    sstvFile = File(
+                        getApplication<Application>().filesDir,
+                        "sstv/${state.savedFileName}",
+                    ).absolutePath,
                 )
             }
         }
@@ -348,6 +357,9 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
                 error = null,
             )
         }
+        state.attachments
+            .filter { it.kind == AiAttachmentKind.AUDIO && it.status == AiAttachmentStatus.READY }
+            .forEach { audio -> appendCardToUi(AiCard.Sstv(audio.sstvMode, audio.sstvFile)) }
         streamJob = viewModelScope.launch { runConversation(activeFacade) }
     }
 
@@ -370,6 +382,53 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
             )
         }
         send()
+    }
+
+    fun refreshSessions() {
+        viewModelScope.launch {
+            val list = sessionStore.summaries()
+            _uiState.update { it.copy(sessions = list) }
+        }
+    }
+
+    fun loadSession(id: String) {
+        streamJob?.cancel()
+        streamJob = null
+        viewModelScope.launch {
+            val session = sessionStore.load(id) ?: return@launch
+            conversation.clear()
+            sessionCreatedAt = session.createdAt
+            _uiState.update {
+                it.copy(
+                    sessionId = id,
+                    messages = session.messages.map { message -> message.toUi() },
+                    error = null,
+                    isStreaming = false,
+                    attachments = emptyList(),
+                )
+            }
+        }
+    }
+
+    fun deleteSession(id: String) {
+        viewModelScope.launch {
+            sessionStore.delete(id)
+            if (_uiState.value.sessionId == id) newSession()
+            refreshSessions()
+        }
+    }
+
+    /** 导出为 Markdown（明文）；调用方负责写入 SAF。 */
+    suspend fun exportMarkdown(id: String): String? {
+        val session = sessionStore.load(id) ?: return null
+        return buildString {
+            append("# ").append(session.title).append("\n\n")
+            session.messages.forEach { message ->
+                append(if (message.role == AiRole.USER) "## 用户\n\n" else "## AI\n\n")
+                append(message.text).append("\n\n")
+            }
+            append("\n---\n\n由 HamKit AI 导出\n")
+        }
     }
 
     fun clearHistory() {
@@ -426,6 +485,7 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
         withContext(Dispatchers.IO) {
             runCatching { sessionStore.save(session) }
         }
+        refreshSessions()
     }
 
     // ── 多轮工具调用 ────────────────────────────────────────────────────────

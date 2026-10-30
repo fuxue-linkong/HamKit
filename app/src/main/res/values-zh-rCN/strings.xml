@@ -85,4 +85,6 @@
     <string name="settings_custom_background_set">已设置自定义图片，点击可更换</string>
     <string name="settings_clear_background">清除背景图片</string>
     <string name="settings_clear_background_summary">移除自定义图片，恢复普通卡片样式</string>
-    </resources>
+        <string name="privacy_consent_ai_title">AI 助手（可选）</string>
+    <string name="privacy_consent_ai_desc">需要你自行配置 API Key。对话与你上传的附件会发送给你选择的服务商；Key 与对话历史在本机加密保存。</string>
+</resources>

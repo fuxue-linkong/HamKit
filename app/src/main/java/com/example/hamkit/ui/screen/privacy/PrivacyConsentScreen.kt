@@ -102,6 +102,11 @@ fun PrivacyConsentScreen(
                     title = stringResource(R.string.privacy_consent_aprs_title),
                     body = stringResource(R.string.privacy_consent_aprs_desc),
                 )
+                Spacer(Modifier.height(12.dp))
+                ConsentSection(
+                    title = stringResource(R.string.privacy_consent_ai_title),
+                    body = stringResource(R.string.privacy_consent_ai_desc),
+                )
 
                 Spacer(Modifier.height(20.dp))
                 HorizontalDivider()

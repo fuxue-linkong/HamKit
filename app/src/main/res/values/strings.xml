@@ -153,6 +153,8 @@
     <string name="privacy_consent_policy_checkbox" translatable="false">我已阅读并同意《隐私政策》</string>
     <string name="privacy_consent_location_checkbox" translatable="false">我同意处理我的精确位置信息（敏感个人信息）</string>
     <string name="privacy_consent_aprs_checkbox" translatable="false">我同意在开启 APRS 上报时公开我的位置（可选）</string>
+    <string name="privacy_consent_ai_title">AI assistant (optional)</string>
+    <string name="privacy_consent_ai_desc">Requires your own API key. Prompts and attachments are sent to the provider you configure; the key and chat history are encrypted on this device.</string>
     <string name="privacy_consent_agree" translatable="false">同意并继续</string>
     <string name="privacy_consent_decline" translatable="false">不同意，退出</string>
     <string name="privacy_consent_view_policy" translatable="false">查看完整隐私政策</string>
