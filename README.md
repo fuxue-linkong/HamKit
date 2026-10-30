@@ -2,7 +2,7 @@
 
 中文丨[English](README_EN.md)
 
-为业余无线电爱好者打造的随身控制台——分区定位、卫星过境预测、CW 摩尔斯训练、过境提醒等功能一体化。
+为业余无线电爱好者打造的随身控制台——分区定位、卫星过境预测、CW 摩尔斯训练、过境提醒、AI 助手等功能一体化。
 
 ## 网站
 
@@ -19,9 +19,11 @@
 - **AMSAT 卫星状态**
 - **日历过境提醒**
 - **首页时间卡**（实时天气温度、UTC 时间、自定义背景图裁剪）
+- **AI 助手（P0）**（底部导航第 3 项；OpenAI Chat Completions / Anthropic Messages / Gemini 三协议，流式对话；自带 API Key，Key 与对话历史 Android Keystore AES-GCM 加密；支持内网 http / 自签证书）
 
 ### 短期计划
 
+- **AI 助手 P1**（工具调用：双区定位、卫星过境/实时/转发器、SSTV 接收联动；对话内卫星详情卡）
 - **FT8** 打磨（借鉴 [FT8CN](https://github.com/BG7HIM/FT8CN)）
 - **APRS** 打磨（借鉴 [aprsdroid](https://github.com/ge0rg/aprsdroid)）
 

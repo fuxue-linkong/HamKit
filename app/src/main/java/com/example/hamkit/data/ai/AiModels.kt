@@ -223,10 +223,12 @@ data class AiError(
             val text = runCatching {
                 val root = JSONObject(body)
                 val err = root.optJSONObject("error")
+                fun clean(value: String?): String? =
+                    value?.takeIf { it.isNotBlank() && it != "null" }
                 when {
-                    err?.optString("message")?.isNotBlank() == true -> err.optString("message")
-                    root.optString("message").isNotBlank() -> root.optString("message")
-                    err?.optString("type")?.isNotBlank() == true -> err.optString("type")
+                    clean(err?.optString("message")) != null -> clean(err?.optString("message"))
+                    clean(root.optString("message")) != null -> clean(root.optString("message"))
+                    clean(err?.optString("type")) != null -> clean(err?.optString("type"))
                     else -> null
                 }
             }.getOrNull()

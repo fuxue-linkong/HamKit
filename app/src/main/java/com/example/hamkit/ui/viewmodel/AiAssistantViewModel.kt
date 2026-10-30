@@ -292,9 +292,12 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
     private suspend fun persistSession(usage: AiUsage?) {
         val state = _uiState.value
         if (!state.config.saveHistory) return
-        val messages = state.messages
-            .filter { it.text.isNotBlank() || it.error != null }
-            .map { it.toRecord(usage) }
+        val visible = state.messages.filter { it.text.isNotBlank() || it.error != null }
+        // 用量只属于最后一条 assistant 回复，不能复制到整段历史
+        val lastAssistantIndex = visible.indexOfLast { it.role == AiRole.ASSISTANT }
+        val messages = visible.mapIndexed { index, message ->
+            message.toRecord(if (index == lastAssistantIndex) usage else null)
+        }
         if (messages.isEmpty()) return
 
         val id = state.sessionId ?: UUID.randomUUID().toString().also { newId ->

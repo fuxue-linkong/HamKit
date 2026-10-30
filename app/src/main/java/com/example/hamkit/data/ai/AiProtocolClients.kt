@@ -35,6 +35,15 @@ object AiClientFactory {
 
 private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
+/**
+ * Android 的 `org.json` 对显式 `null` 值调用 `optString` 会返回字符串 `"null"`
+ * （与缺失键不同）。协议里大量可选字段是显式 null，直接透传会把
+ * `finish_reason` 误判成结束、把工具 id 变成 "null"。
+ */
+private fun JSONObject.optStringOrNull(key: String): String? =
+    if (isNull(key)) null
+    else optString(key, "").takeIf { it.isNotBlank() && it != "null" }
+
 private fun JSONObject.asBody() = toString().toRequestBody(JSON_MEDIA_TYPE)
 
 /** 流式请求的通用执行骨架：鉴权头由各实现自行加到 [Request.Builder] 上。 */
@@ -71,10 +80,10 @@ private fun streamRequest(
     }
 }.flowOn(Dispatchers.IO)
 
-private fun probeRequest(
+private suspend fun probeRequest(
     build: () -> Request,
     block: (okhttp3.Response) -> AiProbeResult,
-): suspend AiProbeResult = withContext(Dispatchers.IO) {
+): AiProbeResult = withContext(Dispatchers.IO) {
     val started = System.currentTimeMillis()
     val call = try {
         AiHttp.blocking.newCall(build())
@@ -116,11 +125,11 @@ internal class OpenAiStreamParser : StreamParser {
         val choice = json.optJSONArray("choices")?.optJSONObject(0) ?: return events
         val delta = choice.optJSONObject("delta")
 
-        delta?.optString("content", "").orEmpty().takeIf { it.isNotEmpty() }?.let {
+        delta?.optStringOrNull("content")?.let {
             events += AiEvent.TextDelta(it)
         }
         // DeepSeek-R1 等把思考过程放在 reasoning_content，不进正文
-        delta?.optString("reasoning_content", "").orEmpty().takeIf { it.isNotEmpty() }?.let {
+        delta?.optStringOrNull("reasoning_content")?.let {
             events += AiEvent.ReasoningDelta(it)
         }
 
@@ -128,20 +137,20 @@ internal class OpenAiStreamParser : StreamParser {
             for (i in 0 until calls.length()) {
                 val tc = calls.optJSONObject(i) ?: continue
                 val index = tc.optInt("index", i)
-                val id = tc.optString("id", "")
+                val id = tc.optStringOrNull("id").orEmpty()
                 val function = tc.optJSONObject("function")
-                val name = function?.optString("name", "").orEmpty()
+                val name = function?.optStringOrNull("name").orEmpty()
                 if (id.isNotBlank() || name.isNotBlank()) {
                     sawToolCall = true
                     events += AiEvent.ToolCallStarted(index, id, name)
                 }
-                function?.optString("arguments", "").orEmpty().takeIf { it.isNotEmpty() }?.let {
+                function?.optStringOrNull("arguments")?.let {
                     events += AiEvent.ToolArgsDelta(index, it)
                 }
             }
         }
 
-        choice.optString("finish_reason", "").takeIf { it.isNotBlank() }?.let { reason ->
+        choice.optStringOrNull("finish_reason")?.let { reason ->
             stop = mapOpenAiStop(reason, sawToolCall)
             finished = true
             events += AiEvent.Finished(stop)
@@ -237,7 +246,7 @@ internal class AnthropicStreamParser : StreamParser {
     override fun parse(frame: SseFrame): List<AiEvent> {
         val json = runCatching { JSONObject(frame.data) }.getOrNull() ?: return emptyList()
         val events = mutableListOf<AiEvent>()
-        val type = frame.event ?: json.optString("type", "")
+        val type = frame.event ?: json.optStringOrNull("type").orEmpty()
 
         when (type) {
             "message_start" -> {
@@ -262,18 +271,15 @@ internal class AnthropicStreamParser : StreamParser {
                 val delta = json.optJSONObject("delta") ?: return events
                 when (delta.optString("type")) {
                     "text_delta" -> {
-                        val text = delta.optString("text", "")
-                        if (text.isNotEmpty()) events += AiEvent.TextDelta(text)
+                        delta.optStringOrNull("text")?.let { events += AiEvent.TextDelta(it) }
                     }
 
                     "thinking_delta" -> {
-                        val text = delta.optString("thinking", "")
-                        if (text.isNotEmpty()) events += AiEvent.ReasoningDelta(text)
+                        delta.optStringOrNull("thinking")?.let { events += AiEvent.ReasoningDelta(it) }
                     }
 
                     "input_json_delta" -> {
-                        val partial = delta.optString("partial_json", "")
-                        if (partial.isNotEmpty()) {
+                        delta.optStringOrNull("partial_json")?.let { partial ->
                             sawToolCall = true
                             events += AiEvent.ToolArgsDelta(json.optInt("index", 0), partial)
                         }
@@ -282,8 +288,7 @@ internal class AnthropicStreamParser : StreamParser {
             }
 
             "message_delta" -> {
-                json.optJSONObject("delta")?.optString("stop_reason", "")
-                    ?.takeIf { it.isNotBlank() }
+                json.optJSONObject("delta")?.optStringOrNull("stop_reason")
                     ?.let { stop = mapAnthropicStop(it, sawToolCall) }
                 val output = json.optJSONObject("usage")?.optInt("output_tokens", -1)?.takeIf { it >= 0 }
                 if (output != null) events += AiEvent.Usage(null, output)
@@ -295,7 +300,7 @@ internal class AnthropicStreamParser : StreamParser {
             }
 
             "error" -> {
-                val message = json.optJSONObject("error")?.optString("message", "stream error")
+                val message = json.optJSONObject("error")?.optStringOrNull("message")
                     ?: "stream error"
                 events += AiEvent.Failed(AiError(AiErrorKind.INVALID_REQUEST, message))
             }
@@ -415,15 +420,14 @@ internal class GeminiStreamParser : StreamParser {
                 val part = parts.optJSONObject(i) ?: continue
                 part.optJSONObject("functionCall")?.let { call ->
                     sawToolCall = true
-                    events += AiEvent.ToolCallStarted(0, "", call.optString("name", ""))
+                    events += AiEvent.ToolCallStarted(0, "", call.optStringOrNull("name").orEmpty())
                     // Gemini 一次性给完整 args（对象），这里转成 JSON 字符串统一处理
                     events += AiEvent.ToolArgsDelta(
                         0,
                         call.optJSONObject("args")?.toString() ?: "{}",
                     )
                 }
-                val text = part.optString("text", "")
-                if (text.isNotEmpty()) {
+                part.optStringOrNull("text")?.let { text ->
                     if (part.optBoolean("thought", false)) {
                         events += AiEvent.ReasoningDelta(text)
                     } else {
@@ -433,7 +437,7 @@ internal class GeminiStreamParser : StreamParser {
             }
         }
 
-        candidate.optString("finishReason", "").takeIf { it.isNotBlank() }?.let { reason ->
+        candidate.optStringOrNull("finishReason")?.let { reason ->
             if (!finished) {
                 stop = mapGeminiStop(reason, sawToolCall)
                 finished = true
