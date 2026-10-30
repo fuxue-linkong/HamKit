@@ -55,6 +55,13 @@ class SseReader(private val source: LineSource) {
                     buffer.append(chunk)
                 }
 
+                // 兼容非标准实现：个别网关忽略 stream=true，直接返回整段 JSON（没有 data: 前缀）。
+                // 把裸 JSON 行也收进当前帧，交给协议层按"非流式响应"解析。
+                line.startsWith("{") -> {
+                    if (buffer.isNotEmpty()) buffer.append('\n')
+                    buffer.append(line)
+                }
+
                 else -> Unit // id: / retry: 等字段与对话无关
             }
         }

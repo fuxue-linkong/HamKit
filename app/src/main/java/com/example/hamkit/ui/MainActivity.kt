@@ -443,7 +443,7 @@ fun MainScreen(
                     val isCurrentPage = page == settledPage
                     when (page) {
                         0 -> HomePager(navController, bottomInnerPadding, isCurrentPage)
-                        1 -> AiAssistantScreen()
+                        1 -> AiAssistantScreen(bottomInnerPadding = bottomInnerPadding)
                         2 -> SettingPager(navController, bottomInnerPadding)
                     }
                 }

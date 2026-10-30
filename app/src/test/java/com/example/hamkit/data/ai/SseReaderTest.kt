@@ -99,6 +99,17 @@ class SseReaderTest {
     }
 
     @Test
+    fun `bare json line is treated as data`() = runTest {
+        val frames = mutableListOf<SseFrame>()
+        reader(
+            """{"choices":[{"message":{"content":"hi"}}]}""",
+        ).read { frames += it }
+
+        assertEquals(1, frames.size)
+        assertTrue(frames[0].data.startsWith("{\"choices\""))
+    }
+
+    @Test
     fun `multiple frames parse independently`() = runTest {
         val frames = mutableListOf<SseFrame>()
         reader(
