@@ -9,13 +9,13 @@ import org.junit.Test
 class MainPagerConfigTest {
 
     @Test
-    fun `page count is 2`() {
-        assertEquals(2, MainPagerConfig.PAGE_COUNT)
+    fun `page count is 3`() {
+        assertEquals(3, MainPagerConfig.PAGE_COUNT)
     }
 
     @Test
-    fun `last page index is 1`() {
-        assertEquals(1, MainPagerConfig.LAST_PAGE_INDEX)
+    fun `last page index is 2`() {
+        assertEquals(2, MainPagerConfig.LAST_PAGE_INDEX)
     }
 
     @Test
@@ -26,13 +26,14 @@ class MainPagerConfigTest {
 
     @Test
     fun `coercePage clamps above max to last index`() {
-        assertEquals(1, MainPagerConfig.coercePage(2))
-        assertEquals(1, MainPagerConfig.coercePage(100))
+        assertEquals(2, MainPagerConfig.coercePage(3))
+        assertEquals(2, MainPagerConfig.coercePage(100))
     }
 
     @Test
     fun `coercePage keeps valid pages unchanged`() {
         assertEquals(0, MainPagerConfig.coercePage(0))
         assertEquals(1, MainPagerConfig.coercePage(1))
+        assertEquals(2, MainPagerConfig.coercePage(2))
     }
 }

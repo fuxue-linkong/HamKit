@@ -77,13 +77,48 @@ class MainActivityViewModelTest {
         advanceUntilIdle()
 
         val page = viewModel.selectedMainPage.first()
-        assertEquals(1, page) // Clamped to LAST_PAGE_INDEX
+        assertEquals(2, page) // Clamped to LAST_PAGE_INDEX（新增 AI 页后为 2）
 
         viewModel.setSelectedMainPage(-1)
         advanceUntilIdle()
 
         val page2 = viewModel.selectedMainPage.first()
         assertEquals(0, page2) // Clamped to 0
+    }
+
+    @Test
+    fun `legacy saved page 1 migrates to settings page 2`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("main_page_ai_migrated", false)
+            .commit()
+
+        val handle = SavedStateHandle(mapOf("selected_main_page" to 1))
+        val migrated = MainActivityViewModel(handle)
+        advanceUntilIdle()
+
+        // 旧版本的 1 表示"设置"；新增 AI 页后设置页是 2
+        assertEquals(2, migrated.selectedMainPage.first())
+        assertEquals(2, handle.get<Int>("selected_main_page"))
+    }
+
+    @Test
+    fun `migration runs only once`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("main_page_ai_migrated", false)
+            .commit()
+
+        val first = MainActivityViewModel(SavedStateHandle(mapOf("selected_main_page" to 1)))
+        advanceUntilIdle()
+        assertEquals(2, first.selectedMainPage.first())
+
+        // 迁移标志已写入：再传 1 时应直接按新索引处理（1 = AI 页）
+        val second = MainActivityViewModel(SavedStateHandle(mapOf("selected_main_page" to 1)))
+        advanceUntilIdle()
+        assertEquals(1, second.selectedMainPage.first())
     }
 
     @Test
