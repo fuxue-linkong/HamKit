@@ -61,6 +61,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import java.io.File
 import kotlinx.coroutines.launch
@@ -70,6 +71,7 @@ import java.time.format.DateTimeFormatter
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.example.hamkit.R
 import com.example.hamkit.data.ai.AiAttachment
 import com.example.hamkit.data.ai.AiAttachmentStatus
 import com.example.hamkit.data.ai.AiRole
@@ -142,13 +144,13 @@ fun AiAssistantScreenMaterial(bottomInnerPadding: Dp = 0.dp) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("AI 助手", fontWeight = FontWeight.SemiBold) },
+                title = { Text(stringResource(R.string.ai_title), fontWeight = FontWeight.SemiBold) },
                 actions = {
                     TextButton(onClick = { viewModel.refreshSessions(); showHistory = true }) {
-                        Text("历史")
+                        Text(stringResource(R.string.ai_history))
                     }
-                    TextButton(onClick = viewModel::newSession) { Text("新对话") }
-                    TextButton(onClick = { navigator.push(Route.AiSettings) }) { Text("设置") }
+                    TextButton(onClick = viewModel::newSession) { Text(stringResource(R.string.ai_new_chat)) }
+                    TextButton(onClick = { navigator.push(Route.AiSettings) }) { Text(stringResource(R.string.ai_settings)) }
                 },
             )
         },
@@ -240,7 +242,7 @@ private fun KeyGuideCardMaterial(onOpenSettings: () -> Unit) {
         ),
     ) {
         Column(Modifier.padding(14.dp)) {
-            Text("还没有配置 API Key", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.ai_need_key_title), style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.height(4.dp))
             Text(
                 "AI 助手使用你自己的 API Key。默认预设是 DeepSeek，也可以切换其它服务商或内网地址。",
@@ -248,7 +250,7 @@ private fun KeyGuideCardMaterial(onOpenSettings: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(10.dp))
-            Button(onClick = onOpenSettings) { Text("去配置") }
+            Button(onClick = onOpenSettings) { Text(stringResource(R.string.ai_go_config)) }
         }
     }
 }
@@ -273,7 +275,7 @@ private fun ErrorCardMaterial(message: String, onDismiss: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onErrorContainer,
             )
-            TextButton(onClick = onDismiss) { Text("关闭") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.ai_close)) }
         }
     }
 }
@@ -393,7 +395,7 @@ private fun MessageItemMaterial(message: AiChatMessageUi) {
                 )
             } else {
                 Text(
-                    message.text.ifBlank { if (message.isStreaming) "…" else "（无文本输出）" },
+                    message.text.ifBlank { if (message.isStreaming) "…" else stringResource(R.string.ai_no_text) },
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (message.text.isBlank() && !message.isStreaming) {
                         MaterialTheme.colorScheme.onSurfaceVariant
@@ -469,7 +471,7 @@ private fun ComposerMaterial(
             value = input,
             onValueChange = onInputChange,
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("描述你想问的内容，+ 上传文档或录音…") },
+            placeholder = { Text(stringResource(R.string.ai_input_hint)) },
             maxLines = 6,
         )
         Row(
@@ -483,7 +485,7 @@ private fun ComposerMaterial(
             }
             Spacer(Modifier.weight(1f))
             Text(
-                "文档 / 录音（音频自动 SSTV 解码）",
+                stringResource(R.string.ai_attach_hint),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -533,7 +535,7 @@ private fun AttachmentChipMaterial(attachment: AiAttachment, onRemove: (String) 
         if (attachment.status == AiAttachmentStatus.PARSING) {
             Spacer(Modifier.width(4.dp))
             Text(
-                "解析中…",
+                stringResource(R.string.ai_att_parsing),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -575,9 +577,9 @@ private fun ToolCardMaterial(tool: AiToolUi) {
                     modifier = Modifier.weight(1f),
                 )
                 val (label, color) = when (tool.state) {
-                    AiToolUiState.RUNNING -> "进行中" to MaterialTheme.colorScheme.primary
-                    AiToolUiState.SUCCESS -> "完成" to MaterialTheme.colorScheme.primary
-                    AiToolUiState.ERROR -> "失败" to MaterialTheme.colorScheme.error
+                    AiToolUiState.RUNNING -> stringResource(R.string.ai_tool_running) to MaterialTheme.colorScheme.primary
+                    AiToolUiState.SUCCESS -> stringResource(R.string.ai_tool_done) to MaterialTheme.colorScheme.primary
+                    AiToolUiState.ERROR -> stringResource(R.string.ai_tool_failed) to MaterialTheme.colorScheme.error
                 }
                 Text(label, style = MaterialTheme.typography.labelSmall, color = color)
             }
@@ -831,10 +833,10 @@ private fun AiConfirmDialogMaterial(
         title = { Text(request.title) },
         text = { Text(request.message) },
         confirmButton = {
-            Button(onClick = onApprove) { Text("允许") }
+            Button(onClick = onApprove) { Text(stringResource(R.string.ai_allow)) }
         },
         dismissButton = {
-            TextButton(onClick = onDeny) { Text("取消") }
+            TextButton(onClick = onDeny) { Text(stringResource(R.string.ai_cancel)) }
         },
     )
 }
@@ -849,10 +851,10 @@ private fun AiHistoryDialogMaterial(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("对话历史") },
+        title = { Text(stringResource(R.string.ai_history_title)) },
         text = {
             if (sessions.isEmpty()) {
-                Text("还没有历史会话")
+                Text(stringResource(R.string.ai_history_empty))
             } else {
                 LazyColumn(Modifier.heightIn(max = 360.dp)) {
                     items(sessions, key = { it.id }) { session ->
@@ -872,15 +874,15 @@ private fun AiHistoryDialogMaterial(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
-                            TextButton(onClick = { onExport(session.id) }) { Text("导出") }
-                            TextButton(onClick = { onDelete(session.id) }) { Text("删除") }
+                            TextButton(onClick = { onExport(session.id) }) { Text(stringResource(R.string.ai_export)) }
+                            TextButton(onClick = { onDelete(session.id) }) { Text(stringResource(R.string.ai_delete)) }
                         }
                     }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("关闭") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.ai_close)) }
         },
     )
 }

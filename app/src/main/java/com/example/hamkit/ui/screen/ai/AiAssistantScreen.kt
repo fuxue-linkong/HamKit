@@ -52,10 +52,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.example.hamkit.R
 import com.example.hamkit.data.ai.AiAttachment
 import com.example.hamkit.data.ai.AiAttachmentStatus
 import com.example.hamkit.data.ai.AiRole
@@ -163,10 +165,10 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = "AI 助手",
+                title = stringResource(R.string.ai_title),
                 actions = {
                     Text(
-                        "历史",
+                        stringResource(R.string.ai_history),
                         style = MiuixTheme.textStyles.body1,
                         color = colorScheme.primary,
                         modifier = Modifier
@@ -174,7 +176,7 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
                             .padding(horizontal = 10.dp, vertical = 6.dp),
                     )
                     Text(
-                        "新对话",
+                        stringResource(R.string.ai_new_chat),
                         style = MiuixTheme.textStyles.body1,
                         color = colorScheme.primary,
                         modifier = Modifier
@@ -182,7 +184,7 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
                             .padding(horizontal = 10.dp, vertical = 6.dp),
                     )
                     Text(
-                        "设置",
+                        stringResource(R.string.ai_settings),
                         style = MiuixTheme.textStyles.body1,
                         color = colorScheme.primary,
                         modifier = Modifier
@@ -285,7 +287,7 @@ private fun KeyGuideCardMiuix(onOpenSettings: () -> Unit) {
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
         Column(Modifier.padding(14.dp)) {
-            Text("还没有配置 API Key", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.ai_need_key_title), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(4.dp))
             Text(
                 "AI 助手使用你自己的 API Key。默认预设是 DeepSeek，也可以切换其它服务商或内网地址。",
@@ -297,7 +299,7 @@ private fun KeyGuideCardMiuix(onOpenSettings: () -> Unit) {
                 onClick = onOpenSettings,
                 colors = ButtonDefaults.buttonColorsPrimary(),
             ) {
-                Text("去配置")
+                Text(stringResource(R.string.ai_go_config))
             }
         }
     }
@@ -318,7 +320,7 @@ private fun ErrorCardMiuix(message: String, onDismiss: () -> Unit) {
                 fontSize = 12.sp,
                 color = colorScheme.error,
             )
-            Text("关闭", fontSize = 12.sp, color = colorScheme.onSurfaceVariantSummary)
+            Text(stringResource(R.string.ai_close), fontSize = 12.sp, color = colorScheme.onSurfaceVariantSummary)
         }
     }
 }
@@ -431,7 +433,7 @@ private fun MessageItemMiuix(message: AiChatMessageUi) {
                 )
             } else {
                 Text(
-                    message.text.ifBlank { if (message.isStreaming) "…" else "（无文本输出）" },
+                    message.text.ifBlank { if (message.isStreaming) "…" else stringResource(R.string.ai_no_text) },
                     fontSize = 14.sp,
                     lineHeight = 22.sp,
                     color = if (message.text.isBlank() && !message.isStreaming) {
@@ -512,7 +514,7 @@ private fun ComposerMiuix(
             )
             if (input.isEmpty()) {
                 Text(
-                    "描述你想问的内容，+ 上传文档或录音…",
+                    stringResource(R.string.ai_input_hint),
                     fontSize = 14.sp,
                     color = colorScheme.onSurfaceVariantSummary,
                     modifier = Modifier.padding(start = 16.dp, top = 16.dp),
@@ -536,7 +538,7 @@ private fun ComposerMiuix(
             )
             Spacer(Modifier.weight(1f))
             Text(
-                "文档 / 录音（音频自动 SSTV 解码）",
+                stringResource(R.string.ai_attach_hint),
                 fontSize = 9.sp,
                 color = colorScheme.onSurfaceVariantSummary,
             )
@@ -588,11 +590,11 @@ private fun AttachmentChipMiuix(attachment: AiAttachment, onRemove: (String) -> 
         when (attachment.status) {
             AiAttachmentStatus.PARSING -> {
                 Spacer(Modifier.width(4.dp))
-                Text("解析中…", fontSize = 9.sp, color = colorScheme.onSurfaceVariantSummary)
+                Text(stringResource(R.string.ai_att_parsing), fontSize = 9.sp, color = colorScheme.onSurfaceVariantSummary)
             }
             AiAttachmentStatus.ERROR -> {
                 Spacer(Modifier.width(4.dp))
-                Text("失败", fontSize = 9.sp, color = colorScheme.error)
+                Text(stringResource(R.string.ai_tool_failed), fontSize = 9.sp, color = colorScheme.error)
             }
             AiAttachmentStatus.READY -> Unit
         }
@@ -629,9 +631,9 @@ private fun ToolCardMiuix(tool: AiToolUi) {
                     modifier = Modifier.weight(1f),
                 )
                 val (label, color) = when (tool.state) {
-                    AiToolUiState.RUNNING -> "进行中" to colorScheme.primary
-                    AiToolUiState.SUCCESS -> "完成" to colorScheme.primary
-                    AiToolUiState.ERROR -> "失败" to colorScheme.error
+                    AiToolUiState.RUNNING -> stringResource(R.string.ai_tool_running) to colorScheme.primary
+                    AiToolUiState.SUCCESS -> stringResource(R.string.ai_tool_done) to colorScheme.primary
+                    AiToolUiState.ERROR -> stringResource(R.string.ai_tool_failed) to colorScheme.error
                 }
                 Text(label, fontSize = 10.sp, color = color)
             }
@@ -863,14 +865,14 @@ private fun AiConfirmDialogMiuix(
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Button(onClick = onDeny, modifier = Modifier.weight(1f)) {
-                    Text("取消")
+                    Text(stringResource(R.string.ai_cancel))
                 }
                 Button(
                     onClick = onApprove,
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColorsPrimary(),
                 ) {
-                    Text("允许")
+                    Text(stringResource(R.string.ai_allow))
                 }
             }
         }
@@ -893,11 +895,11 @@ private fun AiHistoryDialogMiuix(
                 .background(colorScheme.surface, RoundedCornerShape(20.dp))
                 .padding(16.dp),
         ) {
-            Text("对话历史", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.ai_history_title), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(8.dp))
             if (sessions.isEmpty()) {
                 Text(
-                    "还没有历史会话",
+                    stringResource(R.string.ai_history_empty),
                     fontSize = 12.sp,
                     color = colorScheme.onSurfaceVariantSummary,
                 )
@@ -921,7 +923,7 @@ private fun AiHistoryDialogMiuix(
                                 )
                             }
                             Text(
-                                "导出",
+                                stringResource(R.string.ai_export),
                                 fontSize = 11.sp,
                                 color = colorScheme.primary,
                                 modifier = Modifier
@@ -929,7 +931,7 @@ private fun AiHistoryDialogMiuix(
                                     .padding(6.dp),
                             )
                             Text(
-                                "删除",
+                                stringResource(R.string.ai_delete),
                                 fontSize = 11.sp,
                                 color = colorScheme.error,
                                 modifier = Modifier
@@ -940,7 +942,7 @@ private fun AiHistoryDialogMiuix(
                     }
                 }
             }
-            TextButton(text = "关闭", onClick = onDismiss)
+            TextButton(text = stringResource(R.string.ai_close), onClick = onDismiss)
         }
     }
 }
