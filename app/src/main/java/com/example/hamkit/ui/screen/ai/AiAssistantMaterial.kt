@@ -276,12 +276,23 @@ private fun MessageItemMaterial(message: AiChatMessageUi) {
                 color = MaterialTheme.colorScheme.primary,
                 shape = MaterialTheme.shapes.large,
             ) {
-                Text(
-                    message.text,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                )
+                Column(
+                    Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                ) {
+                    Text(
+                        message.text,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
+                    message.attachments.forEach { attachment ->
+                        Text(
+                            "📎 ${attachment.name}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f),
+                            modifier = Modifier.padding(top = 3.dp),
+                        )
+                    }
+                }
             }
         }
     } else {

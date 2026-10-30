@@ -281,6 +281,30 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
                 }
             }
 
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                ),
+            ) {
+                Column(Modifier.padding(14.dp)) {
+                    Text("系统提示词", style = MaterialTheme.typography.titleSmall)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "留空使用默认提示词（已包含 App 能力、工具清单与附件规则）。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = state.config.systemPrompt,
+                        onValueChange = viewModel::setSystemPrompt,
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 4,
+                        maxLines = 8,
+                    )
+                }
+            }
+
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Button(
                     onClick = { viewModel.save() },

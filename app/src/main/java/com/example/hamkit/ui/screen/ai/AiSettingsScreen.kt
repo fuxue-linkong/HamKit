@@ -227,6 +227,25 @@ fun AiSettingsScreenMiuix(onBack: () -> Unit = {}) {
                 }
             }
 
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp)) {
+                    Text("系统提示词", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "留空使用默认提示词（已包含 App 能力、工具清单与附件规则）。",
+                        fontSize = 10.sp,
+                        color = colorScheme.onSurfaceVariantSummary,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    TextField(
+                        value = state.config.systemPrompt,
+                        onValueChange = viewModel::setSystemPrompt,
+                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 6,
+                    )
+                }
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
