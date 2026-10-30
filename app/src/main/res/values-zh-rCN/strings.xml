@@ -109,4 +109,9 @@
     <string name="ai_cancel">取消</string>
     <string name="ai_need_key_title">还没有配置 API Key</string>
     <string name="ai_go_config">去配置</string>
+    <string name="ai_empty_desc">可以问业余无线电知识，也可以让我调用 App 功能：查双区定位、算卫星过境、开 SSTV 接收。</string>
+    <string name="ai_settings_system_prompt">系统提示词</string>
+    <string name="ai_settings_tools">工具权限</string>
+    <string name="ai_settings_confirm">执行副作用前确认</string>
+    <string name="ai_settings_fetch_models">获取模型列表</string>
 </resources>

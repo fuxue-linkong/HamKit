@@ -31,9 +31,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.hamkit.R
 import com.example.hamkit.data.ai.AiPreset
 import com.example.hamkit.data.ai.tool.AiToolRegistry
 import com.example.hamkit.data.ai.AiProtocol
@@ -139,7 +141,7 @@ fun AiSettingsScreenMiuix(onBack: () -> Unit = {}) {
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         TextButton(
-                            text = if (state.fetchingModels) "获取中…" else "获取模型列表",
+                            text = if (state.fetchingModels) "获取中…" else stringResource(R.string.ai_settings_fetch_models),
                             onClick = viewModel::fetchModels,
                             enabled = !state.fetchingModels,
                         )
@@ -231,7 +233,7 @@ fun AiSettingsScreenMiuix(onBack: () -> Unit = {}) {
 
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp)) {
-                    Text("系统提示词", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.ai_settings_system_prompt), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(4.dp))
                     Text(
                         "留空使用默认提示词（已包含 App 能力、工具清单与附件规则）。",
@@ -250,7 +252,7 @@ fun AiSettingsScreenMiuix(onBack: () -> Unit = {}) {
 
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp)) {
-                    Text("工具权限", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.ai_settings_tools), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(2.dp))
                     Text(
                         "关闭后模型看不到该工具，也不会调用它。",
@@ -258,7 +260,7 @@ fun AiSettingsScreenMiuix(onBack: () -> Unit = {}) {
                         color = colorScheme.onSurfaceVariantSummary,
                     )
                     SwitchPreference(
-                        title = "执行副作用前确认",
+                        title = stringResource(R.string.ai_settings_confirm),
                         summary = "创建提醒等写入操作先弹窗确认。",
                         startAction = {},
                         checked = state.config.confirmSideEffects,

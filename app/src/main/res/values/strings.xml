@@ -466,4 +466,9 @@
     <string name="ai_cancel">Cancel</string>
     <string name="ai_need_key_title">API key required</string>
     <string name="ai_go_config">Configure</string>
+    <string name="ai_empty_desc">Ask about amateur radio — I can also use HamKit features like zone lookup, satellite passes and SSTV reception.</string>
+    <string name="ai_settings_system_prompt">System prompt</string>
+    <string name="ai_settings_tools">Tool permissions</string>
+    <string name="ai_settings_confirm">Confirm before side effects</string>
+    <string name="ai_settings_fetch_models">Fetch model list</string>
 </resources>
