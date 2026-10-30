@@ -492,4 +492,13 @@
     <string name="ai_err_timeout">Request timed out, check your network and retry.</string>
     <string name="ai_err_parse">Failed to parse response: %1$s</string>
     <string name="ai_err_empty">Provider returned no text (stop reason: %1$s). Check the model, protocol and base URL.</string>
+    <string name="ai_settings_prompt_hint">Leave empty to use the default prompt (app capabilities, tools, attachments).</string>
+    <string name="ai_settings_tools_hint">Disabled tools are hidden from the model and never called.</string>
+    <string name="ai_settings_confirm_hint">Ask before writing to the device, e.g. creating reminders.</string>
+    <string name="ai_settings_key_hint">The key is encrypted with Android Keystore AES-GCM, never logged or backed up.</string>
+    <string name="ai_settings_network_hint">Only applies to private hosts (10.x / 172.16-31.x / 192.168.x / .local). HTTP is unencrypted.</string>
+    <string name="ai_settings_history_hint">Chat history is encrypted with AES-256-GCM on this device.</string>
+    <string name="ai_settings_clear_history_hint">Delete encrypted history on this device. This cannot be undone.</string>
+    <string name="ai_settings_not_saved">Not saved</string>
+    <string name="ai_settings_fetching">Fetching…</string>
 </resources>

@@ -135,4 +135,13 @@
     <string name="ai_err_timeout">请求超时，请检查网络后重试</string>
     <string name="ai_err_parse">响应解析失败：%1$s</string>
     <string name="ai_err_empty">服务商返回了空内容（结束原因 %1$s）。请检查模型名、API 协议与 Base URL 是否匹配。</string>
+    <string name="ai_settings_prompt_hint">留空使用默认提示词（已包含 App 能力、工具清单与附件规则）。</string>
+    <string name="ai_settings_tools_hint">关闭后模型看不到该工具，也不会调用它。</string>
+    <string name="ai_settings_confirm_hint">创建提醒等写入操作先弹窗确认。</string>
+    <string name="ai_settings_key_hint">Key 用 Android Keystore AES-GCM 加密后保存在本机，不写日志、不随备份导出。</string>
+    <string name="ai_settings_network_hint">仅当 Base URL 为私有地址（10.x / 172.16–31.x / 192.168.x / .local）时生效；HTTP 不加密，同一网络可能被他人看到。</string>
+    <string name="ai_settings_history_hint">历史用 AES-256-GCM 加密保存在本机。</string>
+    <string name="ai_settings_clear_history_hint">删除本机加密历史，不可恢复。</string>
+    <string name="ai_settings_not_saved">尚未保存</string>
+    <string name="ai_settings_fetching">获取中…</string>
 </resources>

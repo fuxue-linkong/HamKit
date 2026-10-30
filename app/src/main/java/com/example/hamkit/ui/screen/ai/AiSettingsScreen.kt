@@ -141,7 +141,7 @@ fun AiSettingsScreenMiuix(onBack: () -> Unit = {}) {
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         TextButton(
-                            text = if (state.fetchingModels) "获取中…" else stringResource(R.string.ai_settings_fetch_models),
+                            text = if (state.fetchingModels) stringResource(R.string.ai_settings_fetching) else stringResource(R.string.ai_settings_fetch_models),
                             onClick = viewModel::fetchModels,
                             enabled = !state.fetchingModels,
                         )
@@ -173,7 +173,7 @@ fun AiSettingsScreenMiuix(onBack: () -> Unit = {}) {
                     Text("API Key", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        state.keyMasked?.let { "已保存：$it" } ?: "尚未保存",
+                        state.keyMasked?.let { "已保存：$it" } ?: stringResource(R.string.ai_settings_not_saved),
                         fontSize = 11.sp,
                         color = if (state.hasKey) colorScheme.onSurfaceVariantSummary else colorScheme.error,
                     )
@@ -200,7 +200,7 @@ fun AiSettingsScreenMiuix(onBack: () -> Unit = {}) {
                     }
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "Key 用 Android Keystore AES-GCM 加密后保存在本机，不写日志、不随备份导出。",
+                        stringResource(R.string.ai_settings_key_hint),
                         fontSize = 10.sp,
                         color = colorScheme.onSurfaceVariantSummary,
                     )
@@ -218,14 +218,14 @@ fun AiSettingsScreenMiuix(onBack: () -> Unit = {}) {
                     )
                     SwitchPreference(
                         title = "保存对话历史",
-                        summary = "历史用 AES-256-GCM 加密保存在本机。",
+                        summary = stringResource(R.string.ai_settings_history_hint),
                         startAction = {},
                         checked = state.config.saveHistory,
                         onCheckedChange = viewModel::setSaveHistory,
                     )
                     ArrowPreference(
                         title = stringResource(R.string.ai_settings_clear_history),
-                        summary = "删除本机加密历史，不可恢复。",
+                        summary = stringResource(R.string.ai_settings_clear_history_hint),
                         onClick = viewModel::clearHistory,
                     )
                 }
@@ -236,7 +236,7 @@ fun AiSettingsScreenMiuix(onBack: () -> Unit = {}) {
                     Text(stringResource(R.string.ai_settings_system_prompt), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "留空使用默认提示词（已包含 App 能力、工具清单与附件规则）。",
+                        stringResource(R.string.ai_settings_prompt_hint),
                         fontSize = 10.sp,
                         color = colorScheme.onSurfaceVariantSummary,
                     )
@@ -255,13 +255,13 @@ fun AiSettingsScreenMiuix(onBack: () -> Unit = {}) {
                     Text(stringResource(R.string.ai_settings_tools), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(2.dp))
                     Text(
-                        "关闭后模型看不到该工具，也不会调用它。",
+                        stringResource(R.string.ai_settings_tools_hint),
                         fontSize = 10.sp,
                         color = colorScheme.onSurfaceVariantSummary,
                     )
                     SwitchPreference(
                         title = stringResource(R.string.ai_settings_confirm),
-                        summary = "创建提醒等写入操作先弹窗确认。",
+                        summary = stringResource(R.string.ai_settings_confirm_hint),
                         startAction = {},
                         checked = state.config.confirmSideEffects,
                         onCheckedChange = viewModel::setConfirmSideEffects,

@@ -177,7 +177,7 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
                             onClick = viewModel::fetchModels,
                             enabled = !state.fetchingModels,
                         ) {
-                            Text(if (state.fetchingModels) "获取中…" else stringResource(R.string.ai_settings_fetch_models))
+                            Text(if (state.fetchingModels) stringResource(R.string.ai_settings_fetching) else stringResource(R.string.ai_settings_fetch_models))
                         }
                         state.modelsError?.let {
                             Text(
@@ -214,7 +214,7 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
                     Text("API Key", style = MaterialTheme.typography.titleSmall)
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        state.keyMasked?.let { "已保存：$it" } ?: "尚未保存",
+                        state.keyMasked?.let { "已保存：$it" } ?: stringResource(R.string.ai_settings_not_saved),
                         style = MaterialTheme.typography.bodySmall,
                         color = if (state.hasKey) {
                             MaterialTheme.colorScheme.onSurfaceVariant
@@ -247,7 +247,7 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
                     }
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "Key 用 Android Keystore AES-GCM 加密后保存在本机，不写日志、不随备份导出。",
+                        stringResource(R.string.ai_settings_key_hint),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -269,7 +269,7 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
                     )
                     SwitchItem(
                         title = "保存对话历史",
-                        summary = "历史用 AES-256-GCM 加密保存在本机。",
+                        summary = stringResource(R.string.ai_settings_history_hint),
                         checked = state.config.saveHistory,
                         onCheckedChange = viewModel::setSaveHistory,
                     )
@@ -293,7 +293,7 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
                     Text(stringResource(R.string.ai_settings_system_prompt), style = MaterialTheme.typography.titleSmall)
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "留空使用默认提示词（已包含 App 能力、工具清单与附件规则）。",
+                        stringResource(R.string.ai_settings_prompt_hint),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -321,7 +321,7 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
                     )
                     SwitchItem(
                         title = stringResource(R.string.ai_settings_confirm),
-                        summary = "创建提醒等写入操作先弹窗确认。",
+                        summary = stringResource(R.string.ai_settings_confirm_hint),
                         checked = state.config.confirmSideEffects,
                         onCheckedChange = viewModel::setConfirmSideEffects,
                     )
