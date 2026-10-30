@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HamKit AI — 对话页设计稿</title>
+<style>
+  :root{
+    /* 与 MiuixTheme.colorScheme 对应的示意值（深色）：
+       background=#000000 surface=#1C1C1E surfaceContainerHigh/surfaceVariant=#2C2C2E
+       primary=#3482FF onPrimary=#FFFFFF onSurface=#FFFFFF onSurfaceVariant=#98989F */
+    --bg:#000000;
+    --surface:#1C1C1E;
+    --surface-2:#2C2C2E;
+    --surface-3:#3A3A3C;
+    --line:rgba(255,255,255,.09);
+    --line-strong:rgba(255,255,255,.16);
+    --text:#FFFFFF;
+    --text-2:#98989F;
+    --text-3:#6C6C70;
+    --primary:#3482FF;
+    --primary-soft:rgba(52,130,255,.14);
+    --primary-on:#FFFFFF;
+    --warn:#FF9F0A;
+    --warn-soft:rgba(255,159,10,.13);
+    --ok:#34C759;
+    --ok-soft:rgba(52,199,89,.13);
+    --red:#FF453A;
+    --radius:16px;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  html,body{margin:0;padding:0;background:#000;color:var(--text);
+    font-family:system-ui,-apple-system,"PingFang SC","Noto Sans SC","Microsoft YaHei",sans-serif}
+  .phone{width:412px;margin:0 auto;height:839px;position:relative;overflow:hidden;
+    background:var(--bg)}
+  /* ── 状态栏 ── */
+  .statusbar{display:flex;justify-content:space-between;align-items:center;
+    padding:12px 20px 6px;font-size:12.5px;color:var(--text);letter-spacing:.2px}
+  .statusbar .icons{display:flex;gap:6px;align-items:center;opacity:.9}
+  /* ── 顶栏 ── */
+  .appbar{display:flex;align-items:center;gap:12px;padding:10px 16px 14px}
+  .avatar{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;
+    background:var(--primary-soft);border:1px solid rgba(52,130,255,.22)}
+  .avatar svg{width:22px;height:22px}
+  .title{flex:1;min-width:0}
+  .title h1{margin:0;font-size:26px;font-weight:700;letter-spacing:.2px}
+  .sub{display:flex;align-items:center;gap:6px;margin-top:4px;font-size:11.5px;color:var(--text-2)}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--ok)}
+  .iconbtn{width:36px;height:36px;border-radius:12px;display:grid;place-items:center;
+    color:var(--text-2);border:1px solid transparent}
+  .iconbtn.ghost{border-color:var(--line);background:var(--surface)}
+  /* ── 内容 ── */
+  .feed{padding:2px 16px 148px;display:flex;flex-direction:column;gap:11px}
+  .chips{display:flex;gap:8px;overflow:hidden;padding:2px 0 4px;margin-bottom:2px}
+  .chip{flex:none;padding:8px 13px;border-radius:999px;font-size:12px;color:var(--text-2);
+    background:var(--surface);white-space:nowrap}
+  .chip.hot{color:#fff;background:var(--primary);font-weight:600}
+  /* 用户消息 */
+  .row-user{display:flex;justify-content:flex-end}
+  .bubble-user{max-width:82%;padding:11px 14px;border-radius:18px 18px 5px 18px;
+    background:var(--primary);color:#fff;font-size:13.5px;line-height:1.55;font-weight:500}
+  /* AI 消息 */
+  .row-ai{display:flex;gap:10px;align-items:flex-start}
+  .ai-mark{flex:none;width:28px;height:28px;border-radius:50%;margin-top:2px;
+    display:grid;place-items:center;background:var(--surface);border:1px solid var(--line)}
+  .ai-mark svg{width:15px;height:15px}
+  .ai-body{flex:1;min-width:0;font-size:13.5px;line-height:1.68;color:#E5E5EA}
+  .ai-body p{margin:0 0 8px}
+  .ai-body p:last-child{margin-bottom:0}
+  .ai-body strong{color:#fff;font-weight:650}
+  .ai-body .k{color:var(--primary);font-weight:600}
+  .ai-body ul{margin:4px 0 8px;padding-left:18px}
+  .ai-body li{margin:3px 0}
+  .ai-body code{padding:1px 5px;border-radius:6px;background:var(--surface-2);
+    font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:12px;color:#E5E5EA}
+  .meta{display:flex;gap:10px;align-items:center;margin-top:9px;font-size:10.5px;color:var(--text-3)}
+  .meta .act{display:flex;gap:4px;align-items:center;padding:4px 8px;border-radius:8px;
+    background:var(--surface);color:var(--text-2)}
+  /* 工具调用卡片 */
+  .tool{position:relative;border-radius:var(--radius);background:var(--surface);overflow:hidden}
+  .tool-head{display:flex;align-items:center;gap:10px;padding:12px 12px 10px}
+  .tool-ico{width:32px;height:32px;border-radius:10px;display:grid;place-items:center;
+    background:var(--primary-soft);color:var(--primary)}
+  .tool-ico svg{width:16px;height:16px}
+  .tool-name{flex:1;min-width:0}
+  .tool-name b{display:block;font-size:12.5px;font-weight:600;color:var(--text)}
+  .tool-name span{display:block;font-size:10.5px;color:var(--text-3);margin-top:2px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .badge{font-size:10px;padding:3px 7px;border-radius:6px;font-weight:600;letter-spacing:.2px;flex:none}
+  .badge.ok{color:var(--ok);background:var(--ok-soft)}
+  .badge.run{color:var(--primary);background:var(--primary-soft)}
+  .badge.warn{color:var(--warn);background:var(--warn-soft)}
+  /* 进度条 */
+  .prog{height:3px;border-radius:3px;background:rgba(255,255,255,.10);overflow:hidden}
+  .prog > i{display:block;height:100%;border-radius:3px;background:var(--primary)}
+  .steps{display:flex;gap:0;padding:0 12px 12px;position:relative}
+  .step{flex:1;position:relative;padding-top:11px;font-size:9.5px;color:var(--text-3);text-align:center}
+  .step::before{content:"";position:absolute;top:3px;left:50%;transform:translateX(-50%);
+    width:6px;height:6px;border-radius:50%;background:var(--surface-3)}
+  .step.done{color:var(--text-2)}
+  .step.done::before{background:var(--primary)}
+  .step.now{color:var(--primary);font-weight:600}
+  .step.now::before{background:var(--primary);
+    animation:pulse 1.4s ease-in-out infinite}
+  @keyframes pulse{0%,100%{transform:translateX(-50%) scale(1);opacity:1}
+    50%{transform:translateX(-50%) scale(1.3);opacity:.6}}
+  .tool-foot{display:flex;align-items:center;gap:8px;padding:0 12px 12px;font-size:10.5px;color:var(--text-3)}
+  .tool-foot .elapsed{margin-left:auto;font-variant-numeric:tabular-nums}
+  .link{color:var(--primary)}
+  /* ── 卫星详情卡 ── */
+  .sat{border-radius:18px;overflow:hidden;background:var(--surface)}
+  .sat-top{display:flex;align-items:flex-start;gap:10px;padding:14px 14px 10px}
+  .sat-badge{font-size:9.5px;font-weight:600;letter-spacing:.3px;padding:3px 6px;border-radius:5px;
+    color:var(--primary);background:var(--primary-soft)}
+  .sat-name{font-size:17px;font-weight:700;letter-spacing:.2px;line-height:1.25}
+  .sat-en{font-size:10.5px;color:var(--text-3);margin-top:3px}
+  .sat-norad{margin-left:auto;text-align:right;font-size:9.5px;color:var(--text-3);line-height:1.5}
+  .sat-norad b{display:block;color:var(--text-2);font-size:12px;font-variant-numeric:tabular-nums;
+    font-weight:600}
+  .status{display:inline-flex;align-items:center;gap:5px;font-size:10px;color:var(--ok);
+    background:var(--ok-soft);padding:2px 7px;border-radius:999px;margin-top:7px}
+  .status i{width:5px;height:5px;border-radius:50%;background:var(--ok)}
+  /* 主体：雷达 + 数字 */
+  .sat-main{display:flex;gap:12px;padding:10px 14px 12px;align-items:center}
+  .radar{position:relative;width:132px;height:132px;flex:none}
+  .radar svg{display:block}
+  .radar-glow{display:none}
+  .numbers{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:11px 8px}
+  .num .lbl{font-size:9.5px;color:var(--text-3);letter-spacing:.2px}
+  .num .val{font-size:19px;font-weight:600;letter-spacing:-.2px;
+    font-variant-numeric:tabular-nums;margin-top:2px;color:#fff}
+  .num .val small{font-size:11px;color:var(--text-2);font-weight:500;margin-left:1px}
+  .num .val.cy{color:var(--primary)}
+  .num .val.am{color:var(--primary)}
+  /* 过境时间轴 */
+  .pass{padding:12px 14px 6px;border-top:1px solid var(--line)}
+  .pass-head{display:flex;justify-content:space-between;align-items:baseline;font-size:10px;color:var(--text-3)}
+  .pass-head b{font-size:11px;color:var(--text-2);font-weight:600}
+  .timeline{position:relative;height:46px;margin-top:8px}
+  .timeline .track{position:absolute;left:0;right:0;top:20px;height:2px;border-radius:2px;
+    background:#3A3A3C}
+  .timeline .fill{position:absolute;left:0;top:19px;height:4px;width:50%;border-radius:3px;
+    background:var(--primary)}
+  .timeline .node{position:absolute;top:15px;width:12px;height:12px;border-radius:50%;
+    background:var(--surface);border:2px solid var(--text-3);transform:translateX(-50%)}
+  .timeline .node.aos{left:0;border-color:var(--primary)}
+  .timeline .node.los{left:100%;border-color:var(--surface-3)}
+  .timeline .now{position:absolute;top:10px;left:50%;transform:translateX(-50%);
+    width:2px;height:24px;background:#fff;border-radius:2px}
+  .timeline .now::after{content:"现在";position:absolute;top:-14px;left:50%;transform:translateX(-50%);
+    font-size:9px;color:var(--text-2);white-space:nowrap}
+  .timeline .t{position:absolute;top:33px;font-size:9.5px;color:var(--text-2);
+    font-variant-numeric:tabular-nums;transform:translateX(-50%)}
+  .timeline .t.left{left:0;transform:none}
+  .timeline .t.right{left:100%;transform:translateX(-100%)}
+  .timeline .t.mid{left:50%;color:var(--text-2)}
+  /* 转发器 */
+  .tx{margin:8px 14px 0;border-radius:12px;background:#111113;overflow:hidden}
+  .tx-row{display:grid;grid-template-columns:1fr auto 1fr auto;gap:8px;align-items:center;
+    padding:9px 10px;font-size:10.5px;color:var(--text-2)}
+  .tx-row + .tx-row{border-top:1px solid var(--line)}
+  .tx-row .f{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:11px;color:#fff}
+  .tx-row .arrow{color:var(--text-3);font-size:9px}
+  .tx-row .mode{font-size:9px;padding:2px 5px;border-radius:4px;color:var(--primary);
+    background:var(--primary-soft)}
+  .tx-row .dopp{font-size:9.5px;color:var(--text-3);font-variant-numeric:tabular-nums}
+  .tx-head{display:flex;justify-content:space-between;padding:8px 10px;font-size:10px;color:var(--text-3);
+    border-bottom:1px solid var(--line)}
+  .tx-head b{color:var(--text-2);font-weight:600}
+  /* 卡片底部动作 */
+  .sat-actions{display:flex;gap:8px;padding:12px 14px 14px}
+  .sat-actions .btn{flex:1;text-align:center;padding:9px 0;border-radius:12px;font-size:11.5px;
+    font-weight:600;background:var(--surface-2);color:#fff}
+  .sat-actions .btn.primary{background:var(--primary);color:#fff}
+  /* 进行中的工具卡片 */
+  .tool.running{box-shadow:inset 0 0 0 1px rgba(52,130,255,.35)}
+  .tool-hint{padding:0 12px 10px;font-size:10.5px;line-height:1.55;color:var(--text-3)}
+  /* 输入栏 */
+  .composer{position:absolute;left:0;right:0;bottom:64px;padding:10px 12px 12px;
+    background:linear-gradient(180deg,rgba(0,0,0,0),#000 22%,#000 100%)}
+  .inputbar{display:flex;align-items:center;gap:8px;padding:7px 7px 7px 8px;border-radius:24px;
+    background:var(--surface)}
+  .plus{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;flex:none;
+    color:var(--primary);background:var(--primary-soft)}
+  .inputbar .ph{flex:1;font-size:13px;color:var(--text-3);padding:6px 0;line-height:1.4}
+  .send{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;flex:none;
+    background:var(--primary)}
+  /* 底部导航 */
+  .navbar{position:absolute;left:0;right:0;bottom:0;height:64px;
+    display:flex;align-items:center;justify-content:space-around;
+    background:rgba(0,0,0,.94);border-top:1px solid var(--line);
+    padding-bottom:6px}
+  .nav{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:9.5px;
+    color:var(--text-3);width:72px}
+  .nav svg{width:21px;height:21px}
+  .nav.active{color:var(--primary)}
+  .nav.active .pill{background:none;border:none}
+  .pill{display:grid;place-items:center;width:44px;height:26px;border-radius:999px;
+    border:1px solid transparent}
+
+</style>
+</head>
+<body>
+<div class="phone">
+  <!-- 状态栏 -->
+  <div class="statusbar">
+    <span>21:14</span>
+    <span class="icons">
+      <svg width="15" height="11" viewBox="0 0 15 11" fill="none"><path d="M1 10V7M5 10V5M9 10V3M13 10V1" stroke="#98989F" stroke-width="1.6" stroke-linecap="round"/></svg>
+      <svg width="14" height="11" viewBox="0 0 14 11" fill="none"><path d="M1 4.5C2.7 3 4.8 2.2 7 2.2s4.3.8 6 2.3M3.4 6.9C4.5 5.9 5.7 5.4 7 5.4s2.5.5 3.6 1.5M7 9.3v.2" stroke="#98989F" stroke-width="1.4" stroke-linecap="round"/></svg>
+      <svg width="22" height="11" viewBox="0 0 22 11" fill="none"><rect x="1" y="1" width="17" height="9" rx="2.6" stroke="#98989F" stroke-width="1.2"/><rect x="3" y="3" width="12" height="5" rx="1.2" fill="#98989F"/><path d="M20 4v3" stroke="#98989F" stroke-width="1.4" stroke-linecap="round"/></svg>
+    </span>
+  </div>
+
+  <!-- 顶栏 -->
+  <div class="appbar">
+    <div class="avatar">
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M12 2.6l1.9 4.6 4.9.5-3.7 3.3 1.1 4.8L12 13.3l-4.2 2.5 1.1-4.8L5.2 7.7l4.9-.5L12 2.6z" fill="#7FB4FF"/>
+        <circle cx="12" cy="19.8" r="1.7" fill="#FF9F0A"/>
+      </svg>
+    </div>
+    <div class="title">
+      <h1>HamKit AI</h1>
+      <div class="sub"><span class="dot"></span><span>DeepSeek V3 · 工具已启用</span></div>
+    </div>
+    <div class="iconbtn ghost">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#98989F" stroke-width="1.7" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+    </div>
+    <div class="iconbtn">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#98989F" stroke-width="1.6"><circle cx="12" cy="12" r="3.1"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.11a1.7 1.7 0 0 0-1.11-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.11A1.7 1.7 0 0 0 4.66 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.64a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.11a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.36 9v.05a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.11a1.7 1.7 0 0 0-1.49 1z"/></svg>
+    </div>
+  </div>
+
+  <!-- 会话流 -->
+  <div class="feed">
+    <div class="chips">
+      <div class="chip hot">ISS 过境</div>
+      <div class="chip">我的网格</div>
+      <div class="chip">SSTV 解码</div>
+      <div class="chip">卫星频率</div>
+    </div>
+
+    <!-- 用户 -->
+    <div class="row-user">
+      <div class="bubble-user">ISS 现在能收到吗？帮我看看过境和频率，SSTV 有活动就开接收。</div>
+    </div>
+
+    <!-- AI 回答 -->
+    <div class="row-ai">
+      <div class="ai-mark">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5z" fill="#3482FF"/></svg>
+      </div>
+      <div class="ai-body">
+        <p>ISS 正在 <span class="k">境内</span>：仰角 <strong>41.2°</strong>、方位 187.4°，还有 <strong>6 分 12 秒</strong> 落境（最大仰角 62°，白天过境）。</p>
+        <p>145.800 MHz 有 ARISS 的 <strong>SSTV 活动</strong>（PD-120，单帧 126 秒）。现在开始接收，落境前能收到大半帧。</p>
+        <div class="meta">
+          <span class="act">复制</span>
+          <span class="act">重新生成</span>
+          <span style="margin-left:auto">2.3s · 386 tokens</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 工具：卫星过境（完成） -->
+    <div class="tool">
+      <div class="tool-head">
+        <div class="tool-ico">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#3482FF" stroke-width="1.7"><circle cx="12" cy="12" r="2.6"/><path d="M12 3.5v3M12 17.5v3M3.5 12h3M17.5 12h3" stroke-linecap="round"/><circle cx="12" cy="12" r="7.6" stroke-dasharray="2.5 3"/></svg>
+        </div>
+        <div class="tool-name">
+          <b>卫星过境预测</b>
+          <span>get_satellite_passes · ISS (ZARYA) · 未来 48 小时</span>
+        </div>
+        <span class="badge ok">完成</span>
+      </div>
+      <div class="steps">
+        <div class="step done">TLE</div>
+        <div class="step done">SGP4</div>
+        <div class="step done">过境筛选</div>
+        <div class="step done">转发器</div>
+      </div>
+      <div class="tool-foot">
+        <span>返回 4 次过境 · 3 个活跃转发器</span>
+        <span class="elapsed">1.8s</span>
+      </div>
+    </div>
+    <!-- 工具：进行中的 SSTV -->
+    <div class="tool running">
+      <div class="tool-head">
+        <div class="tool-ico" style="background:rgba(255,159,10,.13);color:#FF9F0A">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#FF9F0A" stroke-width="1.7"><rect x="3.2" y="5.2" width="17.6" height="13.6" rx="2.4"/><path d="M3.2 16l4.6-4.4 3.4 3.2 3.2-3.6 5.6 5.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8.4" cy="9.2" r="1.2" fill="#FF9F0A" stroke="none"/></svg>
+        </div>
+        <div class="tool-name">
+          <b>开始 SSTV 接收</b>
+          <span>start_sstv_receive · PD-120 · 145.800 MHz</span>
+        </div>
+        <span class="badge run">接收中</span>
+      </div>
+      <div class="prog" style="margin:0 12px 8px"><i style="width:42%"></i></div>
+      <div class="steps">
+        <div class="step done">启动音频</div>
+        <div class="step done">VIS 锁定</div>
+        <div class="step now">解码 53 / 128 行</div>
+        <div class="step">存图</div>
+      </div>
+      <div class="tool-hint">第 1 帧 · 已收 53 行（约 42%）· 信号 −18 dB · 预计还需 1 分 12 秒</div>
+      <div class="tool-foot">
+        <span class="link">打开接收页</span>
+        <span>·</span>
+        <span>完成后自动入图库</span>
+        <span class="elapsed">00:53</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 输入栏 -->
+  <div class="composer">
+    <div class="inputbar">
+      <div class="plus">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3482FF" stroke-width="1.8" stroke-linecap="round"><path d="M12 5.5v13M5.5 12h13"/></svg>
+      </div>
+      <div class="ph">问问业余无线电…（可调用 App 功能）</div>
+      <div class="send">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- 底部导航 -->
+  <div class="navbar">
+    <div class="nav">
+      <div class="pill">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 10.5L12 4l8 6.5V20H4v-9.5z" stroke-linejoin="round"/></svg>
+      </div>
+      <span>首页</span>
+    </div>
+    <div class="nav active">
+      <div class="pill">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 2.8l2 5.1 5.1 2-5.1 2-2 5.1-2-5.1-5.1-2 5.1-2 2-5.1z" fill="currentColor"/><circle cx="18.6" cy="18.4" r="1.6" fill="currentColor" opacity=".75"/></svg>
+      </div>
+      <span>AI</span>
+    </div>
+    <div class="nav">
+      <div class="pill">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3.1"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.11a1.7 1.7 0 0 0-1.11-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.11A1.7 1.7 0 0 0 4.66 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.64a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.11a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.36 9v.05a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.11a1.7 1.7 0 0 0-1.49 1z"/></svg>
+      </div>
+      <span>设置</span>
+    </div>
+  </div>
+</div>
+</body>
+</html>

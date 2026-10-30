@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HamKit AI — 设置页设计稿</title>
+<style>
+
+  :root{
+    /* MiuixTheme.colorScheme（深色）对应值 */
+    --bg:#000000;--surface:#1C1C1E;--surface-2:#2C2C2E;--surface-3:#3A3A3C;
+    --line:rgba(255,255,255,.09);--line-strong:rgba(255,255,255,.16);
+    --text:#FFFFFF;--text-2:#98989F;--text-3:#6C6C70;
+    --primary:#3482FF;--primary-soft:rgba(52,130,255,.14);
+    --ok:#34C759;--ok-soft:rgba(52,199,89,.13);
+    --warn:#FF9F0A;--warn-soft:rgba(255,159,10,.13);
+    --red:#FF453A;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  html,body{margin:0;padding:0;background:#000;color:var(--text);
+    font-family:system-ui,-apple-system,"PingFang SC","Noto Sans SC","Microsoft YaHei",sans-serif}
+  .phone{width:412px;margin:0 auto;min-height:915px;padding-bottom:28px;background:var(--bg)}
+  .statusbar{display:flex;justify-content:space-between;align-items:center;
+    padding:12px 20px 4px;font-size:12.5px;color:var(--text)}
+  .topbar{display:flex;align-items:center;gap:12px;padding:10px 16px 16px}
+  .topbar .back{width:36px;height:36px;border-radius:12px;display:grid;place-items:center;
+    color:var(--text-2);background:var(--surface)}
+  .topbar h1{margin:0;font-size:22px;font-weight:700}
+  .topbar .save{margin-left:auto;font-size:12.5px;font-weight:600;color:#fff;
+    background:var(--primary);padding:8px 15px;border-radius:11px}
+  /* 状态卡 */
+  .hero{margin:0 16px 16px;padding:15px;border-radius:16px;background:var(--surface)}
+  .hero .row1{display:flex;align-items:center;gap:8px}
+  .hero .dot{width:7px;height:7px;border-radius:50%;background:var(--ok)}
+  .hero .ok{font-size:12px;font-weight:600;color:var(--ok)}
+  .hero .lat{margin-left:auto;font-size:10.5px;color:var(--text-3);font-variant-numeric:tabular-nums}
+  .hero h2{margin:9px 0 3px;font-size:16px;letter-spacing:.2px}
+  .hero p{margin:0;font-size:11px;color:var(--text-3);line-height:1.55}
+  .kv{display:flex;gap:16px;margin-top:12px;padding-top:11px;border-top:1px solid var(--line)}
+  .kv div{font-size:10px;color:var(--text-3)}
+  .kv b{display:block;margin-top:3px;font-size:11.5px;color:var(--text-2);font-weight:600;
+    font-family:ui-monospace,"SF Mono",Menlo,monospace}
+  /* 分组 */
+  .group{margin:0 16px 14px}
+  .group-title{font-size:11px;color:var(--text-3);letter-spacing:.3px;margin:0 4px 7px}
+  .card{border-radius:16px;background:var(--surface);overflow:hidden}
+  .item{display:flex;align-items:center;gap:10px;padding:12px 13px;font-size:12.5px}
+  .item + .item{border-top:1px solid var(--line)}
+  .item .lbl{color:var(--text-2);flex:none;width:104px}
+  .item .val{flex:1;text-align:right;color:var(--text);font-size:12px}
+  .item .val.mono{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:11.5px;color:var(--text-2)}
+  .item .chev{color:var(--text-3);font-size:12px}
+  .item .switch{width:38px;height:22px;border-radius:999px;background:var(--primary);position:relative;flex:none}
+  .item .switch::after{content:"";position:absolute;width:18px;height:18px;border-radius:50%;
+    background:#fff;top:2px;right:2px}
+  .item .switch.off{background:var(--surface-3)}
+  .item .switch.off::after{right:auto;left:2px}
+  /* 分段控件 */
+  .seg{display:flex;gap:6px;padding:12px 13px;flex-wrap:wrap}
+  .seg span{padding:8px 12px;border-radius:999px;font-size:11.5px;color:var(--text-2);
+    background:var(--surface-2)}
+  .seg span.on{color:#fff;font-weight:600;background:var(--primary)}
+  /* 服务商 chips */
+  .vendors{display:flex;gap:7px;flex-wrap:wrap;padding:12px 13px 13px}
+  .vendor{padding:8px 12px;border-radius:999px;font-size:11.5px;color:var(--text-2);
+    background:var(--surface-2)}
+  .vendor.on{color:#fff;font-weight:600;background:var(--primary)}
+  .vendor .tag{font-size:9px;color:var(--text-3);margin-left:3px}
+  .vendor.on .tag{color:rgba(255,255,255,.75)}
+  /* 密钥行 */
+  .keyrow{display:flex;align-items:center;gap:8px;padding:13px}
+  .keyrow .k{flex:1;min-width:0}
+  .keyrow .k .t{font-size:12.5px;color:var(--text-2)}
+  .keyrow .k .v{margin-top:4px;font-family:ui-monospace,"SF Mono",Menlo,monospace;
+    font-size:11.5px;color:var(--text-3);letter-spacing:.6px}
+  .keyrow .pill{font-size:10px;padding:4px 8px;border-radius:8px;color:var(--ok);
+    background:var(--ok-soft);flex:none}
+  .keyrow .ghost{font-size:10.5px;padding:6px 10px;border-radius:9px;color:var(--text-2);
+    background:var(--surface-2);flex:none}
+  /* 温度滑块 */
+  .slider{padding:13px}
+  .slider .head{display:flex;justify-content:space-between;font-size:11.5px;color:var(--text-2)}
+  .slider .head b{color:var(--primary);font-variant-numeric:tabular-nums}
+  .track{position:relative;height:4px;border-radius:4px;background:var(--surface-3);margin-top:13px}
+  .track .f{position:absolute;left:0;top:0;bottom:0;width:38%;border-radius:4px;background:var(--primary)}
+  .track .knob{position:absolute;left:38%;top:50%;width:18px;height:18px;border-radius:50%;
+    transform:translate(-50%,-50%);background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.5)}
+  .hint{padding:0 13px 12px;font-size:10px;line-height:1.55;color:var(--text-3)}
+  /* 工具列表 */
+  .toolrow{display:flex;align-items:center;gap:10px;padding:11px 13px}
+  .toolrow + .toolrow{border-top:1px solid var(--line)}
+  .toolrow .i{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;flex:none;
+    background:var(--surface-2);color:var(--primary)}
+  .toolrow .n{flex:1;min-width:0}
+  .toolrow .n b{display:block;font-size:12px;font-weight:600}
+  .toolrow .n span{display:block;font-size:10px;color:var(--text-3);margin-top:2px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .toolrow .switch{width:34px;height:20px;border-radius:999px;background:var(--primary);position:relative;flex:none}
+  .toolrow .switch::after{content:"";position:absolute;width:16px;height:16px;border-radius:50%;
+    background:#fff;top:2px;right:2px}
+  .toolrow .switch.off{background:var(--surface-3)}
+  .toolrow .switch.off::after{right:auto;left:2px}
+  .warn{margin:0 16px 14px;padding:12px 13px;border-radius:14px;font-size:10.5px;line-height:1.65;
+    color:var(--text-2);background:var(--surface)}
+  .warn b{color:var(--warn)}
+  .footer{padding:4px 16px 0;display:flex;gap:10px}
+  .footer .btn{flex:1;text-align:center;padding:12px;border-radius:13px;font-size:12.5px;font-weight:650;
+    background:var(--surface-2);color:var(--text-2)}
+  .footer .btn.primary{background:var(--primary);color:#fff}
+
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="statusbar">
+    <span>21:20</span>
+    <span style="display:flex;gap:6px;align-items:center">
+      <svg width="15" height="11" viewBox="0 0 15 11" fill="none"><path d="M1 10V7M5 10V5M9 10V3M13 10V1" stroke="#98989F" stroke-width="1.6" stroke-linecap="round"/></svg>
+      <svg width="14" height="11" viewBox="0 0 14 11" fill="none"><path d="M1 4.5C2.7 3 4.8 2.2 7 2.2s4.3.8 6 2.3M3.4 6.9C4.5 5.9 5.7 5.4 7 5.4s2.5.5 3.6 1.5M7 9.3v.2" stroke="#98989F" stroke-width="1.4" stroke-linecap="round"/></svg>
+      <svg width="22" height="11" viewBox="0 0 22 11" fill="none"><rect x="1" y="1" width="17" height="9" rx="2.6" stroke="#98989F" stroke-width="1.2"/><rect x="3" y="3" width="12" height="5" rx="1.2" fill="#98989F"/><path d="M20 4v3" stroke="#98989F" stroke-width="1.4" stroke-linecap="round"/></svg>
+    </span>
+  </div>
+
+  <div class="topbar">
+    <div class="back">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#98989F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 5L7.5 12l7 7"/></svg>
+    </div>
+    <h1>AI 助手设置</h1>
+    <div class="save">保存</div>
+  </div>
+
+  <div class="hero">
+    <div class="row1"><span class="dot"></span><span class="ok">已连接 · 工具调用可用</span>
+      <span class="lat">620 ms</span></div>
+    <h2>DeepSeek · deepseek-chat</h2>
+    <p>OpenAI Chat Completions 协议 · 流式输出 · 已启用 7 个工具</p>
+    <div class="kv">
+      <div>本机密钥<b>sk-••••••7f3a</b></div>
+      <div>上下文<b>12.4k / 65k</b></div>
+      <div>今日用量<b>18 次</b></div>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">服务商</div>
+    <div class="card">
+      <div class="vendors">
+        <div class="vendor on">DeepSeek</div>
+        <div class="vendor">OpenAI</div>
+        <div class="vendor">Anthropic</div>
+        <div class="vendor">Gemini</div>
+        <div class="vendor">Kimi<span class="tag">兼容</span></div>
+        <div class="vendor">GLM<span class="tag">兼容</span></div>
+        <div class="vendor">自定义</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">API 协议（三选一）</div>
+    <div class="card">
+      <div class="seg">
+        <span class="on">Chat Completions</span>
+        <span>Messages</span>
+        <span>Gemini</span>
+      </div>
+      <div class="item"><span class="lbl">Base URL</span>
+        <span class="val mono">api.deepseek.com/v1</span>
+        <span class="chev">›</span></div>
+      <div class="item"><span class="lbl">模型</span>
+        <span class="val mono">deepseek-chat</span>
+        <span class="chev">›</span></div>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">API Key</div>
+    <div class="card">
+      <div class="keyrow">
+        <div class="k">
+          <div class="t">密钥（AES-GCM + Keystore 加密存储）</div>
+          <div class="v">sk-••••••••••••••••7f3a</div>
+        </div>
+        <span class="pill">已保存</span>
+        <span class="ghost">测试</span>
+      </div>
+      <div class="hint">密钥仅保存在本机，不写入日志、不随备份导出；请求直连你填写的服务商。</div>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">网络</div>
+    <div class="card">
+      <div class="item">
+        <span class="lbl" style="width:auto;flex:1">允许明文 HTTP（仅内网）</span>
+        <span class="switch off"></span>
+      </div>
+      <div class="hint">仅当 Base URL 为私有地址（10.x / 172.16–31.x / 192.168.x / .local）时生效；
+        HTTP 不加密，同一网络的其他人可能看到提问与 Key。</div>
+      <div class="item">
+        <span class="lbl" style="width:auto;flex:1">信任用户安装的 CA</span>
+        <span class="switch"></span>
+      </div>
+      <div class="hint">用于内网自签 HTTPS / 代理（Caddy、Nginx、mitmproxy）。公网 http 一律拒绝。</div>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">生成参数</div>
+    <div class="card">
+      <div class="slider">
+        <div class="head"><span>温度 Temperature</span><b>0.6</b></div>
+        <div class="track"><div class="f"></div><div class="knob"></div></div>
+      </div>
+      <div class="item"><span class="lbl">最大输出</span><span class="val">2048 tokens</span><span class="chev">›</span></div>
+      <div class="item"><span class="lbl">流式输出</span><span class="switch"></span></div>
+      <div class="item"><span class="lbl">自动重试</span><span class="switch"></span></div>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">工具权限 · 模型可以调用这些 App 功能</div>
+    <div class="card">
+      <div class="toolrow">
+        <div class="i"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3482FF" stroke-width="1.8"><path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z" stroke-linejoin="round"/><circle cx="12" cy="10" r="2.6"/></svg></div>
+        <div class="n"><b>双区定位 / 网格</b><span>get_zone_info · 读取当前坐标与 CQ/ITU 分区</span></div>
+        <span class="switch"></span>
+      </div>
+      <div class="toolrow">
+        <div class="i"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3482FF" stroke-width="1.8"><circle cx="12" cy="12" r="2.6"/><path d="M12 3.5v3M12 17.5v3M3.5 12h3M17.5 12h3" stroke-linecap="round"/></svg></div>
+        <div class="n"><b>卫星过境 / 实时追踪</b><span>get_satellite_passes · 计算未来 48 小时过境</span></div>
+        <span class="switch"></span>
+      </div>
+      <div class="toolrow">
+        <div class="i"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3482FF" stroke-width="1.8"><rect x="3.2" y="5.2" width="17.6" height="13.6" rx="2.4"/><path d="M3.2 16l4.6-4.4 3.4 3.2 3.2-3.6 5.6 5.2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div class="n"><b>SSTV 接收</b><span>start_sstv_receive · 打开接收页并开始解码</span></div>
+        <span class="switch"></span>
+      </div>
+      <div class="toolrow">
+        <div class="i"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3482FF" stroke-width="1.8"><path d="M6.5 16.5V11a5.5 5.5 0 0 1 11 0v5.5l1.5 2H5l1.5-2z" stroke-linejoin="round"/><path d="M10 20.5h4" stroke-linecap="round"/></svg></div>
+        <div class="n"><b>创建过境提醒</b><span>add_pass_reminder · 写入系统闹钟</span></div>
+        <span class="switch"></span>
+      </div>
+      <div class="toolrow">
+        <div class="i"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3482FF" stroke-width="1.8"><path d="M6 18L18 6M18 6h-6M18 6v6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div class="n"><b>页面跳转</b><span>open_screen · CW / FT8 / APRS / QSO 日志</span></div>
+        <span class="switch"></span>
+      </div>
+      <div class="toolrow">
+        <div class="i"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3482FF" stroke-width="1.8"><path d="M4 17V9M8 17V9M12 17V9M16 17V9M20 17V9" stroke-linecap="round"/></svg></div>
+        <div class="n"><b>摩斯编解码</b><span>cw_encode / cw_decode · 本地计算</span></div>
+        <span class="switch"></span>
+      </div>
+      <div class="toolrow">
+        <div class="i"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3482FF" stroke-width="1.8"><circle cx="9" cy="9" r="3"/><path d="M9 3v2M3 9h2M4.5 4.5l1.4 1.4M13.5 4.5l-1.4 1.4" stroke-linecap="round"/><path d="M7 19h9.5a3.5 3.5 0 0 0 0-7 4.5 4.5 0 0 0-8.8-.6A3.8 3.8 0 0 0 7 19z" stroke-linejoin="round"/></svg></div>
+        <div class="n"><b>天气 / 时间</b><span>get_weather · 首页天气与 UTC 时间</span></div>
+        <span class="switch"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="group">
+    <div class="group-title">隐私</div>
+    <div class="card">
+      <div class="item"><span class="lbl">发送精确坐标</span><span class="switch"></span></div>
+      <div class="item"><span class="lbl">保存对话历史</span><span class="switch"></span></div>
+      <div class="item"><span class="lbl">历史加密</span>
+        <span class="val" style="color:var(--ok);font-size:11.5px">AES-256-GCM · 已启用</span></div>
+      <div class="item"><span class="lbl">保留条数</span><span class="val">200 条</span><span class="chev">›</span></div>
+      <div class="item"><span class="lbl">清除所有对话</span><span class="val" style="color:#FF7A8A">清除</span></div>
+    </div>
+  </div>
+
+  <div class="warn">
+    <b>提示</b>：坐标、呼号、卫星观测记录会随提问内容发送给你配置的 AI 服务商。关闭「发送精确坐标」后只发送 CQ/ITU 分区与网格。
+  </div>
+
+  <div class="footer">
+    <div class="btn">清除密钥</div>
+    <div class="btn primary">保存并测试连接</div>
+  </div>
+</div>
+</body>
+</html>

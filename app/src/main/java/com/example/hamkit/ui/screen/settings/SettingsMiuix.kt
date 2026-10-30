@@ -20,6 +20,7 @@ import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Update
 import androidx.compose.material.icons.rounded.Upload
@@ -310,6 +311,20 @@ fun SettingPagerMiuix(
                             show = showSendLogDialog.value,
                             onDismissRequest = { showSendLogDialog.value = false },
                             loadingDialog = loadingDialog
+                        )
+                        val aiAssistant = stringResource(id = R.string.settings_ai_assistant)
+                        ArrowPreference(
+                            title = aiAssistant,
+                            summary = stringResource(id = R.string.settings_ai_assistant_summary),
+                            startAction = {
+                                Icon(
+                                    Icons.Rounded.AutoAwesome,
+                                    modifier = Modifier.padding(end = 6.dp),
+                                    contentDescription = aiAssistant,
+                                    tint = colorScheme.onBackground
+                                )
+                            },
+                            onClick = actions.onOpenAiSettings,
                         )
                         val privacy = stringResource(id = R.string.about_privacy)
                         ArrowPreference(

@@ -167,4 +167,9 @@ sealed interface Route : NavKey, Parcelable {
     @Parcelize
     @Serializable
     data object QsoLogList : Route
+
+    /** AI 助手设置：协议、Base URL、API Key、内网与隐私 */
+    @Parcelize
+    @Serializable
+    data object AiSettings : Route
 }

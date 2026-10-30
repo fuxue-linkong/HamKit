@@ -50,6 +50,8 @@ data class SettingsScreenActions(
     val onOpenTheme: () -> Unit,
     val onSetUiModeIndex: (Int) -> Unit,
     val onOpenAbout: () -> Unit,
+    /** 打开 AI 助手设置（协议 / API Key / 内网 / 隐私）。 */
+    val onOpenAiSettings: () -> Unit = {},
     val onOpenPrivacy: () -> Unit = {},
     // 业务相关回调
     val onUpdateReminderSettings: (ReminderSettings) -> Unit = {},
