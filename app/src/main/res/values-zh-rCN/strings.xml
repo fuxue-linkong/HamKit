@@ -87,4 +87,26 @@
     <string name="settings_clear_background_summary">移除自定义图片，恢复普通卡片样式</string>
         <string name="privacy_consent_ai_title">AI 助手（可选）</string>
     <string name="privacy_consent_ai_desc">需要你自行配置 API Key。对话与你上传的附件会发送给你选择的服务商；Key 与对话历史在本机加密保存。</string>
+    <string name="ai_title">AI 助手</string>
+    <string name="ai_new_chat">新对话</string>
+    <string name="ai_history">历史</string>
+    <string name="ai_settings">设置</string>
+    <string name="ai_input_hint">描述你想问的内容，+ 上传文档或录音…</string>
+    <string name="ai_attach_hint">文档 / 录音（音频自动 SSTV 解码）</string>
+    <string name="ai_send">发送</string>
+    <string name="ai_stop">停止</string>
+    <string name="ai_no_text">（无文本输出）</string>
+    <string name="ai_tool_running">进行中</string>
+    <string name="ai_tool_done">完成</string>
+    <string name="ai_tool_failed">失败</string>
+    <string name="ai_att_parsing">解析中…</string>
+    <string name="ai_history_title">对话历史</string>
+    <string name="ai_history_empty">还没有历史会话</string>
+    <string name="ai_export">导出</string>
+    <string name="ai_delete">删除</string>
+    <string name="ai_close">关闭</string>
+    <string name="ai_allow">允许</string>
+    <string name="ai_cancel">取消</string>
+    <string name="ai_need_key_title">还没有配置 API Key</string>
+    <string name="ai_go_config">去配置</string>
 </resources>

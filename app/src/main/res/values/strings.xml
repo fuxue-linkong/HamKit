@@ -444,4 +444,26 @@
     <string name="aprs_license_message" translatable="false">APRS-IS 是业余无线电网络，仅限持有有效业余无线电执照的爱好者使用。\n\n你呼号下的所有流量（包含位置上报与消息）由你本人负责。开启位置上报后，你的呼号、精确位置和消息会发布到 APRS-IS 及关联网站，可能被任何人看到。\n\n请确认你已持有有效执照，且 Passcode 由你本人合法持有；HamKit 不会为你计算或发放 Passcode。\n\n未填写 Passcode 时将以只读模式连接（pass -1），只能接收报文。</string>
     <string name="aprs_license_confirm" translatable="false">我已持有有效执照并同意</string>
     <string name="aprs_license_cancel" translatable="false">暂不连接</string>
+    <string name="ai_title">AI assistant</string>
+    <string name="ai_new_chat">New chat</string>
+    <string name="ai_history">History</string>
+    <string name="ai_settings">Settings</string>
+    <string name="ai_input_hint">Describe what you want, or attach a document / recording…</string>
+    <string name="ai_attach_hint">Documents / recordings (audio is decoded by SSTV)</string>
+    <string name="ai_send">Send</string>
+    <string name="ai_stop">Stop</string>
+    <string name="ai_no_text">(no text output)</string>
+    <string name="ai_tool_running">Running</string>
+    <string name="ai_tool_done">Done</string>
+    <string name="ai_tool_failed">Failed</string>
+    <string name="ai_att_parsing">Parsing…</string>
+    <string name="ai_history_title">Chat history</string>
+    <string name="ai_history_empty">No conversations yet</string>
+    <string name="ai_export">Export</string>
+    <string name="ai_delete">Delete</string>
+    <string name="ai_close">Close</string>
+    <string name="ai_allow">Allow</string>
+    <string name="ai_cancel">Cancel</string>
+    <string name="ai_need_key_title">API key required</string>
+    <string name="ai_go_config">Configure</string>
 </resources>
