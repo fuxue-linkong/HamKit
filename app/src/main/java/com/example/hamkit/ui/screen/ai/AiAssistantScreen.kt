@@ -1,5 +1,7 @@
 package com.example.hamkit.ui.screen.ai
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -227,7 +229,9 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     items(state.messages, key = { it.id }) { message ->
-                        MessageItemMiuix(message)
+                        Box(Modifier.animateItem()) {
+                            MessageItemMiuix(message)
+                        }
                     }
                 }
             }
@@ -601,7 +605,11 @@ private fun formatAiTime(instant: Instant): String = AI_TIME_FMT.format(instant)
 
 @Composable
 private fun ToolCardMiuix(tool: AiToolUi) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    val animatedProgress by animateFloatAsState(
+        targetValue = (tool.progress ?: 0f).coerceIn(0f, 1f),
+        label = "aiToolProgress",
+    )
+    Card(modifier = Modifier.fillMaxWidth().animateContentSize()) {
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -620,7 +628,7 @@ private fun ToolCardMiuix(tool: AiToolUi) {
             val progress = tool.progress
             if (tool.state == AiToolUiState.RUNNING && progress != null) {
                 LinearProgressIndicator(
-                    progress = progress.coerceIn(0f, 1f),
+                    progress = animatedProgress,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 8.dp),

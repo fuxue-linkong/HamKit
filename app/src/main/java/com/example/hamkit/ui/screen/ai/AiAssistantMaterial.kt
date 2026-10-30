@@ -2,6 +2,8 @@ package com.example.hamkit.ui.screen.ai
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
@@ -51,8 +53,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
@@ -183,7 +183,9 @@ fun AiAssistantScreenMaterial(bottomInnerPadding: Dp = 0.dp) {
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     items(state.messages, key = { it.id }) { message ->
-                        MessageItemMaterial(message)
+                        Box(Modifier.animateItem()) {
+                            MessageItemMaterial(message)
+                        }
                     }
                 }
             }
@@ -545,8 +547,12 @@ private fun formatAiTimeMaterial(instant: Instant): String = AI_TIME_FMT_MATERIA
 
 @Composable
 private fun ToolCardMaterial(tool: AiToolUi) {
+    val animatedProgress by animateFloatAsState(
+        targetValue = (tool.progress ?: 0f).coerceIn(0f, 1f),
+        label = "aiToolProgress",
+    )
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().animateContentSize(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
@@ -568,7 +574,7 @@ private fun ToolCardMaterial(tool: AiToolUi) {
             val progress = tool.progress
             if (tool.state == AiToolUiState.RUNNING && progress != null) {
                 LinearProgressIndicator(
-                    progress = { progress.coerceIn(0f, 1f) },
+                    progress = { animatedProgress },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 8.dp),
