@@ -174,6 +174,60 @@ class AiProtocolParserTest {
     }
 
     @Test
+    fun `openai non streaming response falls back to message content`() {
+        val parser = OpenAiStreamParser()
+        val events = parser.parse(
+            SseFrame(
+                null,
+                """{"choices":[{"message":{"content":"你好，这里是 HamKit"},"finish_reason":"stop"}]}""",
+            )
+        ) + parser.finish()
+
+        assertEquals(
+            "你好，这里是 HamKit",
+            events.filterIsInstance<AiEvent.TextDelta>().first().text,
+        )
+        assertEquals(1, events.filterIsInstance<AiEvent.Finished>().size)
+        assertEquals(
+            AiStopReason.END_TURN,
+            events.filterIsInstance<AiEvent.Finished>().first().stop,
+        )
+    }
+
+    @Test
+    fun `openai parses multiple json objects in one frame`() {
+        val parser = OpenAiStreamParser()
+        val data = """{"choices":[{"delta":{"content":"a"}}]}""" +
+            "\n" +
+            """{"choices":[{"delta":{"content":"b"},"finish_reason":"stop"}]}"""
+        val events = parser.parse(SseFrame(null, data))
+
+        assertEquals(
+            listOf("a", "b"),
+            events.filterIsInstance<AiEvent.TextDelta>().map { it.text },
+        )
+        assertEquals(1, events.filterIsInstance<AiEvent.Finished>().size)
+    }
+
+    @Test
+    fun `anthropic non streaming response`() {
+        val parser = AnthropicStreamParser()
+        val events = parser.parse(
+            SseFrame(
+                null,
+                """{"type":"message","content":[{"type":"text","text":"收到"}],"stop_reason":"end_turn"}""",
+            )
+        )
+
+        assertEquals("收到", events.filterIsInstance<AiEvent.TextDelta>().first().text)
+        assertEquals(1, events.filterIsInstance<AiEvent.Finished>().size)
+        assertEquals(
+            AiStopReason.END_TURN,
+            events.filterIsInstance<AiEvent.Finished>().first().stop,
+        )
+    }
+
+    @Test
     fun `openai error body parsing`() {
         val error = AiError.fromHttp(401, """{"error":{"message":"invalid api key","type":"auth_error"}}""")
         assertEquals(AiErrorKind.AUTH, error.kind)

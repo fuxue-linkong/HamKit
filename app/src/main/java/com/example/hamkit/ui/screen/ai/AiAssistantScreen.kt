@@ -9,9 +9,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.add
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
@@ -35,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -66,19 +69,23 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
  * 切页、切换 UI 风格都不会中断正在进行的流式请求。
  */
 @Composable
-fun AiAssistantScreen() {
+fun AiAssistantScreen(bottomInnerPadding: Dp = 0.dp) {
     when (LocalUiMode.current) {
-        UiMode.Miuix -> AiAssistantScreenMiuix()
-        UiMode.Material -> AiAssistantScreenMaterial()
+        UiMode.Miuix -> AiAssistantScreenMiuix(bottomInnerPadding)
+        UiMode.Material -> AiAssistantScreenMaterial(bottomInnerPadding)
     }
 }
 
 @Composable
-fun AiAssistantScreenMiuix() {
+fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
     val viewModel = appViewModel<AiAssistantViewModel>()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val navigator = LocalNavigator.current
     val listState = rememberLazyListState()
+    // 底部导航是 pager 外层 Scaffold 的 bottomBar，AI 页必须自己让出这段高度；
+    // 键盘弹出时取两者较大值，避免输入框被导航栏或 IME 遮挡。
+    val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
+    val bottomInset = maxOf(bottomInnerPadding, imeBottom)
 
     // 新消息入列时滚到底；流式增量不滚，避免用户上翻时被反复拉回
     LaunchedEffect(state.messages.size) {
@@ -156,6 +163,7 @@ fun AiAssistantScreenMiuix() {
             if (state.messages.isEmpty()) Spacer(Modifier.weight(1f))
 
             ComposerMiuix(
+                modifier = Modifier.padding(bottom = bottomInset),
                 input = state.input,
                 streaming = state.isStreaming,
                 onInputChange = viewModel::onInputChange,
@@ -297,9 +305,14 @@ private fun MessageItemMiuix(message: AiChatMessageUi) {
             }
             Spacer(Modifier.height(6.dp))
             Text(
-                message.text.ifBlank { if (message.isStreaming) "…" else "" },
+                message.text.ifBlank { if (message.isStreaming) "…" else "（无文本输出）" },
                 fontSize = 14.sp,
                 lineHeight = 22.sp,
+                color = if (message.text.isBlank() && !message.isStreaming) {
+                    colorScheme.onSurfaceVariantSummary
+                } else {
+                    colorScheme.onSurface
+                },
             )
             message.error?.let { error ->
                 Spacer(Modifier.height(4.dp))
@@ -311,6 +324,7 @@ private fun MessageItemMiuix(message: AiChatMessageUi) {
 
 @Composable
 private fun ComposerMiuix(
+    modifier: Modifier = Modifier,
     input: String,
     streaming: Boolean,
     onInputChange: (String) -> Unit,
@@ -318,7 +332,7 @@ private fun ComposerMiuix(
     onStop: () -> Unit,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,

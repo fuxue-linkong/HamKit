@@ -1,6 +1,8 @@
 package com.example.hamkit.ui.screen.ai
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -9,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -36,6 +39,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -49,11 +53,14 @@ import com.example.hamkit.ui.viewmodel.AiChatUiState
 
 /** Material 风格实现，与 Miuix 版共用 [AiAssistantViewModel]。 */
 @Composable
-fun AiAssistantScreenMaterial() {
+fun AiAssistantScreenMaterial(bottomInnerPadding: Dp = 0.dp) {
     val viewModel = appViewModel<AiAssistantViewModel>()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val navigator = LocalNavigator.current
     val listState = rememberLazyListState()
+    // 与 Miuix 版一致：让出底部导航高度，键盘弹出时取 ime 与导航栏的较大值
+    val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
+    val bottomInset = maxOf(bottomInnerPadding, imeBottom)
 
     LaunchedEffect(state.messages.size) {
         if (state.messages.isNotEmpty()) listState.scrollToItem(state.messages.lastIndex)
@@ -108,6 +115,7 @@ fun AiAssistantScreenMaterial() {
             }
 
             ComposerMaterial(
+                modifier = Modifier.padding(bottom = bottomInset),
                 input = state.input,
                 streaming = state.isStreaming,
                 onInputChange = viewModel::onInputChange,
@@ -259,8 +267,13 @@ private fun MessageItemMaterial(message: AiChatMessageUi) {
             }
             Spacer(Modifier.height(6.dp))
             Text(
-                message.text.ifBlank { if (message.isStreaming) "…" else "" },
+                message.text.ifBlank { if (message.isStreaming) "…" else "（无文本输出）" },
                 style = MaterialTheme.typography.bodyMedium,
+                color = if (message.text.isBlank() && !message.isStreaming) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
             )
             message.error?.let { error ->
                 Spacer(Modifier.height(4.dp))
@@ -276,6 +289,7 @@ private fun MessageItemMaterial(message: AiChatMessageUi) {
 
 @Composable
 private fun ComposerMaterial(
+    modifier: Modifier = Modifier,
     input: String,
     streaming: Boolean,
     onInputChange: (String) -> Unit,
@@ -283,7 +297,7 @@ private fun ComposerMaterial(
     onStop: () -> Unit,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.Bottom,

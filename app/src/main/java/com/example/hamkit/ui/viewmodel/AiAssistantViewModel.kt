@@ -1,6 +1,8 @@
 package com.example.hamkit.ui.viewmodel
 
 import android.app.Application
+import android.content.Context
+import android.content.SharedPreferences
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.hamkit.data.ai.AiBlock
@@ -74,8 +76,26 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
     private var streamJob: Job? = null
     private var sessionCreatedAt = System.currentTimeMillis()
 
+    /**
+     * 监听 AI 设置文件：用户从设置页保存 Key / 切换协议后，AI 页无需重新进入即可生效。
+     * （AI 页在 pager 中常驻，不会因为导航返回而重建。）
+     */
+    private val settingsPrefs = application.getSharedPreferences(
+        AiConfigStore.PREFS_NAME,
+        Context.MODE_PRIVATE,
+    )
+    private val settingsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+        reloadConfig()
+    }
+
     init {
+        settingsPrefs.registerOnSharedPreferenceChangeListener(settingsListener)
         viewModelScope.launch { initialize() }
+    }
+
+    override fun onCleared() {
+        settingsPrefs.unregisterOnSharedPreferenceChangeListener(settingsListener)
+        super.onCleared()
     }
 
     private suspend fun initialize() {
@@ -205,11 +225,14 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
         var usage: AiUsage? = null
         var errorText: String? = null
         var lastFlush = 0L
+        var textDeltaCount = 0
+        var finishedStop: com.example.hamkit.data.ai.AiStopReason? = null
 
         try {
             AiClientFactory.create(config.protocol).stream(config, request, apiKey).collect { event ->
                 when (event) {
                     is AiEvent.TextDelta -> {
+                        textDeltaCount++
                         text.append(event.text)
                         val now = System.currentTimeMillis()
                         if (now - lastFlush >= STREAM_FLUSH_INTERVAL_MS) {
@@ -222,6 +245,8 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
 
                     is AiEvent.Failed -> errorText = humanize(event.error)
 
+                    is AiEvent.Finished -> finishedStop = event.stop
+
                     // P0 不执行工具；若模型仍然返回工具调用，按"能力不支持"提示
                     is AiEvent.ToolCallStarted -> errorText = "当前模型返回了工具调用，但工具能力尚未启用"
 
@@ -233,10 +258,18 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
         } catch (t: Throwable) {
             errorText = humanize(AiError.fromThrowable(t))
         } finally {
+            // 空文本诊断：流正常结束却没有任何文本片段，通常是协议/模型/网关不匹配
+            // （例如网关忽略 stream=true、模型名写错、或该模型不支持当前协议）。
+            val effectiveError = errorText ?: if (text.isBlank() && textDeltaCount == 0) {
+                "服务商返回了空内容（未收到文本片段，结束原因 ${finishedStop?.name ?: "未知"}）。" +
+                    "请检查模型名、API 协议与 Base URL 是否匹配；部分模型或网关不支持流式输出。"
+            } else {
+                null
+            }
             finishStreaming(
                 text = text.toString(),
                 usage = usage,
-                error = errorText,
+                error = effectiveError,
                 elapsedMs = System.currentTimeMillis() - startedAt,
             )
         }

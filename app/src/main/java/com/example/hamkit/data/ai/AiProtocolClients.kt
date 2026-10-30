@@ -44,6 +44,22 @@ private fun JSONObject.optStringOrNull(key: String): String? =
     if (isNull(key)) null
     else optString(key, "").takeIf { it.isNotBlank() && it != "null" }
 
+/**
+ * 把一个 SSE 帧的 data 解析成一个或多个 JSON 对象。
+ *
+ * - 标准情况：一帧一个对象；
+ * - 兼容没有空行分隔的实现：多个 JSON 挤在同一个 data 里，按行拆开逐个解析；
+ * - 兼容非 SSE 的整段 JSON（[SseReader] 也会把裸 JSON 行收进 data）。
+ */
+private fun parseJsonObjects(data: String): List<JSONObject> {
+    runCatching { JSONObject(data) }.getOrNull()?.let { return listOf(it) }
+    return data.lineSequence()
+        .map { it.trim().removePrefix("data:").trim() }
+        .filter { it.startsWith("{") }
+        .mapNotNull { runCatching { JSONObject(it) }.getOrNull() }
+        .toList()
+}
+
 private fun JSONObject.asBody() = toString().toRequestBody(JSON_MEDIA_TYPE)
 
 /** 流式请求的通用执行骨架：鉴权头由各实现自行加到 [Request.Builder] 上。 */
@@ -112,8 +128,16 @@ internal class OpenAiStreamParser : StreamParser {
     private var stop: AiStopReason = AiStopReason.END_TURN
     private var sawToolCall = false
 
-    override fun parse(frame: SseFrame): List<AiEvent> {
-        val json = runCatching { JSONObject(frame.data) }.getOrNull() ?: return emptyList()
+    override fun parse(frame: SseFrame): List<AiEvent> =
+        parseJsonObjects(frame.data).flatMap { parseOne(it) }
+
+    /**
+     * 单个 JSON 对象。同时兼容两种形态：
+     * - 流式 chunk：`choices[0].delta.content`
+     * - 非流式完整响应：`choices[0].message.content`
+     *   （部分网关/代理忽略 `stream: true`，直接返回整段 JSON）
+     */
+    private fun parseOne(json: JSONObject): List<AiEvent> {
         val events = mutableListOf<AiEvent>()
 
         json.optJSONObject("usage")?.let { usage ->
@@ -124,16 +148,16 @@ internal class OpenAiStreamParser : StreamParser {
 
         val choice = json.optJSONArray("choices")?.optJSONObject(0) ?: return events
         val delta = choice.optJSONObject("delta")
+        val message = choice.optJSONObject("message")
 
-        delta?.optStringOrNull("content")?.let {
+        (delta?.optStringOrNull("content") ?: message?.optStringOrNull("content"))?.let {
             events += AiEvent.TextDelta(it)
         }
         // DeepSeek-R1 等把思考过程放在 reasoning_content，不进正文
-        delta?.optStringOrNull("reasoning_content")?.let {
-            events += AiEvent.ReasoningDelta(it)
-        }
+        (delta?.optStringOrNull("reasoning_content") ?: message?.optStringOrNull("reasoning_content"))
+            ?.let { events += AiEvent.ReasoningDelta(it) }
 
-        delta?.optJSONArray("tool_calls")?.let { calls ->
+        (delta?.optJSONArray("tool_calls") ?: message?.optJSONArray("tool_calls"))?.let { calls ->
             for (i in 0 until calls.length()) {
                 val tc = calls.optJSONObject(i) ?: continue
                 val index = tc.optInt("index", i)
@@ -243,10 +267,12 @@ internal class AnthropicStreamParser : StreamParser {
     private var stop: AiStopReason = AiStopReason.END_TURN
     private var sawToolCall = false
 
-    override fun parse(frame: SseFrame): List<AiEvent> {
-        val json = runCatching { JSONObject(frame.data) }.getOrNull() ?: return emptyList()
+    override fun parse(frame: SseFrame): List<AiEvent> =
+        parseJsonObjects(frame.data).flatMap { parseOne(it, frame.event) }
+
+    private fun parseOne(json: JSONObject, event: String?): List<AiEvent> {
         val events = mutableListOf<AiEvent>()
-        val type = frame.event ?: json.optStringOrNull("type").orEmpty()
+        val type = event ?: json.optStringOrNull("type").orEmpty()
 
         when (type) {
             "message_start" -> {
@@ -295,6 +321,39 @@ internal class AnthropicStreamParser : StreamParser {
             }
 
             "message_stop" -> {
+                finished = true
+                events += AiEvent.Finished(stop)
+            }
+
+            // 非流式完整响应（type = message）：部分代理会忽略 stream=true
+            "message" -> {
+                val blocks = json.optJSONArray("content")
+                if (blocks != null) {
+                    for (i in 0 until blocks.length()) {
+                        val block = blocks.optJSONObject(i) ?: continue
+                        when (block.optString("type")) {
+                            "text" -> block.optStringOrNull("text")
+                                ?.let { events += AiEvent.TextDelta(it) }
+
+                            "thinking" -> block.optStringOrNull("thinking")
+                                ?.let { events += AiEvent.ReasoningDelta(it) }
+
+                            "tool_use" -> {
+                                sawToolCall = true
+                                events += AiEvent.ToolCallStarted(
+                                    index = i,
+                                    id = block.optString("id", ""),
+                                    name = block.optString("name", ""),
+                                )
+                                events += AiEvent.ToolArgsDelta(
+                                    i,
+                                    block.optJSONObject("input")?.toString() ?: "{}",
+                                )
+                            }
+                        }
+                    }
+                }
+                stop = mapAnthropicStop(json.optString("stop_reason", ""), sawToolCall)
                 finished = true
                 events += AiEvent.Finished(stop)
             }
@@ -404,8 +463,10 @@ internal class GeminiStreamParser : StreamParser {
     private var stop: AiStopReason = AiStopReason.END_TURN
     private var sawToolCall = false
 
-    override fun parse(frame: SseFrame): List<AiEvent> {
-        val json = runCatching { JSONObject(frame.data) }.getOrNull() ?: return emptyList()
+    override fun parse(frame: SseFrame): List<AiEvent> =
+        parseJsonObjects(frame.data).flatMap { parseOne(it) }
+
+    private fun parseOne(json: JSONObject): List<AiEvent> {
         val events = mutableListOf<AiEvent>()
 
         json.optJSONObject("usageMetadata")?.let { usage ->
