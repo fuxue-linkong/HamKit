@@ -39,6 +39,10 @@ class AiConfigStore(context: Context) {
             historyLimit = prefs.getInt(KEY_HISTORY_LIMIT, 200),
             allowCleartext = prefs.getBoolean(KEY_ALLOW_CLEARTEXT, false),
             systemPrompt = prefs.getString(KEY_SYSTEM_PROMPT, "").orEmpty(),
+            disabledTools = prefs.getString(KEY_DISABLED_TOOLS, "").orEmpty()
+                .split(',')
+                .filter { it.isNotBlank() }
+                .toSet(),
         ).normalized()
     }
 
@@ -57,6 +61,7 @@ class AiConfigStore(context: Context) {
             .putInt(KEY_HISTORY_LIMIT, cfg.historyLimit)
             .putBoolean(KEY_ALLOW_CLEARTEXT, cfg.allowCleartext)
             .putString(KEY_SYSTEM_PROMPT, cfg.systemPrompt)
+            .putString(KEY_DISABLED_TOOLS, cfg.disabledTools.joinToString(","))
             .apply()
     }
 
@@ -75,6 +80,7 @@ class AiConfigStore(context: Context) {
         private const val KEY_HISTORY_LIMIT = "history_limit"
         private const val KEY_ALLOW_CLEARTEXT = "allow_cleartext"
         private const val KEY_SYSTEM_PROMPT = "system_prompt"
+        private const val KEY_DISABLED_TOOLS = "disabled_tools"
     }
 }
 

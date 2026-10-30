@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.data.ai.AiPreset
+import com.example.hamkit.data.ai.tool.AiToolRegistry
 import com.example.hamkit.data.ai.AiProtocol
 import com.example.hamkit.ui.LocalUiMode
 import com.example.hamkit.ui.UiMode
@@ -46,6 +47,7 @@ import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
@@ -243,6 +245,41 @@ fun AiSettingsScreenMiuix(onBack: () -> Unit = {}) {
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 6,
                     )
+                }
+            }
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp)) {
+                    Text("工具权限", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        "关闭后模型看不到该工具，也不会调用它。",
+                        fontSize = 10.sp,
+                        color = colorScheme.onSurfaceVariantSummary,
+                    )
+                    AiToolRegistry.ALL.forEach { tool ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(tool.spec.title, fontSize = 12.sp)
+                                Text(
+                                    tool.spec.name,
+                                    fontSize = 9.sp,
+                                    color = colorScheme.onSurfaceVariantSummary,
+                                )
+                            }
+                            Switch(
+                                checked = tool.spec.name !in state.config.disabledTools,
+                                onCheckedChange = { enabled ->
+                                    viewModel.toggleTool(tool.spec.name, enabled)
+                                },
+                            )
+                        }
+                    }
                 }
             }
 
