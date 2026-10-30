@@ -317,6 +317,12 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
                         style = MaterialTheme.typography.titleSmall,
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
                     )
+                    SwitchItem(
+                        title = "执行副作用前确认",
+                        summary = "创建提醒等写入操作先弹窗确认。",
+                        checked = state.config.confirmSideEffects,
+                        onCheckedChange = viewModel::setConfirmSideEffects,
+                    )
                     AiToolRegistry.ALL.forEach { tool ->
                         SwitchItem(
                             title = tool.spec.title,
