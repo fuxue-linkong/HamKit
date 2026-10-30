@@ -439,7 +439,8 @@ private fun ComposerMaterial(
     onSend: () -> Unit,
     onStop: () -> Unit,
 ) {
-    val canSend = input.isNotBlank() || attachments.any { it.status == AiAttachmentStatus.READY }
+    val canSend = (input.isNotBlank() || attachments.any { it.status == AiAttachmentStatus.READY }) &&
+        attachments.none { it.status == AiAttachmentStatus.PARSING }
     Column(
         modifier = modifier
             .fillMaxWidth()

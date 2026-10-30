@@ -323,6 +323,10 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
             _uiState.update { it.copy(error = "还没有配置 API Key，请先到「AI 设置」填写") }
             return
         }
+        if (state.attachments.any { it.status == AiAttachmentStatus.PARSING }) {
+            _uiState.update { it.copy(error = "附件还在解析中，请稍候再发送") }
+            return
+        }
         AiNetworkPolicy.validate(state.config.baseUrl, state.config.allowCleartext)?.let { reason ->
             _uiState.update { it.copy(error = reason) }
             return
@@ -506,6 +510,7 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
         val finalText = StringBuilder()
 
         var cancelled = false
+        val toolCache = mutableMapOf<String, ToolOutcome>()
         try {
             var round = 0
             while (round < MAX_TOOL_ROUNDS) {
@@ -532,7 +537,18 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
 
                 val toolResults = mutableListOf<AiBlock.ToolResult>()
                 for (call in result.toolCalls) {
-                    val outcome = executeTool(activeFacade, call)
+                    val cacheKey = "${call.name}|${call.argsJson}"
+                    val cached = toolCache[cacheKey]
+                    val outcome = if (cached != null) {
+                        completeTool(
+                            call.id,
+                            registry.find(call.name)?.spec?.title ?: call.name,
+                            cached,
+                        )
+                        cached
+                    } else {
+                        executeTool(activeFacade, call).also { toolCache[cacheKey] = it }
+                    }
                     toolResults += AiBlock.ToolResult(
                         callId = call.id,
                         content = outcome.modelText,
@@ -542,6 +558,18 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
                     outcome.card?.let { card -> appendCardToUi(card) }
                 }
                 conversation += AiMessage(AiRole.TOOL, toolResults)
+            }
+
+            // 轮次用尽或模型只调工具没回答：强制一次「不再带工具」的总结请求
+            if (finalText.isBlank() && errorText == null && conversation.isNotEmpty()) {
+                val summary = streamOnce(conversation.toList(), emptyList(), apiKey)
+                if (summary.error != null) {
+                    errorText = summary.error
+                } else {
+                    finalText.append(summary.text)
+                    usage = summary.usage ?: usage
+                    textDeltaCount += summary.textDeltaCount
+                }
             }
         } catch (cancel: CancellationException) {
             // 用户点“停止”：保留已显示的部分文本，不能把 streaming 状态卡死
@@ -797,6 +825,9 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
 
     /** 把 READY 附件拼进用户消息（文本内容 / 音频解码结果）。 */
     private fun buildAttachmentContext(attachments: List<AiAttachment>): String = buildString {
+        attachments.filter { it.status == AiAttachmentStatus.ERROR }.forEach { attachment ->
+            append("\n\n[附件：${attachment.name} 未能解析：${attachment.error ?: "未知原因"}]")
+        }
         attachments.filter { it.status == AiAttachmentStatus.READY }.forEach { attachment ->
             when (attachment.kind) {
                 AiAttachmentKind.TEXT -> attachment.text?.let { text ->
@@ -807,9 +838,13 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
 
                 AiAttachmentKind.AUDIO -> {
                     append("\n\n[音频附件：${attachment.name}]")
-                    append("已由 App 的 SSTV 解码器离线解码")
-                    attachment.sstvMode?.let { append("，模式 $it") }
-                    attachment.sstvFile?.let { append("，图片已保存到图库（$it）") }
+                    if (attachment.status == AiAttachmentStatus.ERROR) {
+                        append("解析失败：${attachment.error ?: "未知原因"}")
+                    } else {
+                        append("已由 App 的 SSTV 解码器离线解码")
+                        attachment.sstvMode?.let { append("，模式 $it") }
+                        attachment.sstvFile?.let { append("，图片已保存到图库（$it）") }
+                    }
                 }
 
                 else -> Unit

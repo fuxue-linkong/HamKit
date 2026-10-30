@@ -259,4 +259,6 @@ data class AiProbeResult(
     val ok: Boolean,
     val latencyMs: Long,
     val error: AiError? = null,
+    /** 该模型/网关是否接受 tools（null 表示未探测或无法判断）。 */
+    val toolsSupported: Boolean? = null,
 )

@@ -368,6 +368,13 @@ private fun ResultTextMaterial(state: AiSettingsUiState) {
             color = MaterialTheme.colorScheme.error,
         )
     }
+    state.probe?.toolsSupported?.let { supported ->
+        Text(
+            if (supported) "工具调用：可用" else "工具调用：该模型不支持（只能问答）",
+            style = MaterialTheme.typography.bodySmall,
+            color = if (supported) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
     state.probe?.let { probe ->
         Text(
             if (probe.ok) {
