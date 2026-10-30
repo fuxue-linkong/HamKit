@@ -95,6 +95,8 @@ data class AiConfig(
     val saveHistory: Boolean = true,
     val historyLimit: Int = 200,
     val allowCleartext: Boolean = false,
+    /** 自定义系统提示词；空串表示使用 [AiPrompts.DEFAULT_SYSTEM_PROMPT]。 */
+    val systemPrompt: String = "",
 ) {
     fun normalized(): AiConfig = copy(
         baseUrl = baseUrl.trim().trimEnd('/'),

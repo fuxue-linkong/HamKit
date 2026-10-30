@@ -1,5 +1,12 @@
 package com.example.hamkit.ui.screen.ai
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
@@ -26,6 +33,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -49,6 +57,8 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.hamkit.data.ai.AiAttachment
+import com.example.hamkit.data.ai.AiAttachmentStatus
 import com.example.hamkit.data.ai.AiRole
 import com.example.hamkit.data.ai.tool.AiCard
 import com.example.hamkit.data.ai.tool.SatelliteCardData
@@ -65,6 +75,7 @@ import com.example.hamkit.ui.viewmodel.AiChatMessageUi
 import com.example.hamkit.ui.viewmodel.AiChatUiState
 import com.example.hamkit.ui.viewmodel.AiToolUi
 import com.example.hamkit.ui.viewmodel.AiToolUiState
+import com.example.hamkit.ui.viewmodel.SstvViewModel
 
 /** Material 风格实现，与 Miuix 版共用 [AiAssistantViewModel]。 */
 @Composable
@@ -74,10 +85,18 @@ fun AiAssistantScreenMaterial(bottomInnerPadding: Dp = 0.dp) {
     val navigator = LocalNavigator.current
     val mainViewModel = LocalMainViewModel.current
     val facade = remember(mainViewModel, navigator) { AiAppFacadeImpl(mainViewModel, navigator) }
-    DisposableEffect(facade) {
+    val sstvViewModel = appViewModel<SstvViewModel>()
+    DisposableEffect(facade, sstvViewModel) {
         viewModel.attachFacade(facade)
-        onDispose { viewModel.detachFacade() }
+        viewModel.attachSstv(sstvViewModel)
+        onDispose {
+            viewModel.detachFacade()
+            viewModel.detachSstv()
+        }
     }
+    val filePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris -> if (uris.isNotEmpty()) viewModel.addAttachments(uris) }
     val listState = rememberLazyListState()
     // 与 Miuix 版一致：让出底部导航高度，键盘弹出时取 ime 与导航栏的较大值
     val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
@@ -139,7 +158,10 @@ fun AiAssistantScreenMaterial(bottomInnerPadding: Dp = 0.dp) {
                 modifier = Modifier.padding(bottom = bottomInset),
                 input = state.input,
                 streaming = state.isStreaming,
+                attachments = state.attachments,
                 onInputChange = viewModel::onInputChange,
+                onPickFiles = { filePicker.launch(arrayOf("*/*")) },
+                onRemoveAttachment = viewModel::removeAttachment,
                 onSend = viewModel::send,
                 onStop = viewModel::stop,
             )
@@ -334,7 +356,7 @@ private fun MessageItemMaterial(message: AiChatMessageUi) {
                     )
                     is AiCard.Reminder -> InfoCardMaterial(
                         title = "过境提醒已创建",
-                        detail = card.nextAos?.let { "${card.satellite} · 下次 AOS ${formatAiTime(it)}" }
+                        detail = card.nextAos?.let { "${card.satellite} · 下次 AOS ${formatAiTimeMaterial(it)}" }
                             ?: card.satellite,
                     )
                     is AiCard.Error -> Unit
@@ -350,36 +372,119 @@ private fun ComposerMaterial(
     modifier: Modifier = Modifier,
     input: String,
     streaming: Boolean,
+    attachments: List<AiAttachment>,
     onInputChange: (String) -> Unit,
+    onPickFiles: () -> Unit,
+    onRemoveAttachment: (String) -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit,
 ) {
-    Row(
+    val canSend = input.isNotBlank() || attachments.any { it.status == AiAttachmentStatus.READY }
+    Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.Bottom,
+            .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
+        if (attachments.isNotEmpty()) {
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                attachments.forEach { attachment ->
+                    AttachmentChipMaterial(attachment, onRemoveAttachment)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
         OutlinedTextField(
             value = input,
             onValueChange = onInputChange,
-            modifier = Modifier.weight(1f),
-            placeholder = { Text("问问业余无线电…") },
-            maxLines = 4,
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("描述你想问的内容，+ 上传文档或录音…") },
+            maxLines = 6,
         )
-        Spacer(Modifier.width(8.dp))
-        if (streaming) {
-            Button(onClick = onStop) { Text("停止") }
-        } else {
-            Button(onClick = onSend, enabled = input.isNotBlank()) { Text("发送") }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onPickFiles) {
+                Text("+", style = MaterialTheme.typography.headlineSmall)
+            }
+            Spacer(Modifier.weight(1f))
+            Text(
+                "文档 / 录音（音频自动 SSTV 解码）",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.width(8.dp))
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(
+                        if (streaming || !canSend) {
+                            MaterialTheme.colorScheme.surfaceVariant
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        },
+                        CircleShape,
+                    )
+                    .clickable { if (streaming) onStop() else if (canSend) onSend() },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    if (streaming) "■" else "↑",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (streaming || !canSend) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.onPrimary
+                    },
+                )
+            }
         }
     }
 }
 
+@Composable
+private fun AttachmentChipMaterial(attachment: AiAttachment, onRemove: (String) -> Unit) {
+    Row(
+        modifier = Modifier
+            .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            attachment.name,
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            modifier = Modifier.widthIn(max = 140.dp),
+        )
+        if (attachment.status == AiAttachmentStatus.PARSING) {
+            Spacer(Modifier.width(4.dp))
+            Text(
+                "解析中…",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.width(6.dp))
+        Text(
+            "×",
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier
+                .clickable { onRemove(attachment.id) }
+                .padding(2.dp),
+        )
+    }
+}
+
+
 private val AI_TIME_FMT_MATERIAL: DateTimeFormatter =
     DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(ZoneId.systemDefault())
 
-private fun formatAiTime(instant: Instant): String = AI_TIME_FMT_MATERIAL.format(instant)
+private fun formatAiTimeMaterial(instant: Instant): String = AI_TIME_FMT_MATERIAL.format(instant)
 
 @Composable
 private fun ToolCardMaterial(tool: AiToolUi) {
@@ -581,7 +686,7 @@ private fun SatelliteCardMaterial(data: SatelliteCardData) {
                 data.passes.take(3).forEach { pass ->
                     Row(Modifier.padding(top = 4.dp)) {
                         Text(
-                            "${formatAiTime(pass.aos)} – ${formatAiTime(pass.los)}",
+                            "${formatAiTimeMaterial(pass.aos)} – ${formatAiTimeMaterial(pass.los)}",
                             style = MaterialTheme.typography.labelSmall,
                             modifier = Modifier.weight(1f),
                         )

@@ -38,6 +38,7 @@ class AiConfigStore(context: Context) {
             saveHistory = prefs.getBoolean(KEY_SAVE_HISTORY, true),
             historyLimit = prefs.getInt(KEY_HISTORY_LIMIT, 200),
             allowCleartext = prefs.getBoolean(KEY_ALLOW_CLEARTEXT, false),
+            systemPrompt = prefs.getString(KEY_SYSTEM_PROMPT, "").orEmpty(),
         ).normalized()
     }
 
@@ -55,6 +56,7 @@ class AiConfigStore(context: Context) {
             .putBoolean(KEY_SAVE_HISTORY, cfg.saveHistory)
             .putInt(KEY_HISTORY_LIMIT, cfg.historyLimit)
             .putBoolean(KEY_ALLOW_CLEARTEXT, cfg.allowCleartext)
+            .putString(KEY_SYSTEM_PROMPT, cfg.systemPrompt)
             .apply()
     }
 
@@ -72,6 +74,7 @@ class AiConfigStore(context: Context) {
         private const val KEY_SAVE_HISTORY = "save_history"
         private const val KEY_HISTORY_LIMIT = "history_limit"
         private const val KEY_ALLOW_CLEARTEXT = "allow_cleartext"
+        private const val KEY_SYSTEM_PROMPT = "system_prompt"
     }
 }
 
