@@ -94,6 +94,8 @@ import com.example.hamkit.ui.screen.satellite.SatelliteDetailScreen
 import com.example.hamkit.ui.screen.satellite.SatelliteRadarScreen
 import com.example.hamkit.ui.screen.satellite.SatelliteMapScreen
 import com.example.hamkit.ui.screen.settings.SettingPager
+import com.example.hamkit.ui.screen.ai.AiAssistantScreen
+import com.example.hamkit.ui.screen.ai.AiSettingsScreen
 import com.example.hamkit.ui.screen.aprs.AprsMainScreen
 import com.example.hamkit.ui.screen.aprs.AprsSettingsScreen
 import com.example.hamkit.ui.screen.aprs.AprsStationListScreen
@@ -310,6 +312,7 @@ class MainActivity : ComponentActivity() {
                                 entry<Route.SstvTx> { WithApplicationViewModelStoreOwner { SstvTxScreen(onNavigate = { navigator.push(it) }, onNavigateBack = { navigator.pop() }) } }
                                 entry<Route.HfFax> { WithApplicationViewModelStoreOwner { HfFaxScreen(onNavigateBack = { navigator.pop() }) } }
                                 entry<Route.QsoLogList> { WithApplicationViewModelStoreOwner { QsoLogScreen(onNavigateBack = { navigator.pop() }) } }
+                                entry<Route.AiSettings> { WithApplicationViewModelStoreOwner { AiSettingsScreen(onBack = { navigator.pop() }) } }
                             }
                         )
                     }
@@ -440,7 +443,8 @@ fun MainScreen(
                     val isCurrentPage = page == settledPage
                     when (page) {
                         0 -> HomePager(navController, bottomInnerPadding, isCurrentPage)
-                        1 -> SettingPager(navController, bottomInnerPadding)
+                        1 -> AiAssistantScreen()
+                        2 -> SettingPager(navController, bottomInnerPadding)
                     }
                 }
             }

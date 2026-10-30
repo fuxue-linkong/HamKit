@@ -1,8 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  明文（http）策略说明（2026-10，AI 助手接入内网时调整）：
+
+  Android 的 network-security-config 是静态的，<domain-config> 只能列具体域名/IP，
+  不支持 CIDR 或 IP 通配。用户的内网 Base URL 无法预先枚举，因此这里只能在
+  base-config 层放开明文；真正的限制由业务层承担：
+
+    · AiNetworkPolicy 只允许「用户开启开关 + host 是私有地址（10/8、172.16/12、
+      192.168/16、localhost、.local、.lan）」的 http；
+    · 其它业务（高德/AMSAT/SatNOGS/GitHub）仍全部使用 https，代码里不提供降级。
+
+  信任用户 CA 是为了内网自签 HTTPS / 反向代理（Caddy、Nginx、mitmproxy）。
+  Android 7+ 默认不信任用户证书，必须显式声明。
+-->
 <network-security-config>
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="true">127.0.0.1</domain>
-        <domain includeSubdomains="true">0.0.0.0</domain>
-        <domain includeSubdomains="true">::1</domain>
-    </domain-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
 </network-security-config>

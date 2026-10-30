@@ -19,7 +19,7 @@ class MainActivityViewModel(
 
     private val prefs = radioApp.getSharedPreferences("settings", Context.MODE_PRIVATE)
     private val settingRepo: SettingsRepository = SettingsRepositoryImpl()
-    private val mainPageState = MainPageState(savedStateHandle)
+    private val mainPageState = MainPageState(savedStateHandle, prefs)
     private val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == null || key in observedKeys) {
             _uiState.value = readUiState()
@@ -73,10 +73,12 @@ private const val SELECTED_MAIN_PAGE_KEY = "selected_main_page"
 
 private class MainPageState(
     private val savedStateHandle: SavedStateHandle,
+    prefs: SharedPreferences,
 ) {
     init {
         val savedPage = savedStateHandle.get<Int>(SELECTED_MAIN_PAGE_KEY) ?: 0
-        savedStateHandle[SELECTED_MAIN_PAGE_KEY] = MainPagerConfig.coercePage(savedPage)
+        // 旧版本只有 2 页（0=首页，1=设置）；新增 AI 页后设置页移到 2。
+        savedStateHandle[SELECTED_MAIN_PAGE_KEY] = MainPagerConfig.migrateLegacyPage(savedPage, prefs)
     }
 
     val selectedPage: StateFlow<Int> = savedStateHandle.getStateFlow(SELECTED_MAIN_PAGE_KEY, 0)
@@ -87,8 +89,27 @@ private class MainPageState(
 }
 
 object MainPagerConfig {
-    const val PAGE_COUNT = 2
+    const val PAGE_COUNT = 3
     const val LAST_PAGE_INDEX = PAGE_COUNT - 1
+
+    /** 新增 AI 页后的设置页下标（旧版本为 1）。 */
+    const val SETTINGS_PAGE_INDEX = 2
+
+    private const val MIGRATION_KEY = "main_page_ai_migrated"
+
+    /**
+     * 旧存档迁移：`selected_main_page = 1` 在旧版本表示"设置"，在新版本表示"AI"。
+     * 只在升级后的首次调用执行一次，之后沿用正常索引。
+     */
+    fun migrateLegacyPage(savedPage: Int, prefs: SharedPreferences): Int {
+        if (prefs.getBoolean(MIGRATION_KEY, false)) return coercePage(savedPage)
+        val migrated = when (savedPage) {
+            1 -> SETTINGS_PAGE_INDEX
+            else -> savedPage
+        }
+        prefs.edit().putBoolean(MIGRATION_KEY, true).apply()
+        return coercePage(migrated)
+    }
 
     fun coercePage(page: Int): Int = page.coerceIn(0, LAST_PAGE_INDEX)
 }

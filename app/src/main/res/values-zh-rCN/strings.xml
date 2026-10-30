@@ -18,6 +18,10 @@
     <string name="permission_status_ready_title">授权已完成</string>
     <string name="permission_status_missing_title">需要完成授权</string>
     <string name="home">主页</string>
+    <!-- AI 助手 -->
+    <string name="ai">AI</string>
+    <string name="settings_ai_assistant">AI 助手</string>
+    <string name="settings_ai_assistant_summary">对话问答，并可调用双区定位、卫星过境等 App 功能。</string>
     <string name="settings">设置</string>
     <string name="about">关于</string>
     <string name="send_log">发送日志</string>

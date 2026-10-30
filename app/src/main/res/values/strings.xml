@@ -21,6 +21,10 @@
     <string name="permission_status_ready_title">Permissions Ready</string>
     <string name="permission_status_missing_title">Permissions Required</string>
     <string name="home">Home</string>
+    <!-- AI assistant -->
+    <string name="ai">AI</string>
+    <string name="settings_ai_assistant">AI assistant</string>
+    <string name="settings_ai_assistant_summary">Ask about amateur radio, and let it call app features such as zone lookup and satellite passes.</string>
     <string name="confirm">Confirm</string>
     <string name="cancel">Cancel</string>
     <string name="settings">Settings</string>

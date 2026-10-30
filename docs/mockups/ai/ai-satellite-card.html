@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HamKit AI — 卫星信息卡设计稿</title>
+<style>
+  :root{
+    /* 对应的主题角色（MiuixTheme.colorScheme，深色）：
+       background #000000 / surface #1C1C1E / surfaceVariant #2C2C2E
+       primary #3482FF / onSurface #FFFFFF / onSurfaceVariant #98989F */
+    --bg:#000000;--surface:#1C1C1E;--surface-2:#2C2C2E;--surface-3:#3A3A3C;
+    --line:rgba(255,255,255,.09);--text:#FFFFFF;--text-2:#98989F;--text-3:#6C6C70;
+    --primary:#3482FF;--primary-soft:rgba(52,130,255,.14);
+    --ok:#34C759;--ok-soft:rgba(52,199,89,.13);
+    --warn:#FF9F0A;--warn-soft:rgba(255,159,10,.13);
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  html,body{margin:0;padding:0;background:#000;color:var(--text);
+    font-family:system-ui,-apple-system,"PingFang SC","Noto Sans SC","Microsoft YaHei",sans-serif}
+  .phone{width:412px;margin:0 auto;min-height:915px;padding:14px 16px 30px;background:var(--bg)}
+  .caption{font-size:10.5px;color:var(--text-3);margin:2px 2px 8px}
+  /* ── 卡片 ── */
+  .sat{border-radius:18px;overflow:hidden;background:var(--surface)}
+  .sat-top{display:flex;align-items:flex-start;gap:10px;padding:14px 14px 10px}
+  .sat-badge{font-size:9.5px;font-weight:600;letter-spacing:.3px;padding:3px 6px;border-radius:5px;
+    color:var(--primary);background:var(--primary-soft)}
+  .sat-name{font-size:17px;font-weight:700;letter-spacing:.2px;line-height:1.25}
+  .sat-en{font-size:10.5px;color:var(--text-3);margin-top:3px}
+  .sat-norad{margin-left:auto;text-align:right;font-size:9.5px;color:var(--text-3);line-height:1.5}
+  .sat-norad b{display:block;color:var(--text-2);font-size:12px;font-variant-numeric:tabular-nums;font-weight:600}
+  .modes{display:flex;gap:5px;margin-top:7px}
+  .mode{font-size:9px;padding:2px 6px;border-radius:5px;background:var(--surface-2);color:var(--text-2)}
+  .status{display:inline-flex;align-items:center;gap:5px;font-size:10px;color:var(--ok);
+    background:var(--ok-soft);padding:2px 7px;border-radius:999px;margin-top:7px}
+  .status i{width:5px;height:5px;border-radius:50%;background:var(--ok)}
+  /* 主体 */
+  .sat-main{display:flex;gap:12px;padding:10px 14px 12px;align-items:center}
+  .radar{position:relative;width:132px;height:132px;flex:none}
+  .numbers{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:11px 8px}
+  .num .lbl{font-size:9.5px;color:var(--text-3);letter-spacing:.2px}
+  .num .val{font-size:19px;font-weight:600;letter-spacing:-.2px;
+    font-variant-numeric:tabular-nums;margin-top:2px;color:#fff}
+  .num .val small{font-size:11px;color:var(--text-2);font-weight:500;margin-left:1px}
+  .num .val.cy{color:var(--primary)}
+  /* 时间轴 */
+  .pass{padding:12px 14px 8px;border-top:1px solid var(--line)}
+  .pass-head{display:flex;justify-content:space-between;align-items:baseline;font-size:10px;color:var(--text-3)}
+  .pass-head b{font-size:11px;color:var(--text-2);font-weight:600}
+  .timeline{position:relative;height:48px;margin-top:8px}
+  .timeline .track{position:absolute;left:0;right:0;top:20px;height:2px;border-radius:2px;background:var(--surface-3)}
+  .timeline .fill{position:absolute;left:0;top:19px;height:4px;width:50%;border-radius:3px;background:var(--primary)}
+  .timeline .node{position:absolute;top:15px;width:12px;height:12px;border-radius:50%;
+    background:var(--surface);border:2px solid var(--text-3);transform:translateX(-50%)}
+  .timeline .node.aos{left:0;border-color:var(--primary)}
+  .timeline .node.los{left:100%;border-color:var(--surface-3)}
+  .timeline .now{position:absolute;top:10px;left:50%;transform:translateX(-50%);
+    width:2px;height:24px;background:#fff;border-radius:2px}
+  .timeline .now::after{content:"现在";position:absolute;top:-14px;left:50%;transform:translateX(-50%);
+    font-size:9px;color:var(--text-2);white-space:nowrap}
+  .timeline .t{position:absolute;top:34px;font-size:9.5px;color:var(--text-2);
+    font-variant-numeric:tabular-nums;transform:translateX(-50%);white-space:nowrap}
+  .timeline .t.left{left:0;transform:none}
+  .timeline .t.right{left:100%;transform:translateX(-100%)}
+  /* 未来过境 */
+  .passes{padding:2px 14px 10px}
+  .passes .head{display:flex;justify-content:space-between;font-size:10px;color:var(--text-3);padding:4px 0 6px}
+  .passes .head b{color:var(--text-2);font-weight:600;font-size:10.5px}
+  .prow{display:grid;grid-template-columns:52px 1fr 44px 40px;gap:8px;align-items:center;
+    padding:7px 0;font-size:10.5px;color:var(--text-2);font-variant-numeric:tabular-nums}
+  .prow + .prow{border-top:1px solid var(--line)}
+  .prow .day{color:var(--text-3);font-size:10px}
+  .prow .time{color:#fff;font-size:11px}
+  .prow .el{color:var(--primary);font-weight:600;text-align:right}
+  .prow .az{color:var(--text-3);text-align:right;font-size:10px}
+  .prow.now .time{color:var(--ok)}
+  /* 转发器 */
+  .tx{margin:2px 14px 0;border-radius:12px;background:#111113;overflow:hidden}
+  .tx-head{display:flex;justify-content:space-between;padding:8px 10px;font-size:10px;color:var(--text-3);
+    border-bottom:1px solid var(--line)}
+  .tx-head b{color:var(--text-2);font-weight:600}
+  .tx-row{display:grid;grid-template-columns:1fr auto 1fr auto;gap:8px;align-items:center;
+    padding:9px 10px;font-size:10.5px;color:var(--text-2)}
+  .tx-row + .tx-row{border-top:1px solid var(--line)}
+  .tx-row .f{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:11px;color:#fff}
+  .tx-row .arrow{color:var(--text-3);font-size:9px}
+  .tx-row .tag{font-size:9px;padding:2px 5px;border-radius:4px;color:var(--primary);background:var(--primary-soft)}
+  .tx-row .dopp{font-size:9.5px;color:var(--text-3);font-variant-numeric:tabular-nums}
+  .tx-row.off .f{color:var(--text-3)}
+  /* 动作 */
+  .sat-actions{display:flex;gap:8px;padding:12px 14px 14px}
+  .sat-actions .btn{flex:1;text-align:center;padding:9px 0;border-radius:12px;font-size:11.5px;
+    font-weight:600;background:var(--surface-2);color:#fff}
+  .sat-actions .btn.primary{background:var(--primary)}
+  /* 脚注 */
+  .foot{padding:0 14px 14px;font-size:9px;line-height:1.6;color:var(--text-3)}
+  .foot b{color:var(--text-3);font-weight:500}
+  /* 说明块 */
+  .notes{margin-top:14px;padding:12px 14px;border-radius:14px;background:var(--surface)}
+  .notes h3{margin:0 0 6px;font-size:11px;color:var(--text-2);font-weight:600}
+  .notes p{margin:0;font-size:10px;line-height:1.7;color:var(--text-3)}
+  .notes p b{color:var(--text-2);font-weight:600}
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="caption">AI 对话内嵌 · 卫星详情卡（深色 / Miuix）</div>
+
+  <div class="sat">
+    <div class="sat-top">
+      <div style="min-width:0">
+        <div style="display:flex;align-items:center;gap:7px">
+          <span class="sat-name">ISS (ZARYA)</span>
+          <span class="sat-badge">ARISS</span>
+        </div>
+        <div class="sat-en">国际空间站 · 业余卫星</div>
+        <div class="modes"><span class="mode">FM</span><span class="mode">SSTV</span><span class="mode">APRS</span></div>
+        <div class="status"><i></i>AMSAT · Crew Active</div>
+      </div>
+      <div class="sat-norad">NORAD<b>25544</b>在境中 · 仰角 41°</div>
+    </div>
+
+    <div class="sat-main">
+      <div class="radar">
+        <svg viewBox="0 0 132 132" width="132" height="132">
+          <defs>
+            <linearGradient id="scan" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stop-color="#3482FF" stop-opacity=".30"/>
+              <stop offset="100%" stop-color="#3482FF" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <circle cx="66" cy="66" r="58" fill="#0C0C0E" stroke="rgba(255,255,255,.16)"/>
+          <circle cx="66" cy="66" r="42" fill="none" stroke="rgba(255,255,255,.10)" stroke-dasharray="1.5 3"/>
+          <circle cx="66" cy="66" r="26" fill="none" stroke="rgba(255,255,255,.10)" stroke-dasharray="1.5 3"/>
+          <circle cx="66" cy="66" r="9" fill="none" stroke="rgba(255,255,255,.10)"/>
+          <path d="M66 8v5M66 119v5M8 66h5M119 66h5" stroke="rgba(255,255,255,.35)" stroke-width="1.2" stroke-linecap="round"/>
+          <text x="66" y="19" fill="#6C6C70" font-size="8" text-anchor="middle" font-family="system-ui">0°</text>
+          <text x="66" y="125" fill="#6C6C70" font-size="8" text-anchor="middle" font-family="system-ui">180°</text>
+          <text x="12" y="69" fill="#6C6C70" font-size="8" text-anchor="middle" font-family="system-ui">270°</text>
+          <text x="120" y="69" fill="#6C6C70" font-size="8" text-anchor="middle" font-family="system-ui">90°</text>
+          <!-- 过境轨迹（AOS→LOS，经过当前点） -->
+          <path d="M26 76 Q52 118 104 88" fill="none" stroke="rgba(52,130,255,.5)" stroke-width="1.4" stroke-dasharray="3 3"/>
+          <!-- 当前方位线 + 卫星点（方位 187.4°，仰角 41.2° → r≈31） -->
+          <g transform="rotate(187.4 66 66)">
+            <path d="M66 66 L66 34" stroke="#3482FF" stroke-width="1.6" stroke-linecap="round"/>
+            <path d="M66 66 L66 10 A56 56 0 0 1 100 32 Z" fill="url(#scan)"/>
+          </g>
+          <circle cx="62" cy="97" r="9" fill="rgba(52,130,255,.18)"/>
+          <circle cx="62" cy="97" r="4.2" fill="#3482FF"/>
+          <circle cx="62" cy="97" r="1.7" fill="#0C0C0E"/>
+          <text x="78" y="101" fill="#9CC3FF" font-size="8.5" font-family="system-ui">ISS</text>
+        </svg>
+      </div>
+      <div class="numbers">
+        <div class="num"><div class="lbl">方位 AZ</div><div class="val cy">187.4<small>°</small></div></div>
+        <div class="num"><div class="lbl">仰角 EL</div><div class="val cy">41.2<small>°</small></div></div>
+        <div class="num"><div class="lbl">距离</div><div class="val">642<small>km</small></div></div>
+        <div class="num"><div class="lbl">轨道高度</div><div class="val">418<small>km</small></div></div>
+        <div class="num"><div class="lbl">星下点</div><div class="val" style="font-size:13px">12.4°N 45.1°E</div></div>
+        <div class="num"><div class="lbl">轨道相位</div><div class="val">214<small>°</small></div></div>
+      </div>
+    </div>
+
+    <div class="pass">
+      <div class="pass-head">
+        <span>本次过境 · <b>剩余 6:12</b></span>
+        <span>最大仰角 62° · 白天</span>
+      </div>
+      <div class="timeline">
+        <div class="track"></div>
+        <div class="fill"></div>
+        <div class="node aos"></div>
+        <div class="now"></div>
+        <div class="node los"></div>
+        <div class="t left">AOS 21:08</div>
+        <div class="t" style="left:50%">21:14</div>
+        <div class="t right">LOS 21:20</div>
+      </div>
+    </div>
+
+    <div class="passes">
+      <div class="head"><b>未来 48 小时过境</b><span>共 4 次 · 显示前 3 次</span></div>
+      <div class="prow now">
+        <span class="day">今天</span><span class="time">21:08 – 21:20</span>
+        <span class="el">62°</span><span class="az">187°</span>
+      </div>
+      <div class="prow">
+        <span class="day">今天</span><span class="time">22:45 – 22:57</span>
+        <span class="el">38°</span><span class="az">12°</span>
+      </div>
+      <div class="prow">
+        <span class="day">明天</span><span class="time">09:12 – 09:24</span>
+        <span class="el">71°</span><span class="az">265°</span>
+      </div>
+    </div>
+
+    <div class="tx">
+      <div class="tx-head"><b>转发器 3 / 4 活跃</b><span>多普勒实时修正</span></div>
+      <div class="tx-row">
+        <span class="f">145.990</span><span class="arrow">▲</span>
+        <span class="f">145.800</span><span class="dopp">▼ −1.8 kHz</span>
+      </div>
+      <div class="tx-row">
+        <span class="f">437.800</span><span class="arrow">▲</span>
+        <span class="f">145.800</span><span class="dopp">▼ −2.1 kHz</span>
+      </div>
+      <div class="tx-row">
+        <span class="f" style="color:var(--text-3)">—</span><span class="arrow">▼</span>
+        <span class="f">145.800</span><span class="tag">SSTV</span>
+      </div>
+      <div class="tx-row off">
+        <span class="f">145.825</span><span class="arrow">▲</span>
+        <span class="f">145.825</span><span class="dopp">APRS · 不活跃</span>
+      </div>
+    </div>
+
+    <div class="sat-actions">
+      <div class="btn primary">打开详情</div>
+      <div class="btn">雷达图</div>
+      <div class="btn">加入提醒</div>
+    </div>
+
+    <div class="foot">
+      TLE 更新于 2 小时前 · SGP4/SDP4 自研引擎 · 与 predict4java 差分校验<br>
+      数据源：CelesTrak（amateur / satnogs）· SatNOGS 转发器库 · AMSAT 状态
+    </div>
+  </div>
+
+  <div class="notes">
+    <h3>设计说明</h3>
+    <p>全部颜色取自 <b>MiuixTheme.colorScheme</b>（background / surface / primary / onSurfaceVariant），
+      不新增硬编码色值；Material 模式下以同一组件树改用 <b>MaterialTheme.colorScheme</b> 与
+      <b>surfaceContainerHigh</b>，布局与信息层级保持一致。</p>
+  </div>
+</div>
+</body>
+</html>

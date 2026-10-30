@@ -89,6 +89,7 @@
     <li><strong>CelesTrak / SatNOGS / AMSAT：</strong>提供卫星 TLE、转发器频率、状态数据；请求会携带 IP/User-Agent，不包含你的位置。</li>
     <li><strong>GitHub / hamkit.click：</strong>检查与下载更新；会接收 IP/User-Agent。</li>
     <li><strong>Google Play Services Location（如设备支持）：</strong>用于系统定位；具体处理见 Google 的隐私政策。</li>
+    <li><strong>AI 服务商（由你自行配置）：</strong>只有在你填写 API Key 并使用 AI 助手时，对话内容（可能包含你输入的坐标、呼号、卫星记录）才会发送到你自己选择的服务商（如 DeepSeek、OpenAI、Anthropic、Google，或你配置的内网地址）。API Key 使用 Android Keystore AES-GCM 加密保存在本机，不写入日志、不随备份导出；对话历史同样加密保存在本机。请求由 App 直连服务商，不经过开发者服务器，我们也无法删除服务商侧保存的数据。</li>
   </ul>
 
   <h2>4. 存储期限与地点</h2>
@@ -96,11 +97,12 @@
     <li>本地数据（设置、日志、图片、录音、Passcode）保存在你的设备上，直到你在应用内删除、清除应用数据或卸载应用。</li>
     <li>APRS-IS 上的公开数据由该网络及其镜像网站保存，我们无法删除或控制。</li>
     <li>第三方服务（高德、GitHub 等）按各自的隐私政策和保留期限处理请求数据。</li>
-    <li>我们不会把本地 QSO 日志、Passcode 或图库上传到自己的服务器。</li>
+    <li>AI 对话历史加密保存在本机，可在「AI 设置 → 清除所有对话」中删除；API Key 可单独清除。</li>
+    <li>我们不会把本地 QSO 日志、Passcode、图库或 AI 对话上传到自己的服务器。</li>
   </ul>
 
   <h2>5. 数据出境</h2>
-  <p>APRS-IS 是国际业余无线电网络，服务器可能位于中国境外；CelesTrak、SatNOGS、AMSAT、GitHub 等也位于中国境外。使用这些功能时，相关请求（可能包含 IP、呼号、位置、消息）可能传输到境外。高德地图服务（含天气/逆地理编码）在中国境内。若你不希望数据出境，请关闭 APRS 上报、避免使用依赖境外数据源的功能。</p>
+  <p>APRS-IS 是国际业余无线电网络，服务器可能位于中国境外；CelesTrak、SatNOGS、AMSAT、GitHub 等也位于中国境外。使用这些功能时，相关请求（可能包含 IP、呼号、位置、消息）可能传输到境外。高德地图服务（含天气/逆地理编码）在中国境内。AI 请求是否出境取决于你配置的服务商：选择境内服务商（如 DeepSeek）或内网地址时不出境。若你不希望数据出境，请关闭 APRS 上报、避免使用依赖境外数据源的功能，并选择境内的 AI 服务商。</p>
 
   <h2>6. 权限</h2>
   <ul>

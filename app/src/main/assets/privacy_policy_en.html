@@ -80,6 +80,7 @@
     <li><strong>CelesTrak / SatNOGS / AMSAT:</strong> satellite TLE, transponder and status data; requests carry IP/User-Agent but not your location.</li>
     <li><strong>GitHub / hamkit.click:</strong> update checks and APK downloads; receive IP/User-Agent.</li>
     <li><strong>Google Play Services Location (if available):</strong> system positioning, governed by Google's privacy policy.</li>
+    <li><strong>AI provider (configured by you):</strong> only when you save an API key and use the AI assistant, your prompts (which may include coordinates, callsigns or satellite records you type) are sent to the provider you chose (e.g. DeepSeek, OpenAI, Anthropic, Google, or your own intranet endpoint). The key is encrypted with Android Keystore AES-GCM on this device, never logged or backed up; chat history is encrypted at rest as well. Requests go directly from the app to the provider, not through our servers, and we cannot delete data held by the provider.</li>
   </ul>
   <p>We do not sell your personal information.</p>
 
@@ -87,11 +88,12 @@
   <ul>
     <li>Local data (settings, logs, images, recordings, passcode) stays on your device until you delete it in the app, clear app data or uninstall.</li>
     <li>APRS-IS public data is retained by that network and its mirrors; we cannot delete or control it.</li>
+    <li>AI chat history is encrypted on this device and can be deleted under "AI settings → Clear all conversations".</li>
     <li>Third-party services retain request data under their own policies.</li>
   </ul>
 
   <h2>5. Cross-border transfers</h2>
-  <p>APRS-IS is an international amateur-radio network whose servers may be outside China; CelesTrak, SatNOGS, AMSAT and GitHub are also outside China. Using those features may transfer IP, callsign, position or messages abroad. Amap services (including weather/reverse geocoding) are in China. If you do not want cross-border transfers, disable APRS reporting and avoid features that depend on overseas data sources.</p>
+  <p>APRS-IS is an international amateur-radio network whose servers may be outside China; CelesTrak, SatNOGS, AMSAT and GitHub are also outside China. Using those features may transfer IP, callsign, position or messages abroad. Amap services (including weather/reverse geocoding) are in China. AI requests cross borders only if the provider you configure is outside China; an intranet endpoint stays local. If you do not want cross-border transfers, disable APRS reporting, avoid features that depend on overseas data sources and choose a domestic AI provider.</p>
 
   <h2>6. Permissions</h2>
   <ul>

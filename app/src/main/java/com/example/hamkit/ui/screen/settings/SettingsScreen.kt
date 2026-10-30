@@ -119,6 +119,7 @@ fun SettingPager(
         },
         onOpenAbout = { navigator.push(Route.About) },
         onOpenPrivacy = { navigator.push(Route.PrivacyPolicy) },
+        onOpenAiSettings = { navigator.push(Route.AiSettings) },
         onUpdateReminderSettings = mainViewModel::updateReminderSettings,
         onOpenReminderList = { navigator.push(Route.ReminderList) },
         onCheckUpdateNow = settingsViewModel::checkUpdateNow,
