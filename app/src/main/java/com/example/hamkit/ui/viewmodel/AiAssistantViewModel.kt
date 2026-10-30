@@ -38,7 +38,10 @@ import com.example.hamkit.data.ai.tool.AiToolExecutor
 import com.example.hamkit.data.ai.tool.AiToolRegistry
 import com.example.hamkit.data.ai.tool.AiToolSpec
 import com.example.hamkit.data.ai.tool.ToolOutcome
+import com.example.hamkit.data.ai.tool.ToolRisk
+import com.example.hamkit.data.ai.tool.errorOutcome
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -81,8 +84,6 @@ data class AiChatMessageUi(
     val tools: List<AiToolUi> = emptyList(),
     val cards: List<AiCard> = emptyList(),
     val attachments: List<AiAttachment> = emptyList(),
-    /** 历史会话列表（最近在前）。 */
-    val sessions: List<AiSessionSummary> = emptyList(),
 )
 
 /** 对话页状态。 */
@@ -99,7 +100,12 @@ data class AiChatUiState(
     val attachments: List<AiAttachment> = emptyList(),
     /** 历史会话列表（最近在前）。 */
     val sessions: List<AiSessionSummary> = emptyList(),
+    /** 等待用户确认的副作用操作。 */
+    val pendingConfirm: AiConfirmRequest? = null,
 )
+
+/** 副作用工具执行前的确认请求。 */
+data class AiConfirmRequest(val id: String, val title: String, val message: String)
 
 /**
  * AI 对话状态机（P1：工具调用）。
@@ -121,6 +127,8 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
 
     /** SSTV 解码器（音频附件解析用）；页面销毁时置空。 */
     private var sstv: SstvViewModel? = null
+
+    private val confirmWaiters = mutableMapOf<String, CompletableDeferred<Boolean>>()
 
     private val _uiState = MutableStateFlow(AiChatUiState())
     val uiState: StateFlow<AiChatUiState> = _uiState.asStateFlow()
@@ -192,6 +200,31 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
                     it.copy(status = AiAttachmentStatus.ERROR, error = "暂不支持该文件类型")
                 }
             }
+        }
+    }
+
+    fun resolveConfirm(approved: Boolean) {
+        val request = _uiState.value.pendingConfirm ?: return
+        confirmWaiters[request.id]?.complete(approved)
+    }
+
+    private suspend fun awaitConfirm(callId: String, title: String): Boolean {
+        val deferred = CompletableDeferred<Boolean>()
+        confirmWaiters[callId] = deferred
+        _uiState.update {
+            it.copy(
+                pendingConfirm = AiConfirmRequest(
+                    id = callId,
+                    title = title,
+                    message = "AI 请求执行「$title」，该操作会写入本机（如创建系统提醒）。",
+                ),
+            )
+        }
+        return try {
+            withTimeoutOrNull(60_000) { deferred.await() } ?: false
+        } finally {
+            confirmWaiters.remove(callId)
+            _uiState.update { it.copy(pendingConfirm = null) }
         }
     }
 
@@ -702,7 +735,15 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     private suspend fun executeTool(activeFacade: AiAppFacade, call: AiToolCall): ToolOutcome {
-        val title = registry.find(call.name)?.spec?.title ?: call.name
+        val spec = registry.find(call.name)?.spec
+        val title = spec?.title ?: call.name
+        if (spec?.risk == ToolRisk.SIDE_EFFECT && _uiState.value.config.confirmSideEffects) {
+            if (!awaitConfirm(call.id, title)) {
+                val cancelled = errorOutcome("用户取消了「$title」")
+                completeTool(call.id, title, cancelled)
+                return cancelled
+            }
+        }
         val context = AiToolContext(activeFacade) { fraction, stage ->
             updateToolProgress(call.id, fraction, stage)
         }

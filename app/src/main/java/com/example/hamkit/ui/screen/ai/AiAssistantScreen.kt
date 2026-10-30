@@ -73,6 +73,7 @@ import com.example.hamkit.ui.UiMode
 import com.example.hamkit.ui.appViewModel
 import com.example.hamkit.ui.navigation3.Route
 import com.example.hamkit.ui.viewmodel.AiAppFacadeImpl
+import com.example.hamkit.ui.viewmodel.AiConfirmRequest
 import com.example.hamkit.ui.viewmodel.AiAssistantViewModel
 import com.example.hamkit.ui.viewmodel.AiChatMessageUi
 import com.example.hamkit.ui.viewmodel.AiChatUiState
@@ -239,6 +240,13 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
 
             if (state.messages.isEmpty()) Spacer(Modifier.weight(1f))
 
+            state.pendingConfirm?.let { request ->
+                AiConfirmDialogMiuix(
+                    request = request,
+                    onApprove = { viewModel.resolveConfirm(true) },
+                    onDeny = { viewModel.resolveConfirm(false) },
+                )
+            }
             if (showHistory) {
                 AiHistoryDialogMiuix(
                     sessions = state.sessions,
@@ -827,6 +835,43 @@ private fun SatelliteCardMiuix(data: SatelliteCardData) {
                     text = "雷达图",
                     onClick = { navigator.push(Route.SatelliteRadar(data.catalogNumber)) },
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AiConfirmDialogMiuix(
+    request: AiConfirmRequest,
+    onApprove: () -> Unit,
+    onDeny: () -> Unit,
+) {
+    Dialog(onDismissRequest = onDeny) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(colorScheme.surface, RoundedCornerShape(20.dp))
+                .padding(16.dp),
+        ) {
+            Text(request.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                request.message,
+                fontSize = 12.sp,
+                color = colorScheme.onSurfaceVariantSummary,
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(onClick = onDeny, modifier = Modifier.weight(1f)) {
+                    Text("取消")
+                }
+                Button(
+                    onClick = onApprove,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColorsPrimary(),
+                ) {
+                    Text("允许")
+                }
             }
         }
     }

@@ -85,6 +85,7 @@ import com.example.hamkit.ui.navigation3.LocalNavigator
 import com.example.hamkit.ui.appViewModel
 import com.example.hamkit.ui.navigation3.Route
 import com.example.hamkit.ui.viewmodel.AiAppFacadeImpl
+import com.example.hamkit.ui.viewmodel.AiConfirmRequest
 import com.example.hamkit.ui.viewmodel.AiAssistantViewModel
 import com.example.hamkit.ui.viewmodel.AiChatMessageUi
 import com.example.hamkit.ui.viewmodel.AiChatUiState
@@ -191,6 +192,13 @@ fun AiAssistantScreenMaterial(bottomInnerPadding: Dp = 0.dp) {
                 }
             }
 
+            state.pendingConfirm?.let { request ->
+                AiConfirmDialogMaterial(
+                    request = request,
+                    onApprove = { viewModel.resolveConfirm(true) },
+                    onDeny = { viewModel.resolveConfirm(false) },
+                )
+            }
             if (showHistory) {
                 AiHistoryDialogMaterial(
                     sessions = state.sessions,
@@ -810,6 +818,25 @@ private fun SatelliteCardMaterial(data: SatelliteCardData) {
             }
         }
     }
+}
+
+@Composable
+private fun AiConfirmDialogMaterial(
+    request: AiConfirmRequest,
+    onApprove: () -> Unit,
+    onDeny: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDeny,
+        title = { Text(request.title) },
+        text = { Text(request.message) },
+        confirmButton = {
+            Button(onClick = onApprove) { Text("允许") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDeny) { Text("取消") }
+        },
+    )
 }
 
 @Composable

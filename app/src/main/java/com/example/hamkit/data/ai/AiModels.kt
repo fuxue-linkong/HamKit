@@ -99,6 +99,8 @@ data class AiConfig(
     val systemPrompt: String = "",
     /** 被禁用的工具名（模型看不到，也不会调用）。 */
     val disabledTools: Set<String> = emptySet(),
+    /** 副作用工具（创建提醒等）执行前是否二次确认。 */
+    val confirmSideEffects: Boolean = true,
 ) {
     fun normalized(): AiConfig = copy(
         baseUrl = baseUrl.trim().trimEnd('/'),

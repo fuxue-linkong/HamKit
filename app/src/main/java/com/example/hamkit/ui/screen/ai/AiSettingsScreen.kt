@@ -257,6 +257,13 @@ fun AiSettingsScreenMiuix(onBack: () -> Unit = {}) {
                         fontSize = 10.sp,
                         color = colorScheme.onSurfaceVariantSummary,
                     )
+                    SwitchPreference(
+                        title = "执行副作用前确认",
+                        summary = "创建提醒等写入操作先弹窗确认。",
+                        startAction = {},
+                        checked = state.config.confirmSideEffects,
+                        onCheckedChange = viewModel::setConfirmSideEffects,
+                    )
                     AiToolRegistry.ALL.forEach { tool ->
                         Row(
                             modifier = Modifier
