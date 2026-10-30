@@ -91,6 +91,21 @@ jobs:
             --stacktrace \
             --no-daemon 2>&1 | tee test-output.log
 
+      # 临时诊断步骤：把编译/测试失败的关键行转成 workflow annotation。
+      # 目的：在无法读取 Actions 日志的环境下，仍能通过 check-runs annotations API
+      # 看到具体错误（定位完成后应移除本步骤）。
+      - name: Report failure lines as annotations
+        if: failure()
+        run: |
+          if [ -f test-output.log ]; then
+            grep -E "^e: |error:|FAILED|Execution failed|Caused by" test-output.log \
+              | head -25 \
+              | while IFS= read -r line; do
+                  safe=$(printf '%s' "$line" | sed 's/%/%25/g' | sed 's/\r//g')
+                  echo "::error title=Build Error::$safe"
+                done
+          fi
+
       - name: Upload test reports on failure
         if: failure()
         uses: actions/upload-artifact@v4
