@@ -20,7 +20,16 @@ import com.example.hamkit.data.ai.AiRequest
 import com.example.hamkit.data.ai.AiRole
 import com.example.hamkit.data.ai.AiSession
 import com.example.hamkit.data.ai.AiSessionStore
+import com.example.hamkit.data.ai.AiStopReason
 import com.example.hamkit.data.ai.AiUsage
+import com.example.hamkit.data.ai.tool.AiAppFacade
+import com.example.hamkit.data.ai.tool.AiCard
+import com.example.hamkit.data.ai.tool.AiToolCall
+import com.example.hamkit.data.ai.tool.AiToolContext
+import com.example.hamkit.data.ai.tool.AiToolExecutor
+import com.example.hamkit.data.ai.tool.AiToolRegistry
+import com.example.hamkit.data.ai.tool.AiToolSpec
+import com.example.hamkit.data.ai.tool.ToolOutcome
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -33,6 +42,22 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
 
+/** 工具卡状态。 */
+enum class AiToolUiState { RUNNING, SUCCESS, ERROR }
+
+/** 一条工具调用的 UI 状态。 */
+data class AiToolUi(
+    val callId: String,
+    val name: String,
+    val title: String,
+    val argsPreview: String,
+    val state: AiToolUiState,
+    val progress: Float? = null,
+    val stage: String? = null,
+    val summary: String? = null,
+    val error: String? = null,
+)
+
 /** 对话列表里的一条消息（UI 模型，与持久化模型分开）。 */
 data class AiChatMessageUi(
     val id: String,
@@ -41,6 +66,8 @@ data class AiChatMessageUi(
     val isStreaming: Boolean = false,
     val error: String? = null,
     val elapsedMs: Long? = null,
+    val tools: List<AiToolUi> = emptyList(),
+    val cards: List<AiCard> = emptyList(),
 )
 
 /** 对话页状态。 */
@@ -52,17 +79,14 @@ data class AiChatUiState(
     val hasKey: Boolean = false,
     val sessionId: String? = null,
     val initialized: Boolean = false,
-    /** 顶层提示（未配置 Key、URL 非法、网络错误等），展示后可清空。 */
     val error: String? = null,
 )
 
 /**
- * AI 对话状态机。
+ * AI 对话状态机（P1：工具调用）。
  *
- * 生命周期：application 级（pager 切页不中断请求）。
- * 流式更新做了 48ms 节流，避免每个 token 触发一次整页重组。
- *
- * 当前阶段（P0）只做纯文本对话；工具调用的事件模型已就绪，P1 接入执行器。
+ * 一次发送最多 [MAX_TOOL_ROUNDS] 轮「模型 → 工具 → 模型」。协议差异（tool_calls /
+ * tool_use / functionCall）已在协议层收敛成 [AiEvent]；这里只做参数聚合、执行与回传。
  */
 class AiAssistantViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -70,16 +94,21 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
     private val keyStore = AiKeyStore(application)
     private val sessionStore = AiSessionStore(application)
 
+    private val registry = AiToolRegistry()
+    private val executor = AiToolExecutor(registry)
+
+    /** 由 UI 层注入（页面销毁时置空），工具通过它访问 App 能力。 */
+    private var facade: AiAppFacade? = null
+
     private val _uiState = MutableStateFlow(AiChatUiState())
     val uiState: StateFlow<AiChatUiState> = _uiState.asStateFlow()
 
     private var streamJob: Job? = null
     private var sessionCreatedAt = System.currentTimeMillis()
 
-    /**
-     * 监听 AI 设置文件：用户从设置页保存 Key / 切换协议后，AI 页无需重新进入即可生效。
-     * （AI 页在 pager 中常驻，不会因为导航返回而重建。）
-     */
+    /** 多轮工具调用的协议消息（与 UI 消息分开维护）。 */
+    private val conversation = mutableListOf<AiMessage>()
+
     private val settingsPrefs = application.getSharedPreferences(
         AiConfigStore.PREFS_NAME,
         Context.MODE_PRIVATE,
@@ -98,30 +127,20 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
         super.onCleared()
     }
 
-    private suspend fun initialize() {
-        val config = withContext(Dispatchers.IO) { configStore.load() }
-        val hasKey = withContext(Dispatchers.IO) { keyStore.hasKey() }
-        _uiState.update { it.copy(config = config, hasKey = hasKey, initialized = true) }
+    // ── 对外接口 ────────────────────────────────────────────────────────────
 
-        // 恢复最近一次会话（仅当用户开启了历史保存）
-        if (!config.saveHistory) return
-        val latest = sessionStore.summaries().maxByOrNull { it.updatedAt } ?: return
-        val session = sessionStore.load(latest.id) ?: return
-        if (session.messages.isEmpty()) return
-        sessionCreatedAt = session.createdAt
-        _uiState.update {
-            it.copy(
-                sessionId = session.id,
-                messages = session.messages.map { message -> message.toUi() },
-            )
-        }
+    fun attachFacade(value: AiAppFacade) {
+        facade = value
+    }
+
+    fun detachFacade() {
+        facade = null
     }
 
     fun onInputChange(value: String) {
         _uiState.update { it.copy(input = value) }
     }
 
-    /** 从设置页返回后刷新配置/Key 状态。 */
     fun reloadConfig() {
         viewModelScope.launch {
             val config = withContext(Dispatchers.IO) { configStore.load() }
@@ -137,6 +156,7 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
     fun newSession() {
         streamJob?.cancel()
         streamJob = null
+        conversation.clear()
         sessionCreatedAt = System.currentTimeMillis()
         _uiState.update {
             it.copy(messages = emptyList(), sessionId = null, error = null, isStreaming = false)
@@ -148,6 +168,11 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
         if (state.isStreaming) return
         val text = state.input.trim()
         if (text.isEmpty()) return
+        val activeFacade = facade
+        if (activeFacade == null) {
+            _uiState.update { it.copy(error = "AI 页面尚未就绪，请稍后重试") }
+            return
+        }
         if (!state.hasKey) {
             _uiState.update { it.copy(error = "还没有配置 API Key，请先到「AI 设置」填写") }
             return
@@ -156,6 +181,14 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
             _uiState.update { it.copy(error = reason) }
             return
         }
+
+        // 历史会话作为上下文（只带文本；工具调用结果不跨会话保留）
+        conversation.clear()
+        conversation += state.messages
+            .filter { (it.role == AiRole.USER || it.role == AiRole.ASSISTANT) && it.text.isNotBlank() }
+            .takeLast(MAX_CONTEXT_MESSAGES)
+            .map { AiMessage(it.role, listOf(AiBlock.Text(it.text))) }
+        conversation += AiMessage.user(text)
 
         val userMessage = AiChatMessageUi(
             id = UUID.randomUUID().toString(),
@@ -176,16 +209,14 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
                 error = null,
             )
         }
-        streamJob = viewModelScope.launch { stream(text) }
+        streamJob = viewModelScope.launch { runConversation(activeFacade) }
     }
 
-    /** 停止生成：保留已生成文本。 */
     fun stop() {
         streamJob?.cancel()
         streamJob = null
     }
 
-    /** 重试最后一条：去掉末尾的 user + assistant，用原文重新发送。 */
     fun retry() {
         val state = _uiState.value
         if (state.isStreaming) return
@@ -209,30 +240,193 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    // ── 流式请求 ────────────────────────────────────────────────────────────
+    // ── 初始化 / 持久化 ────────────────────────────────────────────────────
 
-    private suspend fun stream(prompt: String) {
-        val config = _uiState.value.config
+    private suspend fun initialize() {
+        val config = withContext(Dispatchers.IO) { configStore.load() }
+        val hasKey = withContext(Dispatchers.IO) { keyStore.hasKey() }
+        _uiState.update { it.copy(config = config, hasKey = hasKey, initialized = true) }
+
+        if (!config.saveHistory) return
+        val latest = sessionStore.summaries().maxByOrNull { it.updatedAt } ?: return
+        val session = sessionStore.load(latest.id) ?: return
+        if (session.messages.isEmpty()) return
+        sessionCreatedAt = session.createdAt
+        _uiState.update {
+            it.copy(
+                sessionId = session.id,
+                messages = session.messages.map { message -> message.toUi() },
+            )
+        }
+    }
+
+    private suspend fun persistSession(usage: AiUsage?) {
+        val state = _uiState.value
+        if (!state.config.saveHistory) return
+        val visible = state.messages.filter { it.text.isNotBlank() || it.error != null }
+        if (visible.isEmpty()) return
+        val lastAssistantIndex = visible.indexOfLast { it.role == AiRole.ASSISTANT }
+        val messages = visible.mapIndexed { index, message ->
+            message.toRecord(if (index == lastAssistantIndex) usage else null)
+        }
+
+        val id = state.sessionId ?: UUID.randomUUID().toString().also { newId ->
+            _uiState.update { it.copy(sessionId = newId) }
+        }
+        val title = messages.firstOrNull { it.role == AiRole.USER }?.text
+            ?.replace('\n', ' ')
+            ?.take(24)
+            .orEmpty()
+        val session = AiSession(
+            id = id,
+            title = title.ifBlank { "新对话" },
+            createdAt = sessionCreatedAt,
+            updatedAt = System.currentTimeMillis(),
+            messages = messages,
+        )
+        withContext(Dispatchers.IO) {
+            runCatching { sessionStore.save(session) }
+        }
+    }
+
+    // ── 多轮工具调用 ────────────────────────────────────────────────────────
+
+    private suspend fun runConversation(activeFacade: AiAppFacade) {
         val apiKey = withContext(Dispatchers.IO) { keyStore.load() }
         if (apiKey.isNullOrBlank()) {
             finishStreaming("", null, "API Key 读取失败，请重新保存", 0L)
             return
         }
 
-        val request = buildRequest()
         val startedAt = System.currentTimeMillis()
-        val text = StringBuilder()
+        val toolSpecs = registry.specs()
         var usage: AiUsage? = null
         var errorText: String? = null
-        var lastFlush = 0L
+        var lastStop: AiStopReason? = null
         var textDeltaCount = 0
-        var finishedStop: com.example.hamkit.data.ai.AiStopReason? = null
+        val finalText = StringBuilder()
+
+        var cancelled = false
+        try {
+            var round = 0
+            while (round < MAX_TOOL_ROUNDS) {
+                round++
+                val result = streamOnce(conversation.toList(), toolSpecs, apiKey)
+                usage = result.usage ?: usage
+                lastStop = result.stop ?: lastStop
+                textDeltaCount += result.textDeltaCount
+                if (result.error != null) {
+                    errorText = result.error
+                    break
+                }
+                if (result.text.isNotBlank()) finalText.append(result.text)
+                if (result.toolCalls.isEmpty()) break
+
+                conversation += AiMessage(
+                    AiRole.ASSISTANT,
+                    buildList {
+                        if (result.text.isNotBlank()) add(AiBlock.Text(result.text))
+                        result.toolCalls.forEach { add(AiBlock.ToolCall(it.id, it.name, it.argsJson)) }
+                    },
+                )
+                registerToolsInUi(result.toolCalls)
+
+                val toolResults = mutableListOf<AiBlock.ToolResult>()
+                for (call in result.toolCalls) {
+                    val outcome = executeTool(activeFacade, call)
+                    toolResults += AiBlock.ToolResult(
+                        callId = call.id,
+                        content = outcome.modelText,
+                        isError = outcome.error != null,
+                        name = call.name,
+                    )
+                    outcome.card?.let { card -> appendCardToUi(card) }
+                }
+                conversation += AiMessage(AiRole.TOOL, toolResults)
+            }
+        } catch (cancel: CancellationException) {
+            // 用户点“停止”：保留已显示的部分文本，不能把 streaming 状态卡死
+            cancelled = true
+            throw cancel
+        } finally {
+            if (cancelled) {
+                finishCancelled()
+            } else {
+                val effectiveError = errorText ?: if (finalText.isBlank() && textDeltaCount == 0) {
+                    "服务商返回了空内容（结束原因 ${lastStop?.name ?: "未知"}）。请检查模型名、API 协议与 Base URL 是否匹配。"
+                } else {
+                    null
+                }
+                finishStreaming(
+                    text = finalText.toString(),
+                    usage = usage,
+                    error = effectiveError,
+                    elapsedMs = System.currentTimeMillis() - startedAt,
+                )
+            }
+        }
+    }
+
+    /** 取消收尾：不覆盖已显示的文本，只把 streaming 标记复位。 */
+    private fun finishCancelled() {
+        _uiState.update { state ->
+            state.copy(
+                isStreaming = false,
+                messages = state.messages.map { message ->
+                    if (!message.isStreaming) return@map message
+                    message.copy(
+                        isStreaming = false,
+                        tools = message.tools.map { tool ->
+                            if (tool.state == AiToolUiState.RUNNING) {
+                                tool.copy(state = AiToolUiState.ERROR, error = "已中断")
+                            } else {
+                                tool
+                            }
+                        },
+                    )
+                },
+            )
+        }
+        streamJob = null
+    }
+
+    private data class PendingCall(
+        val index: Int,
+        var id: String = "",
+        var name: String = "",
+        val args: StringBuilder = StringBuilder(),
+    )
+
+    private data class StreamResult(
+        val text: String,
+        val toolCalls: List<AiToolCall>,
+        val usage: AiUsage?,
+        val stop: AiStopReason?,
+        val error: String?,
+        val textDeltaCount: Int,
+    )
+
+    /** 单轮流式请求：聚合文本与工具参数。 */
+    private suspend fun streamOnce(
+        messages: List<AiMessage>,
+        tools: List<AiToolSpec>,
+        apiKey: String,
+    ): StreamResult {
+        val config = _uiState.value.config
+        val request = AiRequest(system = SYSTEM_PROMPT, messages = messages, tools = tools)
+        val text = StringBuilder()
+        val calls = LinkedHashMap<Int, PendingCall>()
+        var usage: AiUsage? = null
+        var stop: AiStopReason? = null
+        var error: String? = null
+        var deltaCount = 0
+        var lastFlush = 0L
 
         try {
             AiClientFactory.create(config.protocol).stream(config, request, apiKey).collect { event ->
                 when (event) {
                     is AiEvent.TextDelta -> {
-                        textDeltaCount++
+                        deltaCount++
                         text.append(event.text)
                         val now = System.currentTimeMillis()
                         if (now - lastFlush >= STREAM_FLUSH_INTERVAL_MS) {
@@ -241,54 +435,124 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
                         }
                     }
 
+                    is AiEvent.ToolCallStarted -> {
+                        val pending = calls.getOrPut(event.index) { PendingCall(event.index) }
+                        if (event.id.isNotBlank()) pending.id = event.id
+                        if (event.name.isNotBlank()) pending.name = event.name
+                    }
+
+                    is AiEvent.ToolArgsDelta -> {
+                        calls.getOrPut(event.index) { PendingCall(event.index) }
+                            .args.append(event.delta)
+                    }
+
                     is AiEvent.Usage -> usage = AiUsage(event.input, event.output)
-
-                    is AiEvent.Failed -> errorText = humanize(event.error)
-
-                    is AiEvent.Finished -> finishedStop = event.stop
-
-                    // P0 不执行工具；若模型仍然返回工具调用，按"能力不支持"提示
-                    is AiEvent.ToolCallStarted -> errorText = "当前模型返回了工具调用，但工具能力尚未启用"
-
-                    else -> Unit
+                    is AiEvent.Finished -> stop = event.stop
+                    is AiEvent.Failed -> error = humanize(event.error)
+                    is AiEvent.ReasoningDelta -> Unit
                 }
             }
         } catch (ce: CancellationException) {
             throw ce
         } catch (t: Throwable) {
-            errorText = humanize(AiError.fromThrowable(t))
-        } finally {
-            // 空文本诊断：流正常结束却没有任何文本片段，通常是协议/模型/网关不匹配
-            // （例如网关忽略 stream=true、模型名写错、或该模型不支持当前协议）。
-            val effectiveError = errorText ?: if (text.isBlank() && textDeltaCount == 0) {
-                "服务商返回了空内容（未收到文本片段，结束原因 ${finishedStop?.name ?: "未知"}）。" +
-                    "请检查模型名、API 协议与 Base URL 是否匹配；部分模型或网关不支持流式输出。"
-            } else {
-                null
-            }
-            finishStreaming(
-                text = text.toString(),
-                usage = usage,
-                error = effectiveError,
-                elapsedMs = System.currentTimeMillis() - startedAt,
-            )
+            error = humanize(AiError.fromThrowable(t))
         }
+
+        val toolCalls = calls.values
+            .filter { it.name.isNotBlank() }
+            .map {
+                AiToolCall(
+                    id = it.id.ifBlank { "call_${it.name}_${it.index}" },
+                    name = it.name,
+                    argsJson = it.args.toString().ifBlank { "{}" },
+                )
+            }
+        return StreamResult(text.toString(), toolCalls, usage, stop, error, deltaCount)
     }
 
-    private fun buildRequest(): AiRequest {
-        val history = _uiState.value.messages
-            .filter { it.role == AiRole.USER || it.role == AiRole.ASSISTANT }
-            .filter { it.text.isNotBlank() && it.error == null && !it.isStreaming }
-            .takeLast(MAX_CONTEXT_MESSAGES)
-            .map { AiMessage(it.role, listOf(AiBlock.Text(it.text))) }
-        return AiRequest(system = SYSTEM_PROMPT, messages = history)
+    private suspend fun executeTool(activeFacade: AiAppFacade, call: AiToolCall): ToolOutcome {
+        val title = registry.find(call.name)?.spec?.title ?: call.name
+        val context = AiToolContext(activeFacade) { fraction, stage ->
+            updateToolProgress(call.id, fraction, stage)
+        }
+        val outcome = executor.execute(call, context)
+        completeTool(call.id, title, outcome)
+        return outcome
     }
+
+    // ── UI 状态同步 ─────────────────────────────────────────────────────────
 
     private fun updateStreamingText(value: String) {
         _uiState.update { state ->
             state.copy(
                 messages = state.messages.map { message ->
                     if (message.isStreaming) message.copy(text = value) else message
+                },
+            )
+        }
+    }
+
+    private fun registerToolsInUi(calls: List<AiToolCall>) {
+        val tools = calls.map { call ->
+            AiToolUi(
+                callId = call.id,
+                name = call.name,
+                title = registry.find(call.name)?.spec?.title ?: call.name,
+                argsPreview = call.argsJson.take(80),
+                state = AiToolUiState.RUNNING,
+            )
+        }
+        _uiState.update { state ->
+            state.copy(
+                messages = state.messages.map { message ->
+                    if (message.isStreaming) message.copy(tools = message.tools + tools) else message
+                },
+            )
+        }
+    }
+
+    private fun updateToolProgress(callId: String, fraction: Float?, stage: String) {
+        _uiState.update { state ->
+            state.copy(
+                messages = state.messages.map { message ->
+                    message.copy(
+                        tools = message.tools.map { tool ->
+                            if (tool.callId == callId) tool.copy(progress = fraction, stage = stage)
+                            else tool
+                        },
+                    )
+                },
+            )
+        }
+    }
+
+    private fun completeTool(callId: String, title: String, outcome: ToolOutcome) {
+        _uiState.update { state ->
+            state.copy(
+                messages = state.messages.map { message ->
+                    message.copy(
+                        tools = message.tools.map { tool ->
+                            if (tool.callId != callId) return@map tool
+                            tool.copy(
+                                title = title,
+                                state = if (outcome.error != null) AiToolUiState.ERROR else AiToolUiState.SUCCESS,
+                                progress = if (outcome.error != null) tool.progress else 1f,
+                                stage = null,
+                                summary = outcome.summary,
+                                error = outcome.error,
+                            )
+                        },
+                    )
+                },
+            )
+        }
+    }
+
+    private fun appendCardToUi(card: AiCard) {
+        _uiState.update { state ->
+            state.copy(
+                messages = state.messages.map { message ->
+                    if (message.isStreaming) message.copy(cards = message.cards + card) else message
                 },
             )
         }
@@ -310,46 +574,22 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
                         isStreaming = false,
                         error = error,
                         elapsedMs = elapsedMs,
+                        tools = message.tools.map { tool ->
+                            if (tool.state == AiToolUiState.RUNNING) {
+                                tool.copy(state = AiToolUiState.ERROR, error = "已中断")
+                            } else {
+                                tool
+                            }
+                        },
                     )
                 },
                 error = if (text.isBlank() && error != null) error else null,
             )
         }
-        // 取消时协程已处于 cancelled 状态，持久化必须用 NonCancellable
         withContext(NonCancellable) {
             persistSession(usage)
         }
         streamJob = null
-    }
-
-    private suspend fun persistSession(usage: AiUsage?) {
-        val state = _uiState.value
-        if (!state.config.saveHistory) return
-        val visible = state.messages.filter { it.text.isNotBlank() || it.error != null }
-        // 用量只属于最后一条 assistant 回复，不能复制到整段历史
-        val lastAssistantIndex = visible.indexOfLast { it.role == AiRole.ASSISTANT }
-        val messages = visible.mapIndexed { index, message ->
-            message.toRecord(if (index == lastAssistantIndex) usage else null)
-        }
-        if (messages.isEmpty()) return
-
-        val id = state.sessionId ?: UUID.randomUUID().toString().also { newId ->
-            _uiState.update { it.copy(sessionId = newId) }
-        }
-        val title = messages.firstOrNull { it.role == AiRole.USER }?.text
-            ?.replace('\n', ' ')
-            ?.take(24)
-            .orEmpty()
-        val session = AiSession(
-            id = id,
-            title = title.ifBlank { "新对话" },
-            createdAt = sessionCreatedAt,
-            updatedAt = System.currentTimeMillis(),
-            messages = messages,
-        )
-        withContext(Dispatchers.IO) {
-            runCatching { sessionStore.save(session) }
-        }
     }
 
     private fun humanize(error: AiError): String = when (error.kind) {
@@ -382,21 +622,26 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
     )
 
     private companion object {
-        /** 节流间隔：每个 token 都更新会导致整页重组。 */
         const val STREAM_FLUSH_INTERVAL_MS = 48L
         const val MAX_CONTEXT_MESSAGES = 24
+        const val MAX_TOOL_ROUNDS = 4
 
-        /** P0 的系统提示：明确"不能调用工具"，避免模型编造工具结果。 */
+        /** P1 系统提示：明确工具能力与"不要编造实时数据"。 */
         val SYSTEM_PROMPT = """
             你是 HamKit 内置的业余无线电助手。HamKit 是一个 Android 端的业余无线电工具箱，
             提供双区定位（CQ/ITU 分区与 Maidenhead 网格）、卫星过境预测、SSTV 收发、
             CW 摩尔斯、FT8、APRS、QSO 日志等功能。
 
-            回答要求：
-            1. 只回答业余无线电相关或与之明显相关的问题；不确定的知识直接说明不确定，不要编造。
-            2. 不要编造卫星过境时间、频率、转发器状态等实时数据；这些数据需要 App 内的卫星模块查询。
-            3. 当前版本还不能调用 App 内工具，因此不要声称"已为你查询/已打开页面"。
-            4. 中文提问用中文回答，英文提问用英文回答；保持简洁，需要时用列表与 Markdown。
+            你可以调用工具获取真实数据（定位、卫星过境/实时位置/转发器/AMSAT、天气、时间），
+            也可以打开页面、开始 SSTV 接收、创建过境提醒。
+
+            规则：
+            1. 涉及用户位置/网格 → get_zone_info；卫星过境/频率/实时位置 → 对应卫星工具；
+               需要打开页面或开始接收 → 对应动作工具。
+            2. 不要编造工具没有返回的数据（过境时间、频率、状态）；工具失败就如实说明。
+            3. 工具返回的数字可以转述，但不要虚构额外细节。
+            4. 中文提问用中文回答，英文提问用英文回答；简洁，必要时用列表与 Markdown。
+            5. 一次回答不要调用过多工具，优先用最少的工具解决问题。
         """.trimIndent()
     }
 }

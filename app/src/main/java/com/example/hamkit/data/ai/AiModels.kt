@@ -1,5 +1,6 @@
 package com.example.hamkit.data.ai
 
+import com.example.hamkit.data.ai.tool.AiToolSpec
 import org.json.JSONObject
 
 /**
@@ -151,6 +152,8 @@ sealed interface AiBlock {
         val callId: String,
         val content: String,
         val isError: Boolean = false,
+        /** Gemini 的 functionResponse 需要工具名；其它协议用 callId 即可。 */
+        val name: String = "",
     ) : AiBlock
 
     data class Reasoning(val text: String) : AiBlock
@@ -170,6 +173,8 @@ data class AiMessage(val role: AiRole, val blocks: List<AiBlock>) {
 data class AiRequest(
     val system: String,
     val messages: List<AiMessage>,
+    /** 启用的工具；为空时不向模型暴露工具能力。 */
+    val tools: List<AiToolSpec> = emptyList(),
 )
 
 enum class AiStopReason { END_TURN, TOOL_USE, MAX_TOKENS, CONTENT_FILTER, UNKNOWN }

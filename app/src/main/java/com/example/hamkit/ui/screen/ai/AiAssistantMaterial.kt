@@ -26,6 +26,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -34,22 +35,34 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.data.ai.AiRole
+import com.example.hamkit.data.ai.tool.AiCard
+import com.example.hamkit.data.ai.tool.SatelliteCardData
+import com.example.hamkit.data.ai.tool.ZoneCardData
+import com.example.hamkit.ui.LocalMainViewModel
 import com.example.hamkit.ui.navigation3.LocalNavigator
 import com.example.hamkit.ui.appViewModel
 import com.example.hamkit.ui.navigation3.Route
+import com.example.hamkit.ui.viewmodel.AiAppFacadeImpl
 import com.example.hamkit.ui.viewmodel.AiAssistantViewModel
 import com.example.hamkit.ui.viewmodel.AiChatMessageUi
 import com.example.hamkit.ui.viewmodel.AiChatUiState
+import com.example.hamkit.ui.viewmodel.AiToolUi
+import com.example.hamkit.ui.viewmodel.AiToolUiState
 
 /** Material 风格实现，与 Miuix 版共用 [AiAssistantViewModel]。 */
 @Composable
@@ -57,6 +70,12 @@ fun AiAssistantScreenMaterial(bottomInnerPadding: Dp = 0.dp) {
     val viewModel = appViewModel<AiAssistantViewModel>()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val navigator = LocalNavigator.current
+    val mainViewModel = LocalMainViewModel.current
+    val facade = remember(mainViewModel, navigator) { AiAppFacadeImpl(mainViewModel, navigator) }
+    DisposableEffect(facade) {
+        viewModel.attachFacade(facade)
+        onDispose { viewModel.detachFacade() }
+    }
     val listState = rememberLazyListState()
     // 与 Miuix 版一致：让出底部导航高度，键盘弹出时取 ime 与导航栏的较大值
     val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
@@ -283,6 +302,30 @@ private fun MessageItemMaterial(message: AiChatMessageUi) {
                     color = MaterialTheme.colorScheme.error,
                 )
             }
+            if (message.tools.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                message.tools.forEach { tool ->
+                    ToolCardMaterial(tool)
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
+            message.cards.forEach { card ->
+                when (card) {
+                    is AiCard.Satellite -> SatelliteCardMaterial(card.data)
+                    is AiCard.Zone -> ZoneCardMaterial(card.data)
+                    is AiCard.Sstv -> InfoCardMaterial(
+                        title = "SSTV 接收已开始",
+                        detail = card.mode?.let { "模式：$it" } ?: "模式：VIS 自动识别",
+                    )
+                    is AiCard.Reminder -> InfoCardMaterial(
+                        title = "过境提醒已创建",
+                        detail = card.nextAos?.let { "${card.satellite} · 下次 AOS ${formatAiTime(it)}" }
+                            ?: card.satellite,
+                    )
+                    is AiCard.Error -> Unit
+                }
+                Spacer(Modifier.height(8.dp))
+            }
         }
     }
 }
@@ -314,6 +357,264 @@ private fun ComposerMaterial(
             Button(onClick = onStop) { Text("停止") }
         } else {
             Button(onClick = onSend, enabled = input.isNotBlank()) { Text("发送") }
+        }
+    }
+}
+
+private val AI_TIME_FMT_MATERIAL: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(ZoneId.systemDefault())
+
+private fun formatAiTime(instant: Instant): String = AI_TIME_FMT_MATERIAL.format(instant)
+
+@Composable
+private fun ToolCardMaterial(tool: AiToolUi) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    tool.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f),
+                )
+                val (label, color) = when (tool.state) {
+                    AiToolUiState.RUNNING -> "进行中" to MaterialTheme.colorScheme.primary
+                    AiToolUiState.SUCCESS -> "完成" to MaterialTheme.colorScheme.primary
+                    AiToolUiState.ERROR -> "失败" to MaterialTheme.colorScheme.error
+                }
+                Text(label, style = MaterialTheme.typography.labelSmall, color = color)
+            }
+            val progress = tool.progress
+            if (tool.state == AiToolUiState.RUNNING && progress != null) {
+                LinearProgressIndicator(
+                    progress = { progress.coerceIn(0f, 1f) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                )
+            }
+            tool.stage?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (tool.state == AiToolUiState.RUNNING && progress == null) {
+                Text(
+                    "执行中…",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            tool.summary?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            tool.error?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ZoneCardMaterial(data: ZoneCardData) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Text("双区定位", style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                MetricMaterial("CQ 分区", data.cqZone?.toString() ?: "-")
+                MetricMaterial("ITU 分区", data.ituZone?.toString() ?: "-")
+                MetricMaterial("网格", data.maidenhead)
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "%.4f, %.4f".format(data.latitude, data.longitude) +
+                    if (data.address.isNotBlank()) " · ${data.address}" else "",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun InfoCardMaterial(title: String, detail: String) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                detail,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun MetricMaterial(label: String, value: String) {
+    Column {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(value, style = MaterialTheme.typography.titleMedium)
+    }
+}
+
+@Composable
+private fun SatelliteCardMaterial(data: SatelliteCardData) {
+    val navigator = LocalNavigator.current
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    data.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    "#${data.catalogNumber}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (data.modes.isNotEmpty() || data.amsatStatus != null) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(top = 3.dp),
+                ) {
+                    if (data.modes.isNotEmpty()) {
+                        Text(
+                            data.modes.joinToString(" · "),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    data.amsatStatus?.let {
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            }
+
+            data.live?.let { live ->
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                    MetricMaterial("方位 AZ", "%.1f°".format(live.azimuthDeg))
+                    MetricMaterial("仰角 EL", "%.1f°".format(live.elevationDeg))
+                    MetricMaterial("距离", "%.0f km".format(live.rangeKm))
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                    MetricMaterial("高度", "%.0f km".format(live.altitudeKm))
+                    MetricMaterial(
+                        "星下点",
+                        "%.1f°, %.1f°".format(live.subpointLatDeg, live.subpointLonDeg),
+                    )
+                    MetricMaterial("相位", "%.0f°".format(live.phaseDeg))
+                }
+                Text(
+                    if (live.isEclipsed) "蚀中（地影）" else "日照中",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
+
+            if (data.passes.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "未来过境",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                data.passes.take(3).forEach { pass ->
+                    Row(Modifier.padding(top = 4.dp)) {
+                        Text(
+                            "${formatAiTime(pass.aos)} – ${formatAiTime(pass.los)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            "最大 ${pass.maxElevation.toInt()}°",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            }
+
+            if (data.radios.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "转发器 ${data.radios.count { it.status == "active" }}/${data.radios.size} 活跃",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                data.radios.take(4).forEach { radio ->
+                    Row(Modifier.padding(top = 4.dp)) {
+                        Text(
+                            buildString {
+                                radio.downlinkHz?.let { append("%.3f".format(it / 1_000_000.0)) }
+                                radio.uplinkHz?.let { append(" / %.3f".format(it / 1_000_000.0)) }
+                                append(" MHz")
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            radio.mode.ifBlank { "-" },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                TextButton(onClick = { navigator.push(Route.SatelliteDetail(data.catalogNumber)) }) {
+                    Text("打开详情")
+                }
+                TextButton(onClick = { navigator.push(Route.SatelliteRadar(data.catalogNumber)) }) {
+                    Text("雷达图")
+                }
+            }
         }
     }
 }
