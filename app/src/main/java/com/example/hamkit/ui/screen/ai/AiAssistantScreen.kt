@@ -316,7 +316,17 @@ private fun MessageItemMiuix(message: AiChatMessageUi) {
                     .background(colorScheme.primary, RoundedCornerShape(16.dp))
                     .padding(horizontal = 14.dp, vertical = 10.dp),
             ) {
-                Text(message.text, fontSize = 14.sp, color = colorScheme.onPrimary)
+                Column {
+                    Text(message.text, fontSize = 14.sp, color = colorScheme.onPrimary)
+                    message.attachments.forEach { attachment ->
+                        Text(
+                            "📎 ${attachment.name}",
+                            fontSize = 10.sp,
+                            color = colorScheme.onPrimary.copy(alpha = 0.8f),
+                            modifier = Modifier.padding(top = 3.dp),
+                        )
+                    }
+                }
             }
         }
     } else {
