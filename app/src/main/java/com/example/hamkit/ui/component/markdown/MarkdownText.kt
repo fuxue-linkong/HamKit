@@ -134,7 +134,7 @@ private fun MarkdownBlock(node: Node, colors: MarkdownPalette) {
         is Paragraph -> MarkdownInlineText(
             node = node,
             colors = colors,
-            modifier = Modifier.padding(vertical = 4.dp),
+            modifier = Modifier.padding(vertical = 2.dp),
         )
 
         is FencedCodeBlock -> CodeBlock(node.literal, colors)
@@ -209,11 +209,21 @@ private fun MarkdownList(
                 Text(
                     text = if (ordered) "${index++}." else "•",
                     color = colors.secondary,
-                    fontSize = 14.sp,
-                    modifier = Modifier.width(22.dp),
+                    fontSize = 13.sp,
+                    modifier = Modifier.width(18.dp),
                 )
                 Column(Modifier.weight(1f)) {
-                    item.childNodes().forEach { child -> MarkdownBlock(child, colors) }
+                    item.childNodes().forEach { child ->
+                        if (child is Paragraph) {
+                            MarkdownInlineText(
+                                node = child,
+                                colors = colors,
+                                modifier = Modifier.padding(vertical = 1.dp),
+                            )
+                        } else {
+                            MarkdownBlock(child, colors)
+                        }
+                    }
                 }
             }
         }
@@ -296,7 +306,8 @@ internal fun buildMarkdownInline(node: Node, colors: MarkdownPalette): Annotated
                     if (pushed) runCatching { pop() }
                 }
 
-                is SoftLineBreak -> append(' ')
+                // 聊天场景下模型常用单换行列点；保留换行比拼成一行更易读
+                is SoftLineBreak -> append('\n')
                 is HardLineBreak -> append('\n')
                 else -> current.childNodes().forEach(::visit)
             }
