@@ -35,8 +35,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.hamkit.R
 import com.example.hamkit.data.ai.AiPreset
 import com.example.hamkit.data.ai.tool.AiToolRegistry
 import com.example.hamkit.data.ai.AiProtocol
@@ -175,7 +177,7 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
                             onClick = viewModel::fetchModels,
                             enabled = !state.fetchingModels,
                         ) {
-                            Text(if (state.fetchingModels) "获取中…" else "获取模型列表")
+                            Text(if (state.fetchingModels) "获取中…" else stringResource(R.string.ai_settings_fetch_models))
                         }
                         state.modelsError?.let {
                             Text(
@@ -288,7 +290,7 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
                 ),
             ) {
                 Column(Modifier.padding(14.dp)) {
-                    Text("系统提示词", style = MaterialTheme.typography.titleSmall)
+                    Text(stringResource(R.string.ai_settings_system_prompt), style = MaterialTheme.typography.titleSmall)
                     Spacer(Modifier.height(4.dp))
                     Text(
                         "留空使用默认提示词（已包含 App 能力、工具清单与附件规则）。",
@@ -313,12 +315,12 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
             ) {
                 Column(Modifier.padding(vertical = 4.dp)) {
                     Text(
-                        "工具权限",
+                        stringResource(R.string.ai_settings_tools),
                         style = MaterialTheme.typography.titleSmall,
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
                     )
                     SwitchItem(
-                        title = "执行副作用前确认",
+                        title = stringResource(R.string.ai_settings_confirm),
                         summary = "创建提醒等写入操作先弹窗确认。",
                         checked = state.config.confirmSideEffects,
                         onCheckedChange = viewModel::setConfirmSideEffects,

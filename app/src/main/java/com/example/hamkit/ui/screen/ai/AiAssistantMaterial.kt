@@ -309,7 +309,7 @@ private fun EmptyStateMaterial(onPick: (String) -> Unit) {
             }
             Spacer(Modifier.height(8.dp))
             Text(
-                "可以问业余无线电知识，也可以让我调用 App 功能：查双区定位、算卫星过境、开 SSTV 接收。",
+                stringResource(R.string.ai_empty_desc),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
