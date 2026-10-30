@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,21 +43,33 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.data.ai.AiRole
+import com.example.hamkit.data.ai.tool.AiCard
+import com.example.hamkit.data.ai.tool.SatelliteCardData
+import com.example.hamkit.data.ai.tool.ZoneCardData
+import com.example.hamkit.ui.LocalMainViewModel
 import com.example.hamkit.ui.navigation3.LocalNavigator
 import com.example.hamkit.ui.LocalUiMode
 import com.example.hamkit.ui.UiMode
 import com.example.hamkit.ui.appViewModel
 import com.example.hamkit.ui.navigation3.Route
+import com.example.hamkit.ui.viewmodel.AiAppFacadeImpl
 import com.example.hamkit.ui.viewmodel.AiAssistantViewModel
 import com.example.hamkit.ui.viewmodel.AiChatMessageUi
 import com.example.hamkit.ui.viewmodel.AiChatUiState
+import com.example.hamkit.ui.viewmodel.AiToolUi
+import com.example.hamkit.ui.viewmodel.AiToolUiState
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.LinearProgressIndicator
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -81,6 +94,12 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
     val viewModel = appViewModel<AiAssistantViewModel>()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val navigator = LocalNavigator.current
+    val mainViewModel = LocalMainViewModel.current
+    val facade = remember(mainViewModel, navigator) { AiAppFacadeImpl(mainViewModel, navigator) }
+    DisposableEffect(facade) {
+        viewModel.attachFacade(facade)
+        onDispose { viewModel.detachFacade() }
+    }
     val listState = rememberLazyListState()
     // 底部导航是 pager 外层 Scaffold 的 bottomBar，AI 页必须自己让出这段高度；
     // 键盘弹出时取两者较大值，避免输入框被导航栏或 IME 遮挡。
@@ -318,6 +337,30 @@ private fun MessageItemMiuix(message: AiChatMessageUi) {
                 Spacer(Modifier.height(4.dp))
                 Text(error, fontSize = 11.sp, color = colorScheme.error)
             }
+            if (message.tools.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                message.tools.forEach { tool ->
+                    ToolCardMiuix(tool)
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
+            message.cards.forEach { card ->
+                when (card) {
+                    is AiCard.Satellite -> SatelliteCardMiuix(card.data)
+                    is AiCard.Zone -> ZoneCardMiuix(card.data)
+                    is AiCard.Sstv -> InfoCardMiuix(
+                        title = "SSTV 接收已开始",
+                        detail = card.mode?.let { "模式：$it" } ?: "模式：VIS 自动识别",
+                    )
+                    is AiCard.Reminder -> InfoCardMiuix(
+                        title = "过境提醒已创建",
+                        detail = card.nextAos?.let { "${card.satellite} · 下次 AOS ${formatAiTime(it)}" }
+                            ?: card.satellite,
+                    )
+                    is AiCard.Error -> Unit
+                }
+                Spacer(Modifier.height(8.dp))
+            }
         }
     }
 }
@@ -365,6 +408,226 @@ private fun ComposerMiuix(
                 colors = ButtonDefaults.buttonColorsPrimary(),
             ) {
                 Text("发送")
+            }
+        }
+    }
+}
+
+private val AI_TIME_FMT: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(ZoneId.systemDefault())
+
+private fun formatAiTime(instant: Instant): String = AI_TIME_FMT.format(instant)
+
+@Composable
+private fun ToolCardMiuix(tool: AiToolUi) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    tool.title,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+                val (label, color) = when (tool.state) {
+                    AiToolUiState.RUNNING -> "进行中" to colorScheme.primary
+                    AiToolUiState.SUCCESS -> "完成" to colorScheme.primary
+                    AiToolUiState.ERROR -> "失败" to colorScheme.error
+                }
+                Text(label, fontSize = 10.sp, color = color)
+            }
+            val progress = tool.progress
+            if (tool.state == AiToolUiState.RUNNING && progress != null) {
+                LinearProgressIndicator(
+                    progress = progress.coerceIn(0f, 1f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                )
+            }
+            tool.stage?.let {
+                Text(
+                    it,
+                    fontSize = 11.sp,
+                    color = colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            if (tool.state == AiToolUiState.RUNNING && progress == null) {
+                Text(
+                    "执行中…",
+                    fontSize = 11.sp,
+                    color = colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            tool.summary?.let {
+                Text(it, fontSize = 11.sp, color = colorScheme.onSurfaceVariantSummary)
+            }
+            tool.error?.let {
+                Text(it, fontSize = 11.sp, color = colorScheme.error)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ZoneCardMiuix(data: ZoneCardData) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Text("双区定位", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                MetricMiuix("CQ 分区", data.cqZone?.toString() ?: "-")
+                MetricMiuix("ITU 分区", data.ituZone?.toString() ?: "-")
+                MetricMiuix("网格", data.maidenhead)
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "%.4f, %.4f".format(data.latitude, data.longitude) +
+                    if (data.address.isNotBlank()) " · ${data.address}" else "",
+                fontSize = 10.sp,
+                color = colorScheme.onSurfaceVariantSummary,
+            )
+        }
+    }
+}
+
+@Composable
+private fun InfoCardMiuix(title: String, detail: String) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(4.dp))
+            Text(detail, fontSize = 11.sp, color = colorScheme.onSurfaceVariantSummary)
+        }
+    }
+}
+
+@Composable
+private fun MetricMiuix(label: String, value: String) {
+    Column {
+        Text(label, fontSize = 9.5.sp, color = colorScheme.onSurfaceVariantSummary)
+        Text(value, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun SatelliteCardMiuix(data: SatelliteCardData) {
+    val navigator = LocalNavigator.current
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    data.name,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    "#${data.catalogNumber}",
+                    fontSize = 10.sp,
+                    color = colorScheme.onSurfaceVariantSummary,
+                )
+            }
+            if (data.modes.isNotEmpty() || data.amsatStatus != null) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(top = 3.dp),
+                ) {
+                    if (data.modes.isNotEmpty()) {
+                        Text(
+                            data.modes.joinToString(" · "),
+                            fontSize = 10.sp,
+                            color = colorScheme.onSurfaceVariantSummary,
+                        )
+                    }
+                    data.amsatStatus?.let {
+                        Text(it, fontSize = 10.sp, color = colorScheme.primary)
+                    }
+                }
+            }
+
+            data.live?.let { live ->
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                    MetricMiuix("方位 AZ", "%.1f°".format(live.azimuthDeg))
+                    MetricMiuix("仰角 EL", "%.1f°".format(live.elevationDeg))
+                    MetricMiuix("距离", "%.0f km".format(live.rangeKm))
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                    MetricMiuix("高度", "%.0f km".format(live.altitudeKm))
+                    MetricMiuix(
+                        "星下点",
+                        "%.1f°, %.1f°".format(live.subpointLatDeg, live.subpointLonDeg),
+                    )
+                    MetricMiuix("相位", "%.0f°".format(live.phaseDeg))
+                }
+                Text(
+                    if (live.isEclipsed) "蚀中（地影）" else "日照中",
+                    fontSize = 10.sp,
+                    color = colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
+
+            if (data.passes.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                Text("未来过境", fontSize = 11.sp, color = colorScheme.onSurfaceVariantSummary)
+                data.passes.take(3).forEach { pass ->
+                    Row(Modifier.padding(top = 4.dp)) {
+                        Text(
+                            "${formatAiTime(pass.aos)} – ${formatAiTime(pass.los)}",
+                            fontSize = 11.sp,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            "最大 ${pass.maxElevation.toInt()}°",
+                            fontSize = 11.sp,
+                            color = colorScheme.primary,
+                        )
+                    }
+                }
+            }
+
+            if (data.radios.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "转发器 ${data.radios.count { it.status == "active" }}/${data.radios.size} 活跃",
+                    fontSize = 11.sp,
+                    color = colorScheme.onSurfaceVariantSummary,
+                )
+                data.radios.take(4).forEach { radio ->
+                    Row(Modifier.padding(top = 4.dp)) {
+                        Text(
+                            buildString {
+                                radio.downlinkHz?.let { append("%.3f".format(it / 1_000_000.0)) }
+                                radio.uplinkHz?.let { append(" / %.3f".format(it / 1_000_000.0)) }
+                                append(" MHz")
+                            },
+                            fontSize = 11.sp,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            radio.mode.ifBlank { "-" },
+                            fontSize = 10.sp,
+                            color = colorScheme.onSurfaceVariantSummary,
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                TextButton(
+                    text = "打开详情",
+                    onClick = { navigator.push(Route.SatelliteDetail(data.catalogNumber)) },
+                )
+                TextButton(
+                    text = "雷达图",
+                    onClick = { navigator.push(Route.SatelliteRadar(data.catalogNumber)) },
+                )
             }
         }
     }

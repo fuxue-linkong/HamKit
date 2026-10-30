@@ -16,11 +16,12 @@ Official website: https://hamkit.click
 - **AMSAT Satellite Status**
 - **Calendar Transit Alerts**
 - **Home Time Card** (real-time weather temperature, UTC time, custom background image cropping)
-- **AI Assistant (P0)** (third bottom-nav tab; OpenAI Chat Completions / Anthropic Messages / Gemini with streaming; bring your own API key, key and chat history encrypted with Android Keystore AES-GCM; intranet http and self-signed certificates supported)
+- **AI Assistant (P1)** (third bottom-nav tab; OpenAI Chat Completions / Anthropic Messages / Gemini with streaming; bring your own API key, key and chat history encrypted with Android Keystore AES-GCM; intranet http and self-signed certificates supported)
+  - **Tool calling**: zone lookup, satellite passes/live tracking/transmitters/AMSAT, satellite search, weather/UTC, CW encoding, screen navigation, SSTV receive hand-off, pass reminders
+  - In-chat **satellite detail card** (live values, passes, transmitters) and tool progress bars
 
 ### Short-term
 
-- **AI Assistant P1** (tool calling: zone lookup, satellite passes/live/transmitters, SSTV receive hand-off; in-chat satellite cards)
 - **FT8** refinement (referencing [FT8CN](https://github.com/BG7HIM/FT8CN))
 - **APRS** refinement (referencing [aprsdroid](https://github.com/ge0rg/aprsdroid))
 

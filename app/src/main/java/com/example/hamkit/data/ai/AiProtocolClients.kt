@@ -222,11 +222,55 @@ object OpenAiChatClient : AiProtocolClient {
             messages.put(JSONObject().put("role", "system").put("content", request.system))
         }
         request.messages.forEach { message ->
-            if (message.role == AiRole.SYSTEM) return@forEach
-            val role = if (message.role == AiRole.ASSISTANT) "assistant" else "user"
-            val content = message.text
-            if (content.isNotBlank()) {
-                messages.put(JSONObject().put("role", role).put("content", content))
+            when (message.role) {
+                AiRole.USER -> {
+                    val text = message.text
+                    if (text.isNotBlank()) {
+                        messages.put(JSONObject().put("role", "user").put("content", text))
+                    }
+                }
+
+                AiRole.ASSISTANT -> {
+                    val calls = message.blocks.filterIsInstance<AiBlock.ToolCall>()
+                    val text = message.text
+                    if (calls.isEmpty()) {
+                        if (text.isNotBlank()) {
+                            messages.put(JSONObject().put("role", "assistant").put("content", text))
+                        }
+                    } else {
+                        messages.put(JSONObject().apply {
+                            put("role", "assistant")
+                            if (text.isNotBlank()) put("content", text) else put("content", JSONObject.NULL)
+                            put("tool_calls", JSONArray().apply {
+                                calls.forEach { call ->
+                                    put(JSONObject().apply {
+                                        put("id", call.id.ifBlank { "call_${call.name}" })
+                                        put("type", "function")
+                                        put(
+                                            "function",
+                                            JSONObject().apply {
+                                                put("name", call.name)
+                                                put("arguments", call.argsJson.ifBlank { "{}" })
+                                            },
+                                        )
+                                    })
+                                }
+                            })
+                        })
+                    }
+                }
+
+                AiRole.TOOL -> {
+                    message.blocks.filterIsInstance<AiBlock.ToolResult>().forEach { result ->
+                        messages.put(JSONObject().apply {
+                            put("role", "tool")
+                            put("tool_call_id", result.callId)
+                            put("content", result.content)
+                        })
+                    }
+                }
+
+                AiRole.SYSTEM -> Unit
             }
         }
         return JSONObject().apply {
@@ -236,6 +280,24 @@ object OpenAiChatClient : AiProtocolClient {
             put("max_tokens", cfg.maxOutputTokens)
             put("stream", true)
             put("stream_options", JSONObject().put("include_usage", true))
+            if (request.tools.isNotEmpty()) {
+                put("tools", JSONArray().apply {
+                    request.tools.forEach { spec ->
+                        put(JSONObject().apply {
+                            put("type", "function")
+                            put(
+                                "function",
+                                JSONObject().apply {
+                                    put("name", spec.name)
+                                    put("description", spec.description)
+                                    put("parameters", spec.parameters)
+                                },
+                            )
+                        })
+                    }
+                })
+                put("tool_choice", "auto")
+            }
         }.asBody()
     }
 
@@ -411,22 +473,60 @@ object AnthropicClient : AiProtocolClient {
     }
 
     private fun buildBody(cfg: AiConfig, request: AiRequest): okhttp3.RequestBody {
-        // Anthropic 要求 user/assistant 交替：相邻同角色合并，避免 400
-        val merged = mutableListOf<Pair<String, StringBuilder>>()
+        val messages = JSONArray()
         request.messages.forEach { message ->
-            if (message.role == AiRole.SYSTEM) return@forEach
-            val role = if (message.role == AiRole.ASSISTANT) "assistant" else "user"
-            val text = message.text
-            if (text.isBlank()) return@forEach
-            if (merged.lastOrNull()?.first == role) {
-                merged.last().second.append("\n\n").append(text)
-            } else {
-                merged += role to StringBuilder(text)
-            }
-        }
-        val messages = JSONArray().apply {
-            merged.forEach { (role, text) ->
-                put(JSONObject().put("role", role).put("content", text.toString()))
+            when (message.role) {
+                AiRole.USER -> {
+                    val text = message.text
+                    if (text.isNotBlank()) {
+                        messages.put(JSONObject().apply {
+                            put("role", "user")
+                            put(
+                                "content",
+                                JSONArray().put(JSONObject().put("type", "text").put("text", text)),
+                            )
+                        })
+                    }
+                }
+
+                AiRole.ASSISTANT -> {
+                    val blocks = JSONArray()
+                    if (message.text.isNotBlank()) {
+                        blocks.put(JSONObject().put("type", "text").put("text", message.text))
+                    }
+                    message.blocks.filterIsInstance<AiBlock.ToolCall>().forEach { call ->
+                        blocks.put(JSONObject().apply {
+                            put("type", "tool_use")
+                            put("id", call.id.ifBlank { "toolu_${call.name}" })
+                            put("name", call.name)
+                            put(
+                                "input",
+                                runCatching { JSONObject(call.argsJson.ifBlank { "{}" }) }
+                                    .getOrDefault(JSONObject()),
+                            )
+                        })
+                    }
+                    if (blocks.length() > 0) {
+                        messages.put(JSONObject().put("role", "assistant").put("content", blocks))
+                    }
+                }
+
+                AiRole.TOOL -> {
+                    val blocks = JSONArray()
+                    message.blocks.filterIsInstance<AiBlock.ToolResult>().forEach { result ->
+                        blocks.put(JSONObject().apply {
+                            put("type", "tool_result")
+                            put("tool_use_id", result.callId)
+                            put("content", result.content)
+                            if (result.isError) put("is_error", true)
+                        })
+                    }
+                    if (blocks.length() > 0) {
+                        messages.put(JSONObject().put("role", "user").put("content", blocks))
+                    }
+                }
+
+                AiRole.SYSTEM -> Unit
             }
         }
         return JSONObject().apply {
@@ -434,9 +534,19 @@ object AnthropicClient : AiProtocolClient {
             put("max_tokens", cfg.maxOutputTokens)
             if (request.system.isNotBlank()) put("system", request.system)
             put("messages", messages)
-            // Claude 的 temperature 取值 0..1
             put("temperature", cfg.temperature.coerceIn(0f, 1f).toDouble())
             put("stream", true)
+            if (request.tools.isNotEmpty()) {
+                put("tools", JSONArray().apply {
+                    request.tools.forEach { spec ->
+                        put(JSONObject().apply {
+                            put("name", spec.name)
+                            put("description", spec.description)
+                            put("input_schema", spec.parameters)
+                        })
+                    }
+                })
+            }
         }.asBody()
     }
 
@@ -553,25 +663,62 @@ object GeminiClient : AiProtocolClient {
 
     private fun buildBody(cfg: AiConfig, request: AiRequest): okhttp3.RequestBody {
         val contents = JSONArray()
-        var lastRole: String? = null
         request.messages.forEach { message ->
-            if (message.role == AiRole.SYSTEM) return@forEach
-            val role = if (message.role == AiRole.ASSISTANT) "model" else "user"
-            val text = message.text
-            if (text.isBlank()) return@forEach
-            if (role == lastRole) {
-                // 连续同角色合并为一个 content，避免模型把同段话拆成多次发言
-                val last = contents.optJSONObject(contents.length() - 1)
-                val parts = last?.optJSONArray("parts")
-                parts?.put(JSONObject().put("text", text))
-            } else {
-                contents.put(
-                    JSONObject().apply {
-                        put("role", role)
-                        put("parts", JSONArray().put(JSONObject().put("text", text)))
+            when (message.role) {
+                AiRole.USER -> {
+                    val text = message.text
+                    if (text.isNotBlank()) {
+                        contents.put(JSONObject().apply {
+                            put("role", "user")
+                            put("parts", JSONArray().put(JSONObject().put("text", text)))
+                        })
                     }
-                )
-                lastRole = role
+                }
+
+                AiRole.ASSISTANT -> {
+                    val parts = JSONArray()
+                    if (message.text.isNotBlank()) {
+                        parts.put(JSONObject().put("text", message.text))
+                    }
+                    message.blocks.filterIsInstance<AiBlock.ToolCall>().forEach { call ->
+                        parts.put(JSONObject().apply {
+                            put(
+                                "functionCall",
+                                JSONObject().apply {
+                                    put("name", call.name)
+                                    put(
+                                        "args",
+                                        runCatching { JSONObject(call.argsJson.ifBlank { "{}" }) }
+                                            .getOrDefault(JSONObject()),
+                                    )
+                                },
+                            )
+                        })
+                    }
+                    if (parts.length() > 0) {
+                        contents.put(JSONObject().put("role", "model").put("parts", parts))
+                    }
+                }
+
+                AiRole.TOOL -> {
+                    val parts = JSONArray()
+                    message.blocks.filterIsInstance<AiBlock.ToolResult>().forEach { result ->
+                        parts.put(JSONObject().apply {
+                            put(
+                                "functionResponse",
+                                JSONObject().apply {
+                                    put("name", result.name.ifBlank { "tool" })
+                                    put("response", JSONObject().put("result", result.content))
+                                },
+                            )
+                        })
+                    }
+                    if (parts.length() > 0) {
+                        contents.put(JSONObject().put("role", "user").put("parts", parts))
+                    }
+                }
+
+                AiRole.SYSTEM -> Unit
             }
         }
         return JSONObject().apply {
@@ -592,6 +739,20 @@ object GeminiClient : AiProtocolClient {
                     put("maxOutputTokens", cfg.maxOutputTokens)
                 },
             )
+            if (request.tools.isNotEmpty()) {
+                put("tools", JSONArray().put(JSONObject().put(
+                    "functionDeclarations",
+                    JSONArray().apply {
+                        request.tools.forEach { spec ->
+                            put(JSONObject().apply {
+                                put("name", spec.name)
+                                put("description", spec.description)
+                                put("parameters", spec.parameters)
+                            })
+                        }
+                    },
+                )))
+            }
         }.asBody()
     }
 
