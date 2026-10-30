@@ -33,6 +33,8 @@ import org.commonmark.ext.autolink.AutolinkExtension
 import org.commonmark.ext.gfm.strikethrough.Strikethrough
 import org.commonmark.ext.gfm.strikethrough.StrikethroughExtension
 import org.commonmark.ext.gfm.tables.TableBlock
+import org.commonmark.ext.gfm.tables.TableHead
+import org.commonmark.ext.gfm.tables.TableRow
 import org.commonmark.ext.gfm.tables.TablesExtension
 import org.commonmark.ext.task.list.items.TaskListItemsExtension
 import org.commonmark.node.BlockQuote
@@ -168,11 +170,7 @@ private fun MarkdownBlock(node: Node, colors: MarkdownPalette) {
         )
 
         // 表格等暂不支持：把子节点按普通块渲染，至少不丢文本
-        is TableBlock -> {
-            Column {
-                node.childNodes().forEach { child -> MarkdownBlock(child, colors) }
-            }
-        }
+        is TableBlock -> MarkdownTable(node, colors)
 
         else -> node.childNodes().forEach { child -> MarkdownBlock(child, colors) }
     }
@@ -305,3 +303,45 @@ internal fun buildMarkdownInline(node: Node, colors: MarkdownPalette): Annotated
         }
         node.childNodes().forEach(::visit)
     }
+
+@Composable
+private fun MarkdownTable(block: Node, colors: MarkdownPalette) {
+    val rows = remember(block) {
+        val result = mutableListOf<Pair<Boolean, List<String>>>()
+        fun cellText(node: Node): String =
+            (node as? MarkdownTextNode)?.literal
+                ?: node.childNodes().joinToString("") { cellText(it) }
+
+        fun walk(node: Node) {
+            if (node is TableRow) {
+                result += (node.parent is TableHead) to node.childNodes().map { cell -> cellText(cell) }
+            } else {
+                node.childNodes().forEach(::walk)
+            }
+        }
+        walk(block)
+        result
+    }
+    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        rows.forEach { (header, cells) ->
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .background(if (header) colors.codeBackground else Color.Transparent)
+                    .padding(vertical = 4.dp),
+            ) {
+                cells.forEach { cell ->
+                    Text(
+                        text = cell,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 4.dp),
+                        color = colors.text,
+                        fontSize = 12.sp,
+                        fontWeight = if (header) FontWeight.Bold else null,
+                    )
+                }
+            }
+        }
+    }
+}

@@ -65,6 +65,7 @@ import com.example.hamkit.data.ai.tool.SatelliteCardData
 import com.example.hamkit.data.ai.tool.ZoneCardData
 import com.example.hamkit.ui.component.markdown.MarkdownPalette
 import com.example.hamkit.ui.component.markdown.MarkdownText
+import com.example.hamkit.ui.screen.ai.component.SatelliteRadar
 import com.example.hamkit.ui.LocalMainViewModel
 import com.example.hamkit.ui.navigation3.LocalNavigator
 import com.example.hamkit.ui.LocalUiMode
@@ -739,6 +740,14 @@ private fun SatelliteCardMiuix(data: SatelliteCardData) {
 
             data.live?.let { live ->
                 Spacer(Modifier.height(10.dp))
+                SatelliteRadar(
+                    azimuthDeg = live.azimuthDeg,
+                    elevationDeg = live.elevationDeg,
+                    primary = colorScheme.primary,
+                    outline = colorScheme.onSurface.copy(alpha = 0.25f),
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                )
+                Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                     MetricMiuix("方位 AZ", "%.1f°".format(live.azimuthDeg))
                     MetricMiuix("仰角 EL", "%.1f°".format(live.elevationDeg))

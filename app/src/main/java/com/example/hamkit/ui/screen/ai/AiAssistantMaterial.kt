@@ -79,6 +79,7 @@ import com.example.hamkit.data.ai.tool.SatelliteCardData
 import com.example.hamkit.data.ai.tool.ZoneCardData
 import com.example.hamkit.ui.component.markdown.MarkdownPalette
 import com.example.hamkit.ui.component.markdown.MarkdownText
+import com.example.hamkit.ui.screen.ai.component.SatelliteRadar
 import com.example.hamkit.ui.LocalMainViewModel
 import com.example.hamkit.ui.navigation3.LocalNavigator
 import com.example.hamkit.ui.appViewModel
@@ -717,6 +718,14 @@ private fun SatelliteCardMaterial(data: SatelliteCardData) {
 
             data.live?.let { live ->
                 Spacer(Modifier.height(10.dp))
+                SatelliteRadar(
+                    azimuthDeg = live.azimuthDeg,
+                    elevationDeg = live.elevationDeg,
+                    primary = MaterialTheme.colorScheme.primary,
+                    outline = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                )
+                Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                     MetricMaterial("方位 AZ", "%.1f°".format(live.azimuthDeg))
                     MetricMaterial("仰角 EL", "%.1f°".format(live.elevationDeg))
