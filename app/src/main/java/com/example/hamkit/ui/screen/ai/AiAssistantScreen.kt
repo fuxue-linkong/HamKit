@@ -328,10 +328,10 @@ private fun ErrorCardMiuix(message: String, onDismiss: () -> Unit) {
 @Composable
 private fun EmptyStateMiuix(onPick: (String) -> Unit) {
     val samples = listOf(
-        "业余无线电 CQ 分区怎么划分？",
-        "FT8 的 73 和 RR73 是什么意思？",
-        "ISS 的 SSTV 活动一般用什么模式？",
-        "如何选择 HF 天线的长度？",
+        stringResource(R.string.ai_sample_1),
+        stringResource(R.string.ai_sample_2),
+        stringResource(R.string.ai_sample_3),
+        stringResource(R.string.ai_sample_4),
     )
     Card(
         modifier = Modifier

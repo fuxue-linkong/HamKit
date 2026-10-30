@@ -241,9 +241,9 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
                             },
                             enabled = keyInput.isNotBlank(),
                         ) {
-                            Text("保存 Key")
+                            Text(stringResource(R.string.ai_settings_save_key))
                         }
-                        TextButton(onClick = viewModel::clearKey) { Text("清除") }
+                        TextButton(onClick = viewModel::clearKey) { Text(stringResource(R.string.ai_settings_clear)) }
                     }
                     Spacer(Modifier.height(6.dp))
                     Text(
@@ -275,11 +275,11 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
                     )
                     Row(Modifier.padding(horizontal = 14.dp), Arrangement.SpaceBetween) {
                         Text(
-                            "清除所有对话",
+                            stringResource(R.string.ai_settings_clear_history),
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.weight(1f),
                         )
-                        TextButton(onClick = viewModel::clearHistory) { Text("清除") }
+                        TextButton(onClick = viewModel::clearHistory) { Text(stringResource(R.string.ai_settings_clear)) }
                     }
                 }
             }
@@ -343,14 +343,14 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
                     onClick = { viewModel.save() },
                     modifier = Modifier.weight(1f),
                 ) {
-                    Text("保存设置")
+                    Text(stringResource(R.string.ai_settings_save))
                 }
                 Button(
                     onClick = viewModel::testConnection,
                     modifier = Modifier.weight(1f),
                     enabled = !state.testing,
                 ) {
-                    Text(if (state.testing) "测试中…" else "测试连接")
+                    Text(if (state.testing) "测试中…" else stringResource(R.string.ai_settings_test))
                 }
             }
 
