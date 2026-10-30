@@ -326,8 +326,61 @@ object OpenAiChatClient : AiProtocolClient {
             } else {
                 AiProbeResult(false, 0, AiError.fromHttp(resp.code, resp.body?.string()))
             }
+        }.let { result ->
+            if (!result.ok) result else result.copy(toolsSupported = probeTools(cfg, apiKey))
         }
     }
+
+    /** 带一个 dummy tool 再请求一次，用于判断该模型/网关是否支持 function calling。 */
+    private suspend fun probeTools(cfg: AiConfig, apiKey: String): Boolean? =
+        withContext(Dispatchers.IO) {
+            val request = Request.Builder()
+                .url(cfg.endpoint())
+                .header("Authorization", "Bearer ${apiKey.trim()}")
+                .post(
+                    JSONObject().apply {
+                        put("model", cfg.model)
+                        put(
+                            "messages",
+                            JSONArray().put(JSONObject().put("role", "user").put("content", "ping")),
+                        )
+                        put("max_tokens", 1)
+                        put(
+                            "tools",
+                            JSONArray().put(
+                                JSONObject().apply {
+                                    put("type", "function")
+                                    put(
+                                        "function",
+                                        JSONObject().apply {
+                                            put("name", "noop")
+                                            put("description", "noop")
+                                            put(
+                                                "parameters",
+                                                JSONObject().put("type", "object")
+                                                    .put("properties", JSONObject()),
+                                            )
+                                        },
+                                    )
+                                },
+                            ),
+                        )
+                        put("tool_choice", "auto")
+                    }.asBody()
+                )
+                .build()
+            try {
+                AiHttp.blocking.newCall(request).execute().use { resp ->
+                    when {
+                        resp.isSuccessful -> true
+                        resp.code == 400 || resp.code == 422 -> false
+                        else -> null
+                    }
+                }
+            } catch (_: Throwable) {
+                null
+            }
+        }
 }
 
 internal fun mapOpenAiStop(reason: String, sawToolCall: Boolean): AiStopReason = when {

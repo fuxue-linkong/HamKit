@@ -414,6 +414,13 @@ private fun ProbeResultMiuix(state: com.example.hamkit.ui.viewmodel.AiSettingsUi
     state.error?.let { error ->
         Text(error, fontSize = 11.sp, color = colorScheme.error)
     }
+    probe?.toolsSupported?.let { supported ->
+        Text(
+            if (supported) "工具调用：可用" else "工具调用：该模型不支持（只能问答）",
+            fontSize = 11.sp,
+            color = if (supported) colorScheme.primary else colorScheme.onSurfaceVariantSummary,
+        )
+    }
     if (probe != null) {
         Text(
             if (probe.ok) {
