@@ -140,7 +140,3 @@ Feature requests are also welcome (though feasibility is not guaranteed).
 ## License
 
 [MIT License](LICENSE)
-
-## Disclaimer
-
-I am not a licensed HAM operator — just someone with a casual interest in amateur radio. This project was inspired by fellow enthusiasts around me. It has also been a great opportunity to learn the ropes of Android development.
