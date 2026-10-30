@@ -31,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -165,6 +166,38 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    Row(
+                        modifier = Modifier.padding(top = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TextButton(
+                            onClick = viewModel::fetchModels,
+                            enabled = !state.fetchingModels,
+                        ) {
+                            Text(if (state.fetchingModels) "获取中…" else "获取模型列表")
+                        }
+                        state.modelsError?.let {
+                            Text(
+                                it,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
+                    if (state.models.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            state.models.forEach { model ->
+                                FilterChip(
+                                    selected = model == state.config.model,
+                                    onClick = { viewModel.setModel(model) },
+                                    label = { Text(model) },
+                                )
+                            }
+                        }
+                    }
                 }
             }
 

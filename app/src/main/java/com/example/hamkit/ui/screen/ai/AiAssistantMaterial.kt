@@ -53,6 +53,8 @@ import com.example.hamkit.data.ai.AiRole
 import com.example.hamkit.data.ai.tool.AiCard
 import com.example.hamkit.data.ai.tool.SatelliteCardData
 import com.example.hamkit.data.ai.tool.ZoneCardData
+import com.example.hamkit.ui.component.markdown.MarkdownPalette
+import com.example.hamkit.ui.component.markdown.MarkdownText
 import com.example.hamkit.ui.LocalMainViewModel
 import com.example.hamkit.ui.navigation3.LocalNavigator
 import com.example.hamkit.ui.appViewModel
@@ -285,15 +287,28 @@ private fun MessageItemMaterial(message: AiChatMessageUi) {
                 }
             }
             Spacer(Modifier.height(6.dp))
-            Text(
-                message.text.ifBlank { if (message.isStreaming) "…" else "（无文本输出）" },
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (message.text.isBlank() && !message.isStreaming) {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                } else {
-                    MaterialTheme.colorScheme.onSurface
-                },
-            )
+            if (!message.isStreaming && message.text.isNotBlank()) {
+                MarkdownText(
+                    markdown = message.text,
+                    colors = MarkdownPalette(
+                        text = MaterialTheme.colorScheme.onSurface,
+                        secondary = MaterialTheme.colorScheme.onSurfaceVariant,
+                        primary = MaterialTheme.colorScheme.primary,
+                        codeBackground = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        divider = MaterialTheme.colorScheme.outlineVariant,
+                    ),
+                )
+            } else {
+                Text(
+                    message.text.ifBlank { if (message.isStreaming) "…" else "（无文本输出）" },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (message.text.isBlank() && !message.isStreaming) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                )
+            }
             message.error?.let { error ->
                 Spacer(Modifier.height(4.dp))
                 Text(

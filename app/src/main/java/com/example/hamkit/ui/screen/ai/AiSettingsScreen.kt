@@ -28,6 +28,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -130,6 +131,36 @@ fun AiSettingsScreenMiuix(onBack: () -> Unit = {}) {
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 1,
                     )
+                    Row(
+                        modifier = Modifier.padding(top = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        TextButton(
+                            text = if (state.fetchingModels) "获取中…" else "获取模型列表",
+                            onClick = viewModel::fetchModels,
+                            enabled = !state.fetchingModels,
+                        )
+                        state.modelsError?.let {
+                            Text(it, fontSize = 10.sp, color = colorScheme.error)
+                        }
+                    }
+                    if (state.models.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier
+                                .horizontalScroll(rememberScrollState())
+                                .padding(top = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            state.models.forEach { model ->
+                                ChipMiuix(
+                                    text = model,
+                                    selected = model == state.config.model,
+                                    onClick = { viewModel.setModel(model) },
+                                )
+                            }
+                        }
+                    }
                 }
             }
 

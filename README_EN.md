@@ -19,6 +19,7 @@ Official website: https://hamkit.click
 - **AI Assistant (P1)** (third bottom-nav tab; OpenAI Chat Completions / Anthropic Messages / Gemini with streaming; bring your own API key, key and chat history encrypted with Android Keystore AES-GCM; intranet http and self-signed certificates supported)
   - **Tool calling**: zone lookup, satellite passes/live tracking/transmitters/AMSAT, satellite search, weather/UTC, CW encoding, screen navigation, SSTV receive hand-off, pass reminders
   - In-chat **satellite detail card** (live values, passes, transmitters) and tool progress bars
+  - **Markdown rendering** (headings / lists / code blocks / quotes / links) and **automatic model list fetching** in settings
 
 ### Short-term
 

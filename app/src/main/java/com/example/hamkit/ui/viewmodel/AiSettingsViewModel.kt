@@ -7,6 +7,9 @@ import com.example.hamkit.data.ai.AiClientFactory
 import com.example.hamkit.data.ai.AiConfig
 import com.example.hamkit.data.ai.AiConfigStore
 import com.example.hamkit.data.ai.AiKeyStore
+import com.example.hamkit.data.ai.AiErrorKind
+import com.example.hamkit.data.ai.AiModelList
+import com.example.hamkit.data.ai.AiModelListException
 import com.example.hamkit.data.ai.AiNetworkPolicy
 import com.example.hamkit.data.ai.AiPreset
 import com.example.hamkit.data.ai.AiProbeResult
@@ -28,6 +31,10 @@ data class AiSettingsUiState(
     val probe: AiProbeResult? = null,
     val notice: String? = null,
     val error: String? = null,
+    /** 「获取模型列表」返回的候选模型。 */
+    val models: List<String> = emptyList(),
+    val fetchingModels: Boolean = false,
+    val modelsError: String? = null,
 ) {
     val hasKey: Boolean get() = keyMasked != null
 }
@@ -176,6 +183,48 @@ class AiSettingsViewModel(application: Application) : AndroidViewModel(applicati
                 )
             }
             _uiState.update { it.copy(testing = false, probe = result) }
+        }
+    }
+
+    /** 拉取服务商模型列表（只读；失败不影响当前配置）。 */
+    fun fetchModels() {
+        val state = _uiState.value
+        if (state.fetchingModels) return
+        val config = state.config.normalized()
+        AiNetworkPolicy.validate(config.baseUrl, config.allowCleartext)?.let { reason ->
+            _uiState.update { it.copy(error = reason) }
+            return
+        }
+        if (!state.hasKey) {
+            _uiState.update { it.copy(error = "请先保存 API Key") }
+            return
+        }
+        _uiState.update { it.copy(fetchingModels = true, modelsError = null, error = null) }
+        viewModelScope.launch {
+            val apiKey = withContext(Dispatchers.IO) { keyStore.load() }
+            if (apiKey.isNullOrBlank()) {
+                _uiState.update {
+                    it.copy(fetchingModels = false, modelsError = "API Key 读取失败，请重新保存")
+                }
+                return@launch
+            }
+            AiModelList.fetch(config, apiKey)
+                .onSuccess { models ->
+                    _uiState.update {
+                        it.copy(fetchingModels = false, models = models, modelsError = null)
+                    }
+                }
+                .onFailure { throwable ->
+                    val message = (throwable as? AiModelListException)?.error?.let { error ->
+                        when (error.kind) {
+                            AiErrorKind.AUTH -> "API Key 无效或没有权限"
+                            AiErrorKind.RATE_LIMIT -> "请求过于频繁，请稍后再试"
+                            AiErrorKind.NETWORK -> "网络不可用：${error.message}"
+                            else -> error.message
+                        }
+                    } ?: throwable.message ?: "获取模型列表失败"
+                    _uiState.update { it.copy(fetchingModels = false, modelsError = message) }
+                }
         }
     }
 
