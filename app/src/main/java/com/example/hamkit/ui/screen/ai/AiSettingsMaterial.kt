@@ -38,6 +38,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.data.ai.AiPreset
+import com.example.hamkit.data.ai.tool.AiToolRegistry
 import com.example.hamkit.data.ai.AiProtocol
 import com.example.hamkit.ui.appViewModel
 import com.example.hamkit.ui.component.material.SwitchItem
@@ -302,6 +303,30 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
                         minLines = 4,
                         maxLines = 8,
                     )
+                }
+            }
+
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                ),
+            ) {
+                Column(Modifier.padding(vertical = 4.dp)) {
+                    Text(
+                        "工具权限",
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                    )
+                    AiToolRegistry.ALL.forEach { tool ->
+                        SwitchItem(
+                            title = tool.spec.title,
+                            summary = tool.spec.name,
+                            checked = tool.spec.name !in state.config.disabledTools,
+                            onCheckedChange = { enabled ->
+                                viewModel.toggleTool(tool.spec.name, enabled)
+                            },
+                        )
+                    }
                 }
             }
 

@@ -97,6 +97,8 @@ data class AiConfig(
     val allowCleartext: Boolean = false,
     /** 自定义系统提示词；空串表示使用 [AiPrompts.DEFAULT_SYSTEM_PROMPT]。 */
     val systemPrompt: String = "",
+    /** 被禁用的工具名（模型看不到，也不会调用）。 */
+    val disabledTools: Set<String> = emptySet(),
 ) {
     fun normalized(): AiConfig = copy(
         baseUrl = baseUrl.trim().trimEnd('/'),

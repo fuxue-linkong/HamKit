@@ -498,7 +498,7 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
         }
 
         val startedAt = System.currentTimeMillis()
-        val toolSpecs = registry.specs()
+        val toolSpecs = registry.specs(_uiState.value.config.disabledTools)
         var usage: AiUsage? = null
         var errorText: String? = null
         var lastStop: AiStopReason? = null

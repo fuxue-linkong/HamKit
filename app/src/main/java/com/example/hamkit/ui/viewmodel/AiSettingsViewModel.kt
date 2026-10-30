@@ -107,6 +107,14 @@ class AiSettingsViewModel(application: Application) : AndroidViewModel(applicati
         _uiState.update { it.copy(config = it.config.copy(saveHistory = enabled)) }
     }
 
+    fun toggleTool(name: String, enabled: Boolean) {
+        _uiState.update { state ->
+            val disabled = state.config.disabledTools.toMutableSet()
+            if (enabled) disabled.remove(name) else disabled.add(name)
+            state.copy(config = state.config.copy(disabledTools = disabled))
+        }
+    }
+
     fun setSystemPrompt(value: String) {
         _uiState.update { it.copy(config = it.config.copy(systemPrompt = value)) }
     }
