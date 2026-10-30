@@ -10,6 +10,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
+import org.json.JSONTokener
 import org.json.JSONObject
 
 /** 协议客户端：把各家 SSE 映射成统一的 [AiEvent] 流。 */
@@ -52,8 +53,23 @@ private fun JSONObject.optStringOrNull(key: String): String? =
  * - 兼容非 SSE 的整段 JSON（[SseReader] 也会把裸 JSON 行收进 data）。
  */
 private fun parseJsonObjects(data: String): List<JSONObject> {
-    runCatching { JSONObject(data) }.getOrNull()?.let { return listOf(it) }
-    return data.lineSequence()
+    val trimmed = data.trim()
+    if (trimmed.isEmpty()) return emptyList()
+
+    // Android 的 JSONObject(String) 只读第一个值、忽略尾随内容；多 JSON 挤在一帧时
+    // 必须用 JSONTokener 循环读取，否则只会解析出第一个对象。
+    runCatching {
+        val tokener = JSONTokener(trimmed)
+        val result = mutableListOf<JSONObject>()
+        while (tokener.more()) {
+            val value = tokener.nextValue()
+            if (value is JSONObject) result += value
+        }
+        if (result.isNotEmpty()) return result
+    }
+
+    // 兜底：容忍 data: 前缀 / 非 JSON 噪声行
+    return trimmed.lineSequence()
         .map { it.trim().removePrefix("data:").trim() }
         .filter { it.startsWith("{") }
         .mapNotNull { runCatching { JSONObject(it) }.getOrNull() }
