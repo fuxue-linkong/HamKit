@@ -501,4 +501,9 @@
     <string name="ai_settings_clear_history_hint">Delete encrypted history on this device. This cannot be undone.</string>
     <string name="ai_settings_not_saved">Not saved</string>
     <string name="ai_settings_fetching">Fetching…</string>
+    <string name="ai_settings_saved_masked">Saved: %1$s</string>
+    <string name="ai_settings_probe_ok">Connected, first byte %1$d ms</string>
+    <string name="ai_settings_probe_fail">Connection failed: %1$s</string>
+    <string name="ai_settings_tool_ok">Tool calling: available</string>
+    <string name="ai_settings_tool_unsupported">Tool calling: not supported by this model</string>
 </resources>

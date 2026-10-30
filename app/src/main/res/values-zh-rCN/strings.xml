@@ -144,4 +144,9 @@
     <string name="ai_settings_clear_history_hint">删除本机加密历史，不可恢复。</string>
     <string name="ai_settings_not_saved">尚未保存</string>
     <string name="ai_settings_fetching">获取中…</string>
+    <string name="ai_settings_saved_masked">已保存：%1$s</string>
+    <string name="ai_settings_probe_ok">连接成功，首包延迟 %1$d ms</string>
+    <string name="ai_settings_probe_fail">连接失败：%1$s</string>
+    <string name="ai_settings_tool_ok">工具调用：可用</string>
+    <string name="ai_settings_tool_unsupported">工具调用：该模型不支持（只能问答）</string>
 </resources>
