@@ -71,6 +71,7 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Card(
+                modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 ),
@@ -107,6 +108,7 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
             }
 
             Card(
+                modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 ),
@@ -142,6 +144,7 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
             }
 
             Card(
+                modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 ),
@@ -166,6 +169,7 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
             }
 
             Card(
+                modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 ),
@@ -215,6 +219,7 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
             }
 
             Card(
+                modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 ),

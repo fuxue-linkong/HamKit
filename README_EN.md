@@ -2,7 +2,7 @@
 
 [中文](README.md)丨English
 
-An all-in-one console for amateur radio enthusiasts — zone positioning, satellite pass prediction, CW Morse training, transit alerts, and more.
+An all-in-one console for amateur radio enthusiasts — zone positioning, satellite pass prediction, CW Morse training, transit alerts, an AI assistant, and more.
 
 Official website: https://hamkit.click
 
@@ -16,9 +16,11 @@ Official website: https://hamkit.click
 - **AMSAT Satellite Status**
 - **Calendar Transit Alerts**
 - **Home Time Card** (real-time weather temperature, UTC time, custom background image cropping)
+- **AI Assistant (P0)** (third bottom-nav tab; OpenAI Chat Completions / Anthropic Messages / Gemini with streaming; bring your own API key, key and chat history encrypted with Android Keystore AES-GCM; intranet http and self-signed certificates supported)
 
 ### Short-term
 
+- **AI Assistant P1** (tool calling: zone lookup, satellite passes/live/transmitters, SSTV receive hand-off; in-chat satellite cards)
 - **FT8** refinement (referencing [FT8CN](https://github.com/BG7HIM/FT8CN))
 - **APRS** refinement (referencing [aprsdroid](https://github.com/ge0rg/aprsdroid))
 

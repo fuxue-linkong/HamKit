@@ -39,7 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.data.ai.AiRole
-import com.example.hamkit.ui.LocalNavigator
+import com.example.hamkit.ui.navigation3.LocalNavigator
 import com.example.hamkit.ui.LocalUiMode
 import com.example.hamkit.ui.UiMode
 import com.example.hamkit.ui.appViewModel
