@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import Shared
 
 /// 卫星管理页：对应 Android `SatelliteManagementScreen`。

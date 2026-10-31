@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import Shared
 
 /// 单星详情页：照抄 Android `SatelliteDetailScreen` 的卡片结构 ——
