@@ -33,17 +33,17 @@ struct PrivacyConsentView: View {
 
                     ConsentSection(
                         title: "精确位置（敏感个人信息）",
-                        body: "用于计算 CQ/ITU 分区与 Maidenhead 网格、显示地图、查询天气，以及在 APRS 中上报位置。精确位置属于敏感个人信息，需要你单独同意。你也可以在系统设置中随时关闭定位权限。"
+                        text: "用于计算 CQ/ITU 分区与 Maidenhead 网格、显示地图、查询天气，以及在 APRS 中上报位置。精确位置属于敏感个人信息，需要你单独同意。你也可以在系统设置中随时关闭定位权限。"
                     )
 
                     ConsentSection(
                         title: "APRS 位置公开（可选）",
-                        body: "开启 APRS 上报后，你的呼号、精确位置和消息会发布到 APRS-IS 及关联网站，可能被任何人看到。该功能默认关闭；不勾选不影响接收和其他功能。"
+                        text: "开启 APRS 上报后，你的呼号、精确位置和消息会发布到 APRS-IS 及关联网站，可能被任何人看到。该功能默认关闭；不勾选不影响接收和其他功能。"
                     )
 
                     ConsentSection(
                         title: "AI 助手（可选）",
-                        body: "需要你自己填写 API Key。对话内容与附件会发送给你配置的服务商；Key 与会话记录只加密保存在本机。"
+                        text: "需要你自己填写 API Key。对话内容与附件会发送给你配置的服务商；Key 与会话记录只加密保存在本机。"
                     )
 
                     Divider()
@@ -105,12 +105,13 @@ struct PrivacyConsentView: View {
 
 private struct ConsentSection: View {
     let title: String
-    let body: String
+    /// 不能叫 `body`：会与 View 协议的 `body` 冲突（Invalid redeclaration of 'body'）。
+    let text: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title).font(.footnote.weight(.semibold))
-            Text(body).font(.caption).foregroundStyle(.secondary)
+            Text(text).font(.caption).foregroundStyle(.secondary)
         }
     }
 }
