@@ -125,6 +125,10 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import com.example.hamkit.data.ai.AiAttachmentKind
 import java.util.Locale
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.example.hamkit.ui.theme.SafeColors
 
 /** Material 风格实现，与 Miuix 版共用 [AiAssistantViewModel]。 */
 @Composable
@@ -718,65 +722,157 @@ private fun ToolCardMaterial(tool: AiToolUi) {
         targetValue = (tool.progress ?: 0f).coerceIn(0f, 1f),
         label = "aiToolProgress",
     )
+    var expanded by remember(tool.callId) { mutableStateOf(tool.state != AiToolUiState.SUCCESS) }
+    LaunchedEffect(tool.state) {
+        when (tool.state) {
+            AiToolUiState.SUCCESS -> expanded = false
+            AiToolUiState.ERROR -> expanded = true
+            AiToolUiState.RUNNING -> Unit
+        }
+    }
     Card(
         modifier = Modifier.fillMaxWidth().animateContentSize(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
     ) {
-        Column(Modifier.padding(12.dp)) {
+        Column(
+            Modifier
+                .clickable { expanded = !expanded }
+                .padding(12.dp),
+        ) {
+            val statusColor = when (tool.state) {
+                AiToolUiState.RUNNING -> MaterialTheme.colorScheme.primary
+                AiToolUiState.SUCCESS -> SafeColors.successIcon
+                AiToolUiState.ERROR -> MaterialTheme.colorScheme.error
+            }
+            val label = when (tool.state) {
+                AiToolUiState.RUNNING -> stringResource(R.string.ai_tool_running)
+                AiToolUiState.SUCCESS -> stringResource(R.string.ai_tool_done)
+                AiToolUiState.ERROR -> stringResource(R.string.ai_tool_failed)
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    tool.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.weight(1f),
-                )
-                val (label, color) = when (tool.state) {
-                    AiToolUiState.RUNNING -> stringResource(R.string.ai_tool_running) to MaterialTheme.colorScheme.primary
-                    AiToolUiState.SUCCESS -> stringResource(R.string.ai_tool_done) to MaterialTheme.colorScheme.primary
-                    AiToolUiState.ERROR -> stringResource(R.string.ai_tool_failed) to MaterialTheme.colorScheme.error
-                }
-                Text(label, style = MaterialTheme.typography.labelSmall, color = color)
-            }
-            val progress = tool.progress
-            if (tool.state == AiToolUiState.RUNNING && progress != null) {
-                LinearProgressIndicator(
-                    progress = { animatedProgress },
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp),
+                        .size(30.dp)
+                        .background(
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+                            CircleShape,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        toolIconMaterial(tool.name),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            tool.title,
+                            style = MaterialTheme.typography.titleSmall,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Box(
+                            Modifier
+                                .size(6.dp)
+                                .background(statusColor, CircleShape),
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            label,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = statusColor,
+                        )
+                    }
+                    if (!expanded) {
+                        tool.summary?.let {
+                            Text(
+                                it,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                modifier = Modifier.padding(top = 2.dp),
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.width(6.dp))
+                Icon(
+                    if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp),
                 )
             }
-            tool.stage?.let {
-                Text(
-                    it,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (tool.state == AiToolUiState.RUNNING && progress == null) {
-                Text(
-                    "执行中…",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            tool.summary?.let {
-                Text(
-                    it,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            tool.error?.let {
-                Text(
-                    it,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
+
+            if (expanded) {
+                val progress = tool.progress
+                if (tool.state == AiToolUiState.RUNNING && progress != null) {
+                    LinearProgressIndicator(
+                        progress = { animatedProgress },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp),
+                    )
+                }
+                tool.stage?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+                if (tool.state == AiToolUiState.RUNNING && progress == null) {
+                    Text(
+                        stringResource(R.string.ai_executing),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+                tool.summary?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+                tool.argsPreview.takeIf { it.isNotBlank() }?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 3,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+                tool.error?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
             }
         }
     }
+}
+
+private fun toolIconMaterial(name: String): ImageVector = when {
+    name == "get_zone_info" -> Icons.Rounded.Place
+    name == "search_satellites" || name.startsWith("get_satellite") ||
+        name == "get_amsat_status" -> Icons.Rounded.SatelliteAlt
+    name == "start_sstv_receive" -> Icons.Rounded.Image
+    name == "open_screen" -> Icons.Rounded.ArrowForward
+    name == "add_pass_reminder" -> Icons.Rounded.Notifications
+    else -> Icons.Rounded.Build
 }
 
 @Composable
