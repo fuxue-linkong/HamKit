@@ -557,9 +557,50 @@ private fun MessageItemMaterial(message: AiChatMessageUi) {
             }
             if (message.tools.isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))
-                message.tools.forEach { tool ->
-                    ToolCardMaterial(tool)
+                // 与 Miuix 版一致：工具调用折叠成一行，运行中/失败时展开
+                val anyActive = message.tools.any { it.state != AiToolUiState.SUCCESS }
+                var toolsExpanded by remember(message.id) { mutableStateOf(anyActive) }
+                LaunchedEffect(anyActive) { toolsExpanded = anyActive }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                            RoundedCornerShape(10.dp),
+                        )
+                        .clickable { toolsExpanded = !toolsExpanded }
+                        .padding(horizontal = 10.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Rounded.Build,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        stringResource(
+                            if (toolsExpanded) R.string.ai_tools_expanded else R.string.ai_tools_collapsed,
+                            message.tools.size,
+                        ),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Icon(
+                        if (toolsExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(14.dp),
+                    )
+                }
+                if (toolsExpanded) {
                     Spacer(Modifier.height(8.dp))
+                    message.tools.forEach { tool ->
+                        ToolCardMaterial(tool)
+                        Spacer(Modifier.height(8.dp))
+                    }
                 }
             }
             message.cards.forEach { card ->

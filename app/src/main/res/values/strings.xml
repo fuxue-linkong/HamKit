@@ -523,4 +523,6 @@
     <string name="ai_history_delete_title">Delete chat</string>
     <string name="ai_history_delete_desc">This cannot be undone.</string>
     <string name="ai_history_open">Open history</string>
+    <string name="ai_tools_collapsed">%1$d tool calls collapsed</string>
+    <string name="ai_tools_expanded">%1$d tool calls</string>
 </resources>
