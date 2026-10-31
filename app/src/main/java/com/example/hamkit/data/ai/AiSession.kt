@@ -14,6 +14,15 @@ data class AiSessionSummary(
     val messageCount: Int,
 )
 
+/** 历史里保存的工具调用快照（只存展示所需字段）。 */
+data class AiToolSnapshot(
+    val callId: String,
+    val name: String,
+    val title: String,
+    val state: String,
+    val summary: String? = null,
+)
+
 /** 一条聊天消息（只存渲染所需的文本与元信息；P1 的卡片快照另加字段）。 */
 data class AiChatMessage(
     val id: String,
@@ -24,6 +33,8 @@ data class AiChatMessage(
     val usage: AiUsage? = null,
     val elapsedMs: Long? = null,
     val error: String? = null,
+    /** 该条消息关联的工具调用（历史里也要能展示）。 */
+    val tools: List<AiToolSnapshot> = emptyList(),
 )
 
 /** 一个会话。 */
@@ -50,9 +61,9 @@ object AiSessionCodec {
         put("createdAt", session.createdAt)
         put("updatedAt", session.updatedAt)
         put("messages", JSONArray().apply {
-            session.messages.forEach { message ->
+            session.messages.forEachIndexed { index, message ->
                 put(JSONObject().apply {
-                    put("id", message.id)
+                    put("id", message.id.ifBlank { "m${index}" })
                     put("role", message.role.name)
                     put("text", message.text)
                     put("createdAt", message.createdAt)
@@ -65,6 +76,19 @@ object AiSessionCodec {
                     }
                     message.elapsedMs?.let { put("elapsedMs", it) }
                     message.error?.let { put("error", it) }
+                    if (message.tools.isNotEmpty()) {
+                        put("tools", JSONArray().apply {
+                            message.tools.forEach { tool ->
+                                put(JSONObject().apply {
+                                    put("callId", tool.callId)
+                                    put("name", tool.name)
+                                    put("title", tool.title)
+                                    put("state", tool.state)
+                                    tool.summary?.let { put("summary", it) }
+                                })
+                            }
+                        })
+                    }
                 })
             }
         })
@@ -79,7 +103,7 @@ object AiSessionCodec {
             val role = runCatching { AiRole.valueOf(item.optString("role", "USER")) }
                 .getOrDefault(AiRole.USER)
             messages += AiChatMessage(
-                id = item.optString("id", "m$i"),
+                id = item.optString("id").takeIf { it.isNotBlank() } ?: "m$i",
                 role = role,
                 text = item.optString("text", ""),
                 createdAt = item.optLong("createdAt", 0L),
@@ -92,6 +116,22 @@ object AiSessionCodec {
                 },
                 elapsedMs = item.optLong("elapsedMs", -1L).takeIf { it >= 0 },
                 error = item.optString("error").takeIf { it.isNotBlank() },
+                tools = item.optJSONArray("tools")?.let { tools ->
+                    buildList {
+                        for (t in 0 until tools.length()) {
+                            val tool = tools.optJSONObject(t) ?: continue
+                            add(
+                                AiToolSnapshot(
+                                    callId = tool.optString("callId"),
+                                    name = tool.optString("name"),
+                                    title = tool.optString("title"),
+                                    state = tool.optString("state", "SUCCESS"),
+                                    summary = tool.optString("summary").takeIf { it.isNotBlank() },
+                                )
+                            )
+                        }
+                    }
+                }.orEmpty(),
             )
         }
         AiSession(

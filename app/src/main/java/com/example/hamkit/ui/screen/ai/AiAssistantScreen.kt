@@ -421,6 +421,7 @@ private fun EmptyStateMiuix(onPick: (String) -> Unit) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 4.dp)
+                    .clip(RoundedCornerShape(12.dp))
                     .background(
                         colorScheme.surfaceVariant.copy(alpha = 0.5f),
                         RoundedCornerShape(12.dp),
@@ -851,6 +852,7 @@ private fun AttachmentChipMiuix(attachment: AiAttachment, onRemove: (String) -> 
         Box(
             modifier = Modifier
                 .size(22.dp)
+                .clip(CircleShape)
                 .clickable { onRemove(attachment.id) },
             contentAlignment = Alignment.Center,
         ) {
@@ -882,6 +884,7 @@ private fun ToolCardMiuix(tool: AiToolUi) {
     Card(modifier = Modifier.fillMaxWidth().animateContentSize()) {
         Column(
             Modifier
+                .clip(RoundedCornerShape(14.dp))
                 .clickable { expanded = !expanded }
                 .padding(12.dp),
         ) {
@@ -1328,6 +1331,7 @@ private fun AiHistorySheetMiuix(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
                                     .background(
                                         if (current) {
                                             colorScheme.primary.copy(alpha = 0.08f)
@@ -1370,6 +1374,7 @@ private fun AiHistorySheetMiuix(
                                 Box(
                                     modifier = Modifier
                                         .size(28.dp)
+                                        .clip(CircleShape)
                                         .clickable { onExport(session.id) },
                                     contentAlignment = Alignment.Center,
                                 ) {
@@ -1383,6 +1388,7 @@ private fun AiHistorySheetMiuix(
                                 Box(
                                     modifier = Modifier
                                         .size(28.dp)
+                                        .clip(CircleShape)
                                         .clickable { onDelete(session.id) },
                                     contentAlignment = Alignment.Center,
                                 ) {
