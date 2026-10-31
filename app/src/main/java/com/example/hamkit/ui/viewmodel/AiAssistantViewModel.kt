@@ -503,17 +503,16 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
     private suspend fun initialize() {
         val config = withContext(Dispatchers.IO) { configStore.load() }
         val hasKey = withContext(Dispatchers.IO) { keyStore.hasKey() }
-        _uiState.update { it.copy(config = config, hasKey = hasKey, initialized = true) }
-
-        if (!config.saveHistory) return
-        val latest = sessionStore.summaries().maxByOrNull { it.updatedAt } ?: return
-        val session = sessionStore.load(latest.id) ?: return
-        if (session.messages.isEmpty()) return
-        sessionCreatedAt = session.createdAt
+        // 每次进入都是新对话：不再自动恢复上次会话，历史只在「历史」抽屉里手动打开。
+        // 同时预取历史摘要，抽屉打开时无需再等一次 IO。
+        val sessions = sessionStore.summaries()
+        sessionCreatedAt = System.currentTimeMillis()
         _uiState.update {
             it.copy(
-                sessionId = session.id,
-                messages = session.messages.map { message -> message.toUi() },
+                config = config,
+                hasKey = hasKey,
+                initialized = true,
+                sessions = sessions,
             )
         }
     }

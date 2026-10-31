@@ -517,4 +517,10 @@
     <string name="ai_open_gallery">Open gallery</string>
     <string name="ai_reminder_created">Pass reminder created</string>
     <string name="ai_remove_attachment">Remove attachment</string>
+    <string name="ai_history_empty_desc">No chats yet — start a new one.</string>
+    <string name="ai_history_messages">%1$d messages</string>
+    <string name="ai_history_yesterday">Yesterday</string>
+    <string name="ai_history_delete_title">Delete chat</string>
+    <string name="ai_history_delete_desc">This cannot be undone.</string>
+    <string name="ai_history_open">Open history</string>
 </resources>
