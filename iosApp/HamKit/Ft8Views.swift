@@ -72,9 +72,10 @@ struct Ft8MainView: View {
     @State private var autoReply = false
     @State private var autoCq = false
     @State private var cqTimer: Timer?
-    @State private var decoded: [Ft8DecodedMessage] = []
     @State private var status = "空闲"
-    @State private var qsoSeed: Ft8DecodedMessage?
+    @State private var qsoSeed: Ft8LogEntry?
+    /// 解码结果放在会话级 store 里（原先是本页 @State），AI 助手要读同一份数据。
+    @ObservedObject private var log = Ft8LogStore.shared
 
     var body: some View {
         List {
@@ -119,6 +120,7 @@ struct Ft8MainView: View {
                 Button(audio.isRecording ? "正在接收…" : "接收（录音 15 秒）") {
                     if audio.isRecording {
                         audio.cancelRecording()
+                        log.endDecoding()
                         status = "已取消接收"
                     } else {
                         receive()
@@ -128,10 +130,10 @@ struct Ft8MainView: View {
             }
 
             Section("解码结果") {
-                if decoded.isEmpty {
+                if log.decodes.isEmpty {
                     Text("还没有解码结果").foregroundStyle(.secondary)
                 }
-                ForEach(Array(decoded.enumerated()), id: \.offset) { _, item in
+                ForEach(log.decodes) { item in
                     VStack(alignment: .leading, spacing: 3) {
                         Text(item.message).font(.body.monospaced())
                         Text(String(format: "SNR %d dB · DT %.2f s · %.0f Hz", item.snr, item.dtSeconds, item.freqHz))
@@ -221,6 +223,7 @@ struct Ft8MainView: View {
 
     private func receive() {
         status = "正在接收 15 秒…"
+        log.beginDecoding()
         audio.record(seconds: 15) { data in
             let bytes = KotlinByteArray(size: Int32(data.count))
             for (index, byte) in data.enumerated() {
@@ -228,8 +231,9 @@ struct Ft8MainView: View {
             }
             let result = Ft8Bridge.shared.decodePcm(bytes: bytes)
             DispatchQueue.main.async {
+                log.endDecoding()
                 if let result {
-                    decoded.insert(result, at: 0)
+                    log.record(result)
                     status = "解码成功：\(result.message)"
                     if autoReply,
                        let reply = sequencer.handle(message: result.message, myCallsign: store.callsign) {
@@ -273,7 +277,7 @@ struct Ft8MainView: View {
 }
 
 private struct QsoSeed: Identifiable {
-    let message: Ft8DecodedMessage
+    let message: Ft8LogEntry
     var id: String { message.message }
 }
 

@@ -90,6 +90,60 @@ final class AiAppFacadeImpl: NSObject, AiAppFacade {
         Int64(Date().timeIntervalSince1970 * 1000)
     }
 
+    // ── 社区数据（FT8 / APRS / QSO） ────────────────────────────────────────
+    //
+    // 三个工具都是只读：这里只做「读内存 + 换算」，不触发任何连接或写入。
+    // APRS 台站按上游约定脱敏——不把经纬度交给模型，只给距离/方位。
+
+    func ft8Snapshot() -> AiFt8Snapshot? {
+        let log = Ft8LogStore.shared
+        return AiFt8Snapshot(
+            decoding: log.isDecoding,
+            decoded: log.decodes.map { entry in
+                AiFt8Decode(
+                    timeMs: Self.millis(entry.time),
+                    message: entry.message,
+                    snrDb: Double(entry.snr),
+                    freqHz: entry.freqHz
+                )
+            },
+            // 快照里的 QSO 只给 FT8（对齐 Android Ft8UiState.qsoRecords）；
+            // 需要全部模式的历史通联请用 search_qso_log
+            qso: qsoRecords().filter { $0.mode.uppercased() == "FT8" }
+        )
+    }
+
+    func aprsSnapshot() -> AiAprsSnapshot? {
+        let store = AprsStore.shared
+        let stations = store.stations.map { station in
+            AiAprsStationSummary(
+                callsign: station.callsign,
+                latitude: station.latitude,
+                longitude: station.longitude,
+                timestampMs: Self.millis(station.lastHeard),
+                comment: station.comment
+            )
+        }
+        return AiAprsSnapshot(connected: store.isConnected, stations: stations)
+    }
+
+    func qsoRecords() -> [AiQsoSummary] {
+        QsoStore.shared.entries.map { entry in
+            AiQsoSummary(
+                callsign: entry.callsign,
+                grid: entry.grid,
+                band: entry.bandName,
+                mode: entry.mode,
+                qsoTimeMs: Self.millis(entry.qsoTime),
+                isComplete: entry.isComplete
+            )
+        }
+    }
+
+    private static func millis(_ date: Date) -> Int64 {
+        Int64(date.timeIntervalSince1970 * 1000)
+    }
+
     // ── 动作 ────────────────────────────────────────────────────────────────
 
     func performAction(action: String, norad: Int32, screen: String) -> String {
