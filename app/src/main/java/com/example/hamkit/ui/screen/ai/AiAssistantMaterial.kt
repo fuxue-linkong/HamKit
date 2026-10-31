@@ -194,21 +194,30 @@ fun AiAssistantScreenMaterial(bottomInnerPadding: Dp = 0.dp) {
             TopAppBar(
                 title = { Text(stringResource(R.string.ai_title), fontWeight = FontWeight.SemiBold) },
                 actions = {
-                    IconButton(onClick = { viewModel.refreshSessions(); showHistory = true }) {
+                    IconButton(
+                        onClick = { viewModel.refreshSessions(); showHistory = true },
+                        modifier = Modifier.clip(CircleShape),
+                    ) {
                         Icon(
                             Icons.Rounded.History,
                             contentDescription = stringResource(R.string.ai_history_desc),
                             tint = MaterialTheme.colorScheme.primary,
                         )
                     }
-                    IconButton(onClick = viewModel::newSession) {
+                    IconButton(
+                        onClick = viewModel::newSession,
+                        modifier = Modifier.clip(CircleShape),
+                    ) {
                         Icon(
                             Icons.Rounded.Add,
                             contentDescription = stringResource(R.string.ai_new_chat_desc),
                             tint = MaterialTheme.colorScheme.primary,
                         )
                     }
-                    IconButton(onClick = { navigator.push(Route.AiSettings) }) {
+                    IconButton(
+                        onClick = { navigator.push(Route.AiSettings) },
+                        modifier = Modifier.clip(CircleShape),
+                    ) {
                         Icon(
                             Icons.Rounded.Settings,
                             contentDescription = stringResource(R.string.ai_settings_desc),
@@ -705,7 +714,10 @@ private fun ComposerMaterial(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onPickFiles) {
+            IconButton(
+                onClick = onPickFiles,
+                modifier = Modifier.clip(CircleShape),
+            ) {
                 Icon(
                     Icons.Rounded.Add,
                     contentDescription = stringResource(R.string.ai_attach_desc),
@@ -723,6 +735,7 @@ private fun ComposerMaterial(
             Box(
                 modifier = Modifier
                     .size(40.dp)
+                    .clip(CircleShape)
                     .background(
                         if (streaming || !canSend) {
                             MaterialTheme.colorScheme.surfaceVariant

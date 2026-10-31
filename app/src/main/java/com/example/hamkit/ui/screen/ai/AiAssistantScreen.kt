@@ -213,14 +213,20 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
             TopAppBar(
                 title = stringResource(R.string.ai_title),
                 actions = {
-                    IconButton(onClick = { viewModel.refreshSessions(); showHistory = true }) {
+                    IconButton(
+                        onClick = { viewModel.refreshSessions(); showHistory = true },
+                        modifier = Modifier.clip(CircleShape),
+                    ) {
                         Icon(
                             Icons.Rounded.History,
                             contentDescription = stringResource(R.string.ai_history_desc),
                             tint = colorScheme.primary,
                         )
                     }
-                    IconButton(onClick = { navigator.push(Route.AiSettings) }) {
+                    IconButton(
+                        onClick = { navigator.push(Route.AiSettings) },
+                        modifier = Modifier.clip(CircleShape),
+                    ) {
                         Icon(
                             Icons.Rounded.Settings,
                             contentDescription = stringResource(R.string.ai_settings_desc),
@@ -752,7 +758,10 @@ private fun ComposerMiuix(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onPickFiles) {
+            IconButton(
+                onClick = onPickFiles,
+                modifier = Modifier.clip(CircleShape),
+            ) {
                 Icon(
                     Icons.Rounded.Add,
                     contentDescription = stringResource(R.string.ai_attach_desc),
@@ -770,6 +779,7 @@ private fun ComposerMiuix(
             Box(
                 modifier = Modifier
                     .size(40.dp)
+                    .clip(CircleShape)
                     .background(
                         when {
                             streaming -> colorScheme.surfaceVariant
@@ -1279,14 +1289,14 @@ private fun AiHistorySheetMiuix(
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.weight(1f),
                     )
-                    IconButton(onClick = onNewChat) {
+                    IconButton(onClick = onNewChat, modifier = Modifier.clip(CircleShape)) {
                         Icon(
                             Icons.Rounded.Add,
                             contentDescription = stringResource(R.string.ai_new_chat_desc),
                             tint = colorScheme.primary,
                         )
                     }
-                    IconButton(onClick = onDismiss) {
+                    IconButton(onClick = onDismiss, modifier = Modifier.clip(CircleShape)) {
                         Icon(
                             Icons.Rounded.Close,
                             contentDescription = stringResource(R.string.ai_close),
