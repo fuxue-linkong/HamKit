@@ -40,6 +40,11 @@ import com.example.hamkit.data.ai.tool.AiToolContext
 import com.example.hamkit.data.ai.tool.AiToolExecutor
 import com.example.hamkit.data.ai.tool.AiToolRegistry
 import com.example.hamkit.data.ai.tool.AiToolSpec
+import com.example.hamkit.data.ai.tool.AiToolRouter
+import com.example.hamkit.data.ai.tool.truncateToolResult
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import com.example.hamkit.data.ai.tool.ToolOutcome
 import com.example.hamkit.data.ai.tool.ToolRisk
 import com.example.hamkit.data.ai.tool.errorOutcome
@@ -421,7 +426,7 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
         state.attachments
             .filter { it.kind == AiAttachmentKind.AUDIO && it.status == AiAttachmentStatus.READY }
             .forEach { audio -> appendCardToUi(AiCard.Sstv(audio.sstvMode, audio.sstvFile)) }
-        streamJob = viewModelScope.launch { runConversation(activeFacade) }
+        streamJob = viewModelScope.launch { runConversation(activeFacade, text) }
     }
 
     fun stop() {
@@ -557,7 +562,7 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
 
     // ── 多轮工具调用 ────────────────────────────────────────────────────────
 
-    private suspend fun runConversation(activeFacade: AiAppFacade) {
+    private suspend fun runConversation(activeFacade: AiAppFacade, userText: String) {
         val apiKey = withContext(Dispatchers.IO) { keyStore.load() }
         if (apiKey.isNullOrBlank()) {
             finishStreaming("", null, str(R.string.ai_err_key_read), 0L)
@@ -565,7 +570,10 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
         }
 
         val startedAt = System.currentTimeMillis()
+        // 按用户意图裁剪工具集；未命中任何分类时下发全部，避免限制能力
+        val route = AiToolRouter.route(userText)
         val toolSpecs = registry.specs(_uiState.value.config.disabledTools)
+            .filter { route.isEmpty() || it.name in route }
         var usage: AiUsage? = null
         var errorText: String? = null
         var lastStop: AiStopReason? = null
@@ -573,7 +581,7 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
         val finalText = StringBuilder()
 
         var cancelled = false
-        val toolCache = mutableMapOf<String, ToolOutcome>()
+        val toolCache = java.util.concurrent.ConcurrentHashMap<String, ToolOutcome>()
         try {
             var round = 0
             while (round < MAX_TOOL_ROUNDS) {
@@ -599,8 +607,9 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
                 registerToolsInUi(result.toolCalls)
 
                 val toolResults = mutableListOf<AiBlock.ToolResult>()
-                for (call in result.toolCalls) {
-                    val cacheKey = "${call.name}|${call.argsJson}"
+                // 同一轮内多个只读工具并行；副作用/导航保持串行
+                suspend fun runCall(call: AiToolCall): Pair<AiToolCall, ToolOutcome> {
+                    val cacheKey = "${'$'}{call.name}|${'$'}{call.argsJson}"
                     val cached = toolCache[cacheKey]
                     val outcome = if (cached != null) {
                         completeTool(
@@ -612,6 +621,19 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
                     } else {
                         executeTool(activeFacade, call).also { toolCache[cacheKey] = it }
                     }
+                    return call to outcome
+                }
+                val outcomes = if (
+                    result.toolCalls.size > 1 &&
+                    result.toolCalls.all { registry.find(it.name)?.spec?.risk == ToolRisk.READ_ONLY }
+                ) {
+                    coroutineScope {
+                        result.toolCalls.map { call -> async { runCall(call) } }.awaitAll()
+                    }
+                } else {
+                    result.toolCalls.map { runCall(it) }
+                }
+                outcomes.forEach { (call, outcome) ->
                     toolResults += AiBlock.ToolResult(
                         callId = call.id,
                         content = outcome.modelText,
@@ -779,7 +801,8 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
         }
         val outcome = executor.execute(call, context)
         completeTool(call.id, title, outcome)
-        return outcome
+        // 回传模型前统一截断，避免超长结果占满上下文
+        return outcome.copy(modelText = truncateToolResult(outcome.modelText))
     }
 
     // ── UI 状态同步 ─────────────────────────────────────────────────────────
