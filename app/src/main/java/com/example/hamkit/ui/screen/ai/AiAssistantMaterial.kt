@@ -129,6 +129,10 @@ import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.example.hamkit.ui.theme.SafeColors
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 
 /** Material 风格实现，与 Miuix 版共用 [AiAssistantViewModel]。 */
 @Composable
@@ -491,7 +495,7 @@ private fun MessageItemMaterial(message: AiChatMessageUi) {
                     ),
                 )
             } else {
-                Row {
+                Row(Modifier.semantics { liveRegion = LiveRegionMode.Polite }) {
                     Text(
                         message.text.ifBlank {
                             if (message.isStreaming) "" else stringResource(R.string.ai_no_text)
@@ -685,11 +689,23 @@ private fun AttachmentChipMaterial(attachment: AiAttachment, onRemove: (String) 
             .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        val icon = when (attachment.kind) {
+            AiAttachmentKind.AUDIO -> Icons.Rounded.AudioFile
+            AiAttachmentKind.IMAGE -> Icons.Rounded.Image
+            else -> Icons.Rounded.Description
+        }
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(13.dp),
+        )
+        Spacer(Modifier.width(5.dp))
         Text(
             attachment.name,
             style = MaterialTheme.typography.labelSmall,
             maxLines = 1,
-            modifier = Modifier.widthIn(max = 140.dp),
+            modifier = Modifier.widthIn(max = 120.dp),
         )
         if (attachment.status == AiAttachmentStatus.PARSING) {
             Spacer(Modifier.width(4.dp))
@@ -705,7 +721,8 @@ private fun AttachmentChipMaterial(attachment: AiAttachment, onRemove: (String) 
             style = MaterialTheme.typography.labelSmall,
             modifier = Modifier
                 .clickable { onRemove(attachment.id) }
-                .padding(2.dp),
+                .padding(2.dp)
+                .semantics { contentDescription = "移除附件" },
         )
     }
 }
@@ -923,14 +940,17 @@ private fun InfoCardMaterial(title: String, detail: String) {
 }
 
 @Composable
-private fun MetricMaterial(label: String, value: String) {
+private fun MetricMaterial(label: String, value: String, compact: Boolean = false) {
     Column {
         Text(
             label,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Text(value, style = MaterialTheme.typography.titleMedium)
+        Text(
+            value,
+            style = if (compact) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
+        )
     }
 }
 
@@ -980,27 +1000,36 @@ private fun SatelliteCardMaterial(data: SatelliteCardData) {
 
             data.live?.let { live ->
                 Spacer(Modifier.height(10.dp))
-                SatelliteRadar(
-                    azimuthDeg = live.azimuthDeg,
-                    elevationDeg = live.elevationDeg,
-                    primary = MaterialTheme.colorScheme.primary,
-                    outline = MaterialTheme.colorScheme.outline,
-                    modifier = Modifier.align(Alignment.CenterHorizontally),
-                )
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                    MetricMaterial("方位 AZ", "%.1f°".format(live.azimuthDeg))
-                    MetricMaterial("仰角 EL", "%.1f°".format(live.elevationDeg))
-                    MetricMaterial("距离", "%.0f km".format(live.rangeKm))
-                }
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                    MetricMaterial("高度", "%.0f km".format(live.altitudeKm))
-                    MetricMaterial(
-                        "星下点",
-                        "%.1f°, %.1f°".format(live.subpointLatDeg, live.subpointLonDeg),
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SatelliteRadar(
+                        azimuthDeg = live.azimuthDeg,
+                        elevationDeg = live.elevationDeg,
+                        primary = MaterialTheme.colorScheme.primary,
+                        outline = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                        diameter = 112.dp,
                     )
-                    MetricMaterial("相位", "%.0f°".format(live.phaseDeg))
+                    Spacer(Modifier.width(12.dp))
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            MetricMaterial("方位 AZ", "%.1f°".format(live.azimuthDeg), compact = true)
+                            MetricMaterial("仰角 EL", "%.1f°".format(live.elevationDeg), compact = true)
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            MetricMaterial("距离", "%.0f km".format(live.rangeKm), compact = true)
+                            MetricMaterial("高度", "%.0f km".format(live.altitudeKm), compact = true)
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            MetricMaterial(
+                                "星下点",
+                                "%.1f°,%.1f°".format(live.subpointLatDeg, live.subpointLonDeg),
+                                compact = true,
+                            )
+                            MetricMaterial("相位", "%.0f°".format(live.phaseDeg), compact = true)
+                        }
+                    }
                 }
                 Text(
                     if (live.isEclipsed) "蚀中（地影）" else "日照中",

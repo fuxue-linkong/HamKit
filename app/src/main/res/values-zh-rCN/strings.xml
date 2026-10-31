@@ -159,4 +159,5 @@
     <string name="ai_attach_desc">添加附件</string>
     <string name="ai_open_gallery">打开图库</string>
     <string name="ai_reminder_created">过境提醒已创建</string>
+    <string name="ai_remove_attachment">移除附件</string>
 </resources>
