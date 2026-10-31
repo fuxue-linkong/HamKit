@@ -407,6 +407,7 @@ private fun EmptyStateMaterial(onPick: (String) -> Unit) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 4.dp)
+                    .clip(RoundedCornerShape(12.dp))
                     .background(
                         MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                         RoundedCornerShape(12.dp),
@@ -824,6 +825,7 @@ private fun ToolCardMaterial(tool: AiToolUi) {
     ) {
         Column(
             Modifier
+                .clip(RoundedCornerShape(14.dp))
                 .clickable { expanded = !expanded }
                 .padding(12.dp),
         ) {
@@ -1267,6 +1269,7 @@ private fun AiHistorySheetMaterial(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
                                 .background(
                                     if (current) {
                                         MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)

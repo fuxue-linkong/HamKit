@@ -29,6 +29,7 @@ import com.example.hamkit.data.ai.AiRequest
 import com.example.hamkit.data.ai.AiRole
 import com.example.hamkit.data.ai.AiSession
 import com.example.hamkit.data.ai.AiSessionSummary
+import com.example.hamkit.data.ai.AiToolSnapshot
 import com.example.hamkit.data.ai.AiSessionStore
 import com.example.hamkit.data.ai.AiStopReason
 import com.example.hamkit.data.ai.AiUsage
@@ -458,10 +459,17 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
             val session = sessionStore.load(id) ?: return@launch
             conversation.clear()
             sessionCreatedAt = session.createdAt
+            // 旧版本可能写入空 id 或重复 id；LazyColumn 以 id 为 key，重复会导致消息重叠
+            val seenIds = mutableSetOf<String>()
+            val restored = session.messages.mapIndexed { index, message ->
+                val uniqueId = message.id.takeIf { it.isNotBlank() && seenIds.add(it) }
+                    ?: "m${index}_${UUID.randomUUID()}".also { seenIds.add(it) }
+                message.copy(id = uniqueId).toUi()
+            }
             _uiState.update {
                 it.copy(
                     sessionId = id,
-                    messages = session.messages.map { message -> message.toUi() },
+                    messages = restored,
                     error = null,
                     isStreaming = false,
                     attachments = emptyList(),
@@ -941,6 +949,15 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
         usage = usage,
         elapsedMs = elapsedMs,
         error = error,
+        tools = tools.map { tool ->
+            AiToolSnapshot(
+                callId = tool.callId,
+                name = tool.name,
+                title = tool.title,
+                state = tool.state.name,
+                summary = tool.summary,
+            )
+        },
     )
 
     private fun AiChatMessage.toUi(): AiChatMessageUi = AiChatMessageUi(
@@ -949,6 +966,17 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
         text = text,
         error = error,
         elapsedMs = elapsedMs,
+        tools = tools.map { tool ->
+            AiToolUi(
+                callId = tool.callId.ifBlank { UUID.randomUUID().toString() },
+                name = tool.name,
+                title = tool.title,
+                argsPreview = "",
+                state = runCatching { AiToolUiState.valueOf(tool.state) }
+                    .getOrDefault(AiToolUiState.SUCCESS),
+                summary = tool.summary,
+            )
+        },
     )
 
     private companion object {
