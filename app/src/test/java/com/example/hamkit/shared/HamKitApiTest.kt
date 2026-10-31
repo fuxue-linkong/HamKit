@@ -71,7 +71,17 @@ class HamKitApiTest {
         val pass = HamKitApi.nextPass(issTle, 39.9042, 116.4074, 50.0, now, 48)
         assertNotNull("北京 48 小时内应能看到 ISS 过境", pass)
         pass ?: return
-        assertTrue("AOS 不应早于查询时刻", pass.aosMs >= now)
+        // 在境时 AOS 会回溯到本次过境的真实开始时刻（上游修复：不再等于查询时刻），
+        // 因此可能早于 now；不在境时下一次 AOS 必在未来。
+        if (pass.isCurrentlyVisible) {
+            assertTrue(
+                "在境时 AOS 为真实过境开始，不应早于 now 超过 6 小时",
+                pass.aosMs >= now - 6L * 60L * 60L * 1000L,
+            )
+            assertTrue("在境时 AOS 不应晚于查询时刻", pass.aosMs <= now)
+        } else {
+            assertTrue("不在境时 AOS 不应早于查询时刻", pass.aosMs >= now)
+        }
         assertTrue("LOS 应晚于 AOS", pass.losMs > pass.aosMs)
         assertTrue("最大仰角应在 0..90，实际 ${pass.maxElevationDeg}", pass.maxElevationDeg in 0.0..90.0)
         assertTrue("过境时长应在 1 分钟到 1 小时之间，实际 ${pass.durationSeconds}s", pass.durationSeconds in 60L..3600L)
