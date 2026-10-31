@@ -94,8 +94,9 @@ class ReminderRefreshWorker(
             // 这里与 MainViewModel 共用 loadConfigWithLegacyMigration：
             // 若历史「收藏」迁移尚未执行（例如升级后用户还没打开过应用），
             // 本 Worker 会就地完成迁移，避免因提醒开关为空而漏更新提醒。
-            // 旧逻辑用 !isCurrentlyVisible 过滤，但预测器对在境卫星返回的是下次过境，
-            // 旧过滤会把下次过境一起丢弃。改以 AOS 时间为准。
+            // 预测器对在境卫星返回“本次过境”（AOS 已过去），下面的 AOS>now
+            // 会跳过本次；待本次结束后的下一次预测再创建下一次过境提醒。
+            // 不要用 !isCurrentlyVisible 过滤，否则会把下一次过境一起丢弃。
             val reminderFlags = categoryStore
                 .loadConfigWithLegacyMigration(FavoriteSatellitesStore(applicationContext).load())
                 .reminderFlags

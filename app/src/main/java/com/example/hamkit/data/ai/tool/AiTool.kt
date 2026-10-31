@@ -79,6 +79,8 @@ data class PassSnapshot(
     val aosAzimuth: Int,
     val losAzimuth: Int,
     val isDaylight: Boolean,
+    /** 该过境是否正在进行中（AOS 已过去、LOS 尚未到来）。 */
+    val isInPass: Boolean = false,
 )
 
 data class RadioSnapshot(
@@ -145,6 +147,15 @@ interface AiAppFacade {
 
     /** 名称或 NORAD 编号 → 卫星引用；找不到返回 null。 */
     fun resolveSatellite(query: String): AiSatelliteRef?
+
+    /**
+     * 名称或 NORAD 编号 → 候选列表（按匹配精确度排序）。
+     *
+     * 仅有一个候选表示可唯一解析；多个候选表示名称有歧义，工具层应提示
+     * 用户/模型改用 NORAD 编号；空列表表示未找到。默认实现兼容旧门面实现。
+     */
+    fun satelliteCandidates(query: String): List<AiSatelliteRef> =
+        resolveSatellite(query)?.let { listOf(it) } ?: emptyList()
 
     fun navigate(target: AiNavTarget)
     fun startSstvReceive(presetMode: String?)

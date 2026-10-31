@@ -17,10 +17,12 @@ import com.example.hamkit.data.ai.tool.optIntOrNullArg
 import com.example.hamkit.data.ai.tool.optStringOrNullArg
 import com.example.hamkit.data.ai.tool.stringProperty
 import com.example.hamkit.data.ai.tool.toolSchema
-import com.example.hamkit.data.satellite.SatelliteLiveInfo
 import com.example.hamkit.data.satellite.LiveSatelliteTracker
 import com.example.hamkit.data.satellite.RadioInfo
+import com.example.hamkit.data.satellite.SatelliteCatalog
 import com.example.hamkit.data.satellite.SatelliteInfo
+import com.example.hamkit.data.satellite.SatelliteLiveInfo
+import com.example.hamkit.data.satellite.SatelliteNameMatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -28,15 +30,39 @@ import org.json.JSONObject
 import java.time.Duration
 import java.time.Instant
 
-/** 按名称/编号找卫星；找不到时返回统一错误。 */
-private suspend fun resolveOrNull(
-    ctx: AiToolContext,
-    args: JSONObject,
-): AiSatelliteRef? = ctx.facade.resolveSatellite(
-    args.optStringOrNullArg("satellite")
+/** 卫星解析结果：成功拿到唯一引用，或失败并带统一错误输出。 */
+private sealed interface SatelliteLookup {
+    data class Found(val ref: AiSatelliteRef) : SatelliteLookup
+    data class Failed(val outcome: ToolOutcome) : SatelliteLookup
+}
+
+/**
+ * 按名称/编号解析卫星，并统一处理“缺参 / 找不到 / 有歧义”。
+ *
+ * 歧义时列出候选（名称 + NORAD），要求调用方改用 NORAD 编号：
+ * 例如 `ISS` 同时匹配 `ISS (ZARYA)` 与 `ISS (NAUKA)`，
+ * 不能再像旧实现那样静默取列表第一条（会命中 `OUTPOST MISSION2`）。
+ */
+private fun resolveOrError(ctx: AiToolContext, args: JSONObject): SatelliteLookup {
+    val query = args.optStringOrNullArg("satellite")
         ?: args.optStringOrNullArg("query")
-        ?: return null,
-)
+        ?: return SatelliteLookup.Failed(errorOutcome("缺少卫星名称或 NORAD 编号"))
+    val candidates = ctx.facade.satelliteCandidates(query)
+    return when {
+        candidates.isEmpty() -> SatelliteLookup.Failed(
+            errorOutcome("没有找到卫星 \"$query\"，请给出名称或 NORAD 编号")
+        )
+        candidates.size > 1 -> SatelliteLookup.Failed(
+            errorOutcome(
+                "卫星名称 \"$query\" 有歧义，请用 NORAD 编号指定：" +
+                    candidates.take(5).joinToString("、") {
+                        "${it.name} (#${it.catalogNumber})"
+                    }
+            )
+        )
+        else -> SatelliteLookup.Found(candidates.first())
+    }
+}
 
 private fun SatelliteInfo.toPass(): PassSnapshot = PassSnapshot(
     aos = aosTime,
@@ -45,6 +71,7 @@ private fun SatelliteInfo.toPass(): PassSnapshot = PassSnapshot(
     aosAzimuth = aosAzimuth,
     losAzimuth = losAzimuth,
     isDaylight = isDaylightPass,
+    isInPass = isCurrentlyVisible,
 )
 
 private fun SatelliteLiveInfo.toSnapshot(): LiveSnapshot = LiveSnapshot(
@@ -68,12 +95,36 @@ private fun RadioInfo.toSnapshot(): RadioSnapshot = RadioSnapshot(
     status = status,
 )
 
+/**
+ * 单颗卫星的模型可读 JSON。
+ *
+ * `next_aos` 只在 AOS 位于未来时输出；在境卫星的 AOS 已经过去，
+ * 改用 `in_pass_since` 表达，避免模型把过去时刻误读成“下一次过境”。
+ */
+private fun SatelliteInfo.toModelJson(now: Instant): JSONObject = JSONObject().apply {
+    put("name", name)
+    put("norad", catalogNumber)
+    put("modes", JSONArray(modes))
+    put("visible", isCurrentlyVisible)
+    put("is_geo", isGeo)
+    put("aos", aosTime.toString())
+    put("los", losTime.toString())
+    put("max_elevation", maxElevation)
+    if (status.isNotBlank()) put("amsat_status", status)
+    if (aosTime.isAfter(now)) {
+        put("next_aos", aosTime.toString())
+    } else if (isCurrentlyVisible) {
+        put("in_pass_since", aosTime.toString())
+    }
+}
+
 /** 搜索卫星（名称/模式/是否在境）。 */
 object SearchSatellitesTool : AiTool {
     override val spec = AiToolSpec(
         name = "search_satellites",
         title = "搜索卫星",
-        description = "按名称关键词、工作模式或是否在境筛选当前卫星列表，返回名称、NORAD、模式与 AMSAT 状态。",
+        description = "按名称关键词、工作模式或是否在境筛选当前卫星列表，返回名称、NORAD、模式与 AMSAT 状态。" +
+            "在境卫星的 AOS 可能已过去，用 visible=true 与 los 判断；next_aos 仅在未来有值时返回。",
         parameters = toolSchema(
             JSONObject()
                 .put("query", stringProperty("名称关键词，如 ISS、AO-91；可省略"))
@@ -89,34 +140,51 @@ object SearchSatellitesTool : AiTool {
         val all = ctx.facade.ensureSatellites()
         if (all.isEmpty()) return errorOutcome("卫星列表为空，请先在首页刷新卫星数据")
 
-        val query = args.optStringOrNullArg("query")?.lowercase()
+        val query = args.optStringOrNullArg("query")?.trim()?.takeIf { it.isNotEmpty() }
         val mode = args.optStringOrNullArg("mode")?.lowercase()
+        val queryNorad = query?.toIntOrNull()
         val onlyAbove = args.has("only_above") && !args.isNull("only_above") && args.optBoolean("only_above")
         val limit = (args.optIntOrNullArg("limit") ?: 10).coerceIn(1, 20)
+        val now = Instant.now()
 
-        val filtered = all
-            .filter { query == null || it.name.lowercase().contains(query) || it.catalogNumber.toString() == query }
-            .filter { mode == null || it.modes.any { m -> m.lowercase() == mode } }
-            .filter { !onlyAbove || it.isCurrentlyVisible }
-            .sortedByDescending { it.isCurrentlyVisible }
-            .take(limit)
+        // 名称匹配按相关度分层（精确/前缀优先），不再让 visible 排序把
+        // “子串假阳性”卫星（如 OUTPOST MISSION2 命中 ISS）排到正确卫星前面。
+        val matched = all.filter { sat ->
+            val nameOk = query == null ||
+                (queryNorad != null && sat.catalogNumber == queryNorad) ||
+                SatelliteNameMatcher.nameTier(query, sat.name) != null
+            val modeOk = mode == null || sat.modes.any { it.lowercase() == mode }
+            val aboveOk = !onlyAbove || sat.isCurrentlyVisible
+            nameOk && modeOk && aboveOk
+        }
 
-        val array = JSONArray()
-        filtered.forEach { sat ->
-            array.put(
-                JSONObject().apply {
-                    put("name", sat.name)
-                    put("norad", sat.catalogNumber)
-                    put("modes", JSONArray(sat.modes))
-                    put("visible", sat.isCurrentlyVisible)
-                    if (sat.status.isNotBlank()) put("amsat_status", sat.status)
-                    put("next_aos", sat.aosTime.toString())
-                    put("max_elevation", sat.maxElevation)
-                }
+        val sorted = if (query != null) {
+            matched.sortedWith(
+                compareBy<SatelliteInfo>(
+                    { SatelliteNameMatcher.nameTier(query, it.name) ?: Int.MAX_VALUE },
+                    { if (it.isCurrentlyVisible) 0 else 1 },
+                    { it.aosTime },
+                )
+            )
+        } else {
+            matched.sortedWith(
+                compareBy<SatelliteInfo>(
+                    { if (it.isCurrentlyVisible) 0 else 1 },
+                    { it.aosTime },
+                )
             )
         }
+        val filtered = sorted.take(limit)
+
+        val array = JSONArray()
+        filtered.forEach { array.put(it.toModelJson(now)) }
+        val json = JSONObject().apply {
+            put("count", filtered.size)
+            put("in_pass_count", filtered.count { it.isCurrentlyVisible })
+            put("satellites", array)
+        }
         return ToolOutcome(
-            modelText = JSONObject().put("count", filtered.size).put("satellites", array).toString(),
+            modelText = json.toString(),
             summary = "找到 ${filtered.size} 颗卫星",
         )
     }
@@ -127,7 +195,8 @@ object GetSatellitePassesTool : AiTool {
     override val spec = AiToolSpec(
         name = "get_satellite_passes",
         title = "卫星过境预测",
-        description = "查询指定卫星未来若干小时的过境：AOS/LOS、最大仰角、方位与是否白天过境。",
+        description = "查询指定卫星未来若干小时的过境：AOS/LOS、最大仰角、方位与是否白天过境。" +
+            "卫星当前在境时返回本次过境（AOS 可能已过去），此时用 in_pass 与 los 判断剩余时间。",
         parameters = toolSchema(
             JSONObject()
                 .put("satellite", stringProperty("卫星名称或 NORAD 编号，如 ISS、25544"))
@@ -140,7 +209,10 @@ object GetSatellitePassesTool : AiTool {
     )
 
     override suspend fun execute(ctx: AiToolContext, args: JSONObject): ToolOutcome {
-        val ref = resolveOrNull(ctx, args) ?: return errorOutcome("没有找到这颗卫星，请给出名称或 NORAD 编号")
+        val ref = when (val lookup = resolveOrError(ctx, args)) {
+            is SatelliteLookup.Found -> lookup.ref
+            is SatelliteLookup.Failed -> return lookup.outcome
+        }
         ctx.reportProgress(0.2f, "加载卫星数据…")
         val all = ctx.facade.ensureSatellites()
         if (all.isEmpty()) return errorOutcome("卫星数据不可用，请稍后重试")
@@ -155,14 +227,15 @@ object GetSatellitePassesTool : AiTool {
             .filter { it.losTime.isAfter(now) && it.aosTime.isBefore(deadline) }
             .sortedBy { it.aosTime }
             .take(limit)
+        val info = all.firstOrNull { it.catalogNumber == ref.catalogNumber }
 
         ctx.reportProgress(0.9f, "整理转发器…")
         val radios = ctx.facade.radios(ref.catalogNumber).map { it.toSnapshot() }
         val card = SatelliteCardData(
             name = ref.name,
             catalogNumber = ref.catalogNumber,
-            modes = all.firstOrNull { it.catalogNumber == ref.catalogNumber }?.modes.orEmpty(),
-            amsatStatus = all.firstOrNull { it.catalogNumber == ref.catalogNumber }?.status?.ifBlank { null },
+            modes = info?.modes.orEmpty(),
+            amsatStatus = info?.status?.ifBlank { null },
             passes = passes.map { it.toPass() },
             radios = radios,
         )
@@ -181,6 +254,8 @@ object GetSatellitePassesTool : AiTool {
                 JSONObject().apply {
                     put("aos", pass.aosTime.toString())
                     put("los", pass.losTime.toString())
+                    put("in_pass", pass.isCurrentlyVisible)
+                    put("is_geo", pass.isGeo)
                     put("max_elevation", pass.maxElevation)
                     put("aos_azimuth", pass.aosAzimuth)
                     put("los_azimuth", pass.losAzimuth)
@@ -188,10 +263,26 @@ object GetSatellitePassesTool : AiTool {
                 }
             )
         }
+        val inPass = passes.any { it.isCurrentlyVisible }
+        val json = JSONObject().apply {
+            put("satellite", ref.name)
+            put("passes", array)
+            if (inPass) {
+                put(
+                    "note",
+                    "当前正在过境：aos 是本次过境开始时间（可能已过去），请用 los 判断剩余时间；" +
+                        "下一次过境需在本次结束后重新查询"
+                )
+            }
+        }
         return ToolOutcome(
-            modelText = JSONObject().put("satellite", ref.name).put("passes", array).toString(),
+            modelText = json.toString(),
             card = AiCard.Satellite(card),
-            summary = "${passes.size} 次过境 · 最佳仰角 ${passes.maxOf { it.maxElevation }.toInt()}°",
+            summary = if (inPass) {
+                "正在过境 · 最佳仰角 ${passes.maxOf { it.maxElevation }.toInt()}°"
+            } else {
+                "${passes.size} 次过境 · 最佳仰角 ${passes.maxOf { it.maxElevation }.toInt()}°"
+            },
         )
     }
 }
@@ -210,7 +301,10 @@ object GetSatelliteLiveTool : AiTool {
     )
 
     override suspend fun execute(ctx: AiToolContext, args: JSONObject): ToolOutcome {
-        val ref = resolveOrNull(ctx, args) ?: return errorOutcome("没有找到这颗卫星，请给出名称或 NORAD 编号")
+        val ref = when (val lookup = resolveOrError(ctx, args)) {
+            is SatelliteLookup.Found -> lookup.ref
+            is SatelliteLookup.Failed -> return lookup.outcome
+        }
         ctx.reportProgress(null, "等待定位…")
         val location = ctx.facade.awaitLocation() ?: return errorOutcome("没有定位结果，无法计算实时位置")
         val tle = ctx.facade.tleFor(ref.catalogNumber) ?: return errorOutcome("缺少 ${ref.name} 的 TLE 数据")
@@ -223,8 +317,11 @@ object GetSatelliteLiveTool : AiTool {
         } ?: return errorOutcome("轨道计算失败（TLE 可能已过期）")
 
         ctx.reportProgress(0.85f, "读取过境与转发器…")
-        val passes = ctx.facade.satellites()
-            .filter { it.catalogNumber == ref.catalogNumber && it.losTime.isAfter(Instant.now()) }
+        val all = ctx.facade.ensureSatellites()
+        val info = all.firstOrNull { it.catalogNumber == ref.catalogNumber }
+        val now = Instant.now()
+        val passes = all
+            .filter { it.catalogNumber == ref.catalogNumber && it.losTime.isAfter(now) }
             .sortedBy { it.aosTime }
             .take(3)
             .map { it.toPass() }
@@ -233,10 +330,8 @@ object GetSatelliteLiveTool : AiTool {
         val card = SatelliteCardData(
             name = ref.name,
             catalogNumber = ref.catalogNumber,
-            modes = ctx.facade.satellites()
-                .firstOrNull { it.catalogNumber == ref.catalogNumber }?.modes.orEmpty(),
-            amsatStatus = ctx.facade.satellites()
-                .firstOrNull { it.catalogNumber == ref.catalogNumber }?.status?.ifBlank { null },
+            modes = info?.modes.orEmpty(),
+            amsatStatus = info?.status?.ifBlank { null },
             live = live.toSnapshot(),
             passes = passes,
             radios = radios,
@@ -276,7 +371,10 @@ object GetSatelliteTransmittersTool : AiTool {
     )
 
     override suspend fun execute(ctx: AiToolContext, args: JSONObject): ToolOutcome {
-        val ref = resolveOrNull(ctx, args) ?: return errorOutcome("没有找到这颗卫星，请给出名称或 NORAD 编号")
+        val ref = when (val lookup = resolveOrError(ctx, args)) {
+            is SatelliteLookup.Found -> lookup.ref
+            is SatelliteLookup.Failed -> return lookup.outcome
+        }
         ctx.reportProgress(null, "读取转发器库…")
         val radios = ctx.facade.radios(ref.catalogNumber)
         if (radios.isEmpty()) return errorOutcome("${ref.name} 暂无转发器数据")
@@ -297,6 +395,7 @@ object GetSatelliteTransmittersTool : AiTool {
         val card = SatelliteCardData(
             name = ref.name,
             catalogNumber = ref.catalogNumber,
+            modes = SatelliteCatalog.effectiveModes(ref.catalogNumber, radios),
             radios = radios.map { it.toSnapshot() },
         )
         return ToolOutcome(
@@ -321,7 +420,10 @@ object GetAmsatStatusTool : AiTool {
     )
 
     override suspend fun execute(ctx: AiToolContext, args: JSONObject): ToolOutcome {
-        val ref = resolveOrNull(ctx, args) ?: return errorOutcome("没有找到这颗卫星，请给出名称或 NORAD 编号")
+        val ref = when (val lookup = resolveOrError(ctx, args)) {
+            is SatelliteLookup.Found -> lookup.ref
+            is SatelliteLookup.Failed -> return lookup.outcome
+        }
         val amsatName = ctx.facade.amsatStatusName(ref.catalogNumber)
             ?: return ToolOutcome(
                 modelText = JSONObject().put("satellite", ref.name).put("status", JSONObject.NULL)

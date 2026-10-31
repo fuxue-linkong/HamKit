@@ -30,6 +30,10 @@ class SatellitePredictCacheStore(context: Context) {
         val json = prefs.getString(KEY_PREDICT_JSON, null) ?: return null
         return try {
             val obj = JSONObject(json)
+            // 旧版本（v1）缓存可能保存了“在境卫星 AOS=预测时刻”的错误结果，
+            // 直接丢弃并触发一次重新预测，避免修复后仍显示旧数据。
+            val version = obj.optInt(KEY_SCHEMA_VERSION, 1)
+            if (version < CACHE_SCHEMA_VERSION) return null
             val array = obj.optJSONArray(KEY_SATELLITES) ?: return null
             val list = ArrayList<SatelliteInfo>(array.length())
             for (i in 0 until array.length()) {
@@ -105,6 +109,7 @@ class SatellitePredictCacheStore(context: Context) {
             array.put(obj)
         }
         val root = JSONObject()
+        root.put(KEY_SCHEMA_VERSION, CACHE_SCHEMA_VERSION)
         root.put(KEY_SATELLITES, array)
         root.put("lat", latitude)
         root.put("lon", longitude)
@@ -130,6 +135,13 @@ class SatellitePredictCacheStore(context: Context) {
         private const val KEY_PREDICT_JSON = "cached_predict_json"
         private const val KEY_PREDICT_AT = "cached_predict_at"
         private const val KEY_SATELLITES = "satellites"
+
+        /**
+         * 缓存结构版本。v2 起在境卫星的 AOS 使用真实过境开始时间；
+         * 读取到更旧版本时视为无缓存，强制重新预测。
+         */
+        private const val CACHE_SCHEMA_VERSION = 2
+        private const val KEY_SCHEMA_VERSION = "v"
 
         /**
          * 预测缓存有效期：2 小时。

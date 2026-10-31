@@ -115,12 +115,23 @@ object AddPassReminderTool : AiTool {
     override suspend fun execute(ctx: AiToolContext, args: JSONObject): ToolOutcome {
         val query = args.optStringOrNullArg("satellite")
             ?: return errorOutcome("缺少 satellite 参数")
-        val ref = ctx.facade.resolveSatellite(query)
-            ?: return errorOutcome("没有找到这颗卫星，请给出名称或 NORAD 编号")
+        val candidates = ctx.facade.satelliteCandidates(query)
+        val ref = when {
+            candidates.isEmpty() -> return errorOutcome("没有找到卫星 \"$query\"，请给出名称或 NORAD 编号")
+            candidates.size > 1 -> return errorOutcome(
+                "卫星名称 \"$query\" 有歧义，请用 NORAD 编号指定：" +
+                    candidates.take(5).joinToString("、") {
+                        "${it.name} (#${it.catalogNumber})"
+                    }
+            )
+            else -> candidates.first()
+        }
 
         val now = Instant.now()
+        // 只取 AOS 在未来的过境：在境卫星的 AOS 已过去，本次跳过，
+        // 避免把“正在过境”的时间写进下一次提醒。
         val nextPass = ctx.facade.satellites()
-            .filter { it.catalogNumber == ref.catalogNumber && it.losTime.isAfter(now) }
+            .filter { it.catalogNumber == ref.catalogNumber && it.aosTime.isAfter(now) }
             .minByOrNull { it.aosTime }
 
         ctx.reportProgress(null, "写入过境提醒…")

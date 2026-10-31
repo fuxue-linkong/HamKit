@@ -83,4 +83,30 @@ class SatelliteCatalogTest {
         assertEquals(modesKeys.size, modesKeys.distinct().size)
         assertEquals(amsatKeys.size, amsatKeys.distinct().size)
     }
+
+    @Test
+    fun `effectiveModes merges active radios with catalog and ignores inactive`() {
+        val radios = listOf(
+            RadioInfo(noradCatId = 25544, name = "FM", mode = "FM", status = RadioInfo.STATUS_ACTIVE),
+            RadioInfo(noradCatId = 25544, name = "SSTV", mode = "SSTV", status = RadioInfo.STATUS_ACTIVE),
+            RadioInfo(noradCatId = 25544, name = "USB", mode = "USB", status = RadioInfo.STATUS_INACTIVE),
+            RadioInfo(noradCatId = 25544, name = "blank", mode = "", status = RadioInfo.STATUS_ACTIVE),
+        )
+
+        assertEquals(listOf("FM", "SSTV"), SatelliteCatalog.effectiveModes(25544, radios))
+    }
+
+    @Test
+    fun `effectiveModes uses active radios for satellites outside catalog`() {
+        val radios = listOf(
+            RadioInfo(noradCatId = 58334, name = "UHF", mode = "FM", status = RadioInfo.STATUS_ACTIVE),
+        )
+
+        assertEquals(listOf("FM"), SatelliteCatalog.effectiveModes(58334, radios))
+    }
+
+    @Test
+    fun `effectiveModes falls back to catalog when radios are empty`() {
+        assertEquals(listOf("FM", "SSTV"), SatelliteCatalog.effectiveModes(25544, emptyList()))
+    }
 }
