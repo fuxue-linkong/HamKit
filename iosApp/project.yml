@@ -1,0 +1,95 @@
+name: HamKit
+options:
+  bundleIdPrefix: click.hamkit
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+    TARGETED_DEVICE_FAMILY: "1,2"
+    ENABLE_USER_SCRIPT_SANDBOXING: "NO"
+    # 工程只声明了 iosArm64 / iosSimulatorArm64 两个 Kotlin/Native 目标。
+    # Xcode 的 "generic/platform=iOS Simulator" 默认会同时要 arm64 + x86_64，
+    # 导致 embedAndSignAppleFrameworkForXcode 报 "Xcode Requested Architecture
+    # Not Configured in Gradle: ios_x64"。这里固定 arm64。
+    ARCHS: "arm64"
+    ONLY_ACTIVE_ARCH: "YES"
+    # Kotlin/Native 产出的 Shared.framework 由下面的 Run Script 生成到该目录
+    FRAMEWORK_SEARCH_PATHS: "$(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)"
+    OTHER_LDFLAGS: "$(inherited) -framework Shared"
+
+
+targets:
+  HamKit:
+    type: application
+    platform: iOS
+    sources:
+      - path: HamKit
+        excludes:
+          - Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: click.hamkit.ios
+        PRODUCT_NAME: HamKit
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        # 用仓库里的 Info.plist 作为唯一来源。
+        # 注意：不要在这里再写 XcodeGen 的 `info:` 块——它会用 properties 重新生成
+        # 一份最小 plist，把 UILaunchScreen / NSLocationWhenInUseUsageDescription
+        # 等键全部冲掉（表现为应用以兼容模式黑边显示、真机请求定位直接崩溃）。
+        GENERATE_INFOPLIST_FILE: "NO"
+        INFOPLIST_FILE: HamKit/Info.plist
+        # App 图标来自 Assets.xcassets/AppIcon（由 Android 的 ic_app_logo.png 生成）
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # 静态 framework 不需要在产物里再嵌入一次
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
+    preBuildScripts:
+      - name: Build Shared.framework (Kotlin Multiplatform)
+        basedOnDependencyAnalysis: false
+        script: |
+          set -e
+          cd "$SRCROOT/.."
+          if [ ! -x "./gradlew" ]; then
+            echo "error: 找不到 gradlew，请确认 iosApp 位于仓库根目录下" >&2
+            exit 1
+          fi
+
+          # Xcode GUI 派生的脚本只带 /usr/bin:/bin:/usr/sbin:/sbin，
+          # 终端里 export 的 JAVA_HOME 传不进来。后果有两个：
+          #   1. gradlew 完全找不到 java，直接失败；
+          #   2. 找到的不是 21，Gradle 按 gradle/gradle-daemon-jvm.properties
+          #      去 foojay 下 JDK 21 —— 国内必然卡死且没有任何超时提示，
+          #      框架不产出，Swift 侧就报 Unable to resolve module dependency: 'Shared'。
+          # 所以这里自己解析 JDK，并把选中的路径打到日志里便于排查。
+          if [ -z "${JAVA_HOME:-}" ] || [ ! -x "$JAVA_HOME/bin/java" ]; then
+            if jh=$(/usr/libexec/java_home -v 21 2>/dev/null); then
+              export JAVA_HOME="$jh"
+              echo "note: 已选中 JDK 21：$JAVA_HOME"
+            elif jh=$(/usr/libexec/java_home 2>/dev/null); then
+              export JAVA_HOME="$jh"
+              echo "warning: 未找到 JDK 21，退回 $JAVA_HOME。若构建立刻失败，请装 JDK 21（brew install --cask temurin@21）" >&2
+            else
+              echo "error: 本机找不到任何 JDK。请安装 JDK 21：brew install --cask temurin@21" >&2
+              exit 1
+            fi
+          else
+            echo "note: 沿用 Xcode 环境的 JAVA_HOME：$JAVA_HOME"
+          fi
+
+          ./gradlew :shared:embedAndSignAppleFrameworkForXcode
+
+          # 显式核对产物：脚本「成功」但目录没东西时，Swift 侧只会给出
+          # 一句模棱两可的模块错误，不如在这里直接指出路径。
+          FW="$SRCROOT/../shared/build/xcode-frameworks/$CONFIGURATION/$SDK_NAME/Shared.framework"
+          if [ ! -d "$FW" ]; then
+            echo "error: 没有生成 $FW —— 请检查上面 Gradle 的输出" >&2
+            exit 1
+          fi
+          echo "note: Shared.framework -> $FW"
+    # 显式生成 scheme，否则命令行 xcodebuild -scheme 找不到（Xcode GUI 会自动补）
+    scheme:
+      gatherCoverageData: false

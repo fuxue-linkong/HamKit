@@ -230,6 +230,9 @@ jacoco {
 }
 
 dependencies {
+    // 跨平台内核：分区定位 / SGP4-SDP4 / 过境计算 / TLE 拉取（Android 与 iOS 共用）
+    implementation(project(":shared"))
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
 

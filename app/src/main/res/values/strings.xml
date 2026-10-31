@@ -285,7 +285,7 @@
     <string name="satellite_source_active" translatable="false">全部活跃卫星分组</string>
     <string name="satellite_source_active_summary" translatable="false">启用 active 分组补全非业余卫星（含 GEO/深空特判）</string>
     <string name="satellite_use_transmitters" translatable="false">SatNOGS 转发器数据库</string>
-    <string name="satellite_use_transmitters_summary" translatable="false">使用 db.satnogs.org 转发器频率，离线时回退本地缓存</string>
+    <string name="satellite_use_transmitters_summary" translatable="false">使用 tle.hamkit.click 的 SatNOGS 转发器快照，离线时回退本地缓存</string>
 
     <!-- 天气模块 -->
     <string name="weather_refresh" translatable="false">刷新天气</string>

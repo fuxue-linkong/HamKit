@@ -1,0 +1,218 @@
+name: iOS Build
+
+# 在没有 Mac 的机器上也能拿到 iOS 侧的真实编译错误：
+# - 用 GitHub 托管的 macOS runner（公开仓库免费）
+# - 先链接 Kotlin/Native framework，再用 xcodebuild 编译 SwiftUI 壳
+#
+# 注意：模拟器编译不需要签名，也不需要 Apple Developer 账号。
+
+on:
+  workflow_dispatch:
+  # 不限定分支：只在改动 iOS / 共享内核相关路径时触发，特性分支也能直接验证
+  push:
+    paths:
+      - 'iosApp/**'
+      - 'shared/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle/**'
+      - 'gradlew'
+      - 'gradlew.bat'
+      - '.github/workflows/ios.yml'
+  pull_request:
+    paths:
+      - 'iosApp/**'
+      - 'shared/**'
+      - '.github/workflows/ios.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GRADLE_OPTS: "-Dorg.gradle.daemon=false"
+  GRADLE_VERSION: '9.4.1'
+
+jobs:
+  build-ios:
+    name: Build iOS app (simulator)
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+
+      # Kotlin/Native 工具链 (~1GB) 与 Gradle 缓存，命中后第二次开始快很多
+      - name: Cache Kotlin/Native and Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.konan
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}-v1
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Link Shared.framework (Kotlin/Native)
+        run: ./gradlew :shared:linkDebugFrameworkIosSimulatorArm64 --stacktrace --console=plain
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: cd iosApp && xcodegen generate
+
+      - name: Build app for simulator (no code signing)
+        run: |
+          set -o pipefail
+          cd iosApp
+          xcodebuild \
+            -project HamKit.xcodeproj \
+            -scheme HamKit \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build \
+            ARCHS=arm64 \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build 2>&1 | tee ../ios-build.log
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build-log-${{ github.run_id }}
+          path: ios-build.log
+          retention-days: 14
+
+      - name: Upload simulator app
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: HamKit-ios-simulator-${{ github.run_id }}
+          path: iosApp/build/Build/Products/Debug-iphonesimulator/HamKit.app
+          retention-days: 14
+          if-no-files-found: warn
+
+      # 启动模拟器跑一次冒烟：装上 → 授权定位 → 启动 → 截图。
+      # 没有 Mac 也能通过截图看到真实界面，并据此迭代 UI。
+      - name: Smoke test in iOS Simulator
+        id: smoke
+        if: success()
+        run: |
+          set -euo pipefail
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)["devices"]
+          for runtime, devices in data.items():
+              for device in devices:
+                  if device["name"].startswith("iPhone"):
+                      print(device["udid"])
+                      raise SystemExit
+          ')
+          echo "simulator udid: $UDID"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          APP="iosApp/build/Build/Products/Debug-iphonesimulator/HamKit.app"
+          echo "=== Info.plist (前 40 行) ==="
+          plutil -p "$APP/Info.plist" | head -40
+          xcrun simctl install "$UDID" "$APP"
+          xcrun simctl privacy "$UDID" grant location click.hamkit.ios || true
+          xcrun simctl launch "$UDID" click.hamkit.ios
+          sleep 15
+          xcrun simctl io "$UDID" screenshot ios-screenshot.png
+
+          # 第二张：带 -smokeManage 启动，等 TLE 就绪后自动进「卫星管理」页
+          # （验证轨道目录 1.6 万+ / 业余卫星两个计数、列表首屏）
+          xcrun simctl terminate "$UDID" click.hamkit.ios || true
+          sleep 2
+          xcrun simctl launch "$UDID" click.hamkit.ios -smokeManage
+          sleep 20
+          xcrun simctl io "$UDID" screenshot ios-screenshot-satellite.png
+
+          # 第三张：-smokeDetail 再进一层卫星详情（验证点卫星直接进详情、不再先跳归类页）
+          xcrun simctl terminate "$UDID" click.hamkit.ios || true
+          sleep 2
+          xcrun simctl launch "$UDID" click.hamkit.ios -smokeDetail
+          sleep 22
+          xcrun simctl io "$UDID" screenshot ios-screenshot-passes.png
+
+          xcrun simctl spawn "$UDID" log show --last 2m --style compact \
+            --predicate 'process == "HamKit"' > ios-app.log || true
+          # 应用崩溃时 simctl 仍会返回成功，这里额外检查进程是否还活着
+          if ! xcrun simctl spawn "$UDID" launchctl list | grep -q "click.hamkit.ios"; then
+            echo "::warning::HamKit 启动后未存活，可能已崩溃，请查看 ios-app.log"
+          fi
+
+      - name: Upload simulator screenshot
+        if: always() && steps.smoke.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-screenshot-${{ github.run_id }}
+          path: |
+            ios-screenshot.png
+            ios-screenshot-satellite.png
+            ios-screenshot-passes.png
+            ios-app.log
+          retention-days: 14
+          if-no-files-found: warn
+
+      # ── 未签名真机 IPA ──────────────────────────────────────────────
+      # 没有 Apple Developer 账号（$99/年），无法上架/TestFlight。
+      # 这里构建 device slice（arm64）并打包成标准 IPA 结构：
+      #   Payload/HamKit.app
+      # 用户用自己的 Apple ID 通过 Sideloadly / AltStore 重签安装即可。
+      - name: Build unsigned device IPA
+        if: success()
+        run: |
+          set -euo pipefail
+          cd iosApp
+          xcodebuild \
+            -project HamKit.xcodeproj \
+            -scheme HamKit \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build-device \
+            ARCHS=arm64 \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build 2>&1 | tee ../ios-device-build.log
+
+          APP="build-device/Build/Products/Release-iphoneos/HamKit.app"
+          test -d "$APP"
+          rm -rf Payload HamKit-unsigned.ipa
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -qry HamKit-unsigned.ipa Payload
+          shasum -a 256 HamKit-unsigned.ipa | tee ../HamKit-unsigned.ipa.sha256
+          ls -lh HamKit-unsigned.ipa
+
+      - name: Upload unsigned IPA
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: HamKit-unsigned-ipa-${{ github.run_id }}
+          path: |
+            iosApp/HamKit-unsigned.ipa
+            HamKit-unsigned.ipa.sha256
+            ios-device-build.log
+          retention-days: 30
+          if-no-files-found: warn

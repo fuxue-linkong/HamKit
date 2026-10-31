@@ -19,3 +19,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "HamKit"
 include(":app")
+// 跨平台内核（Kotlin Multiplatform）：Android / iOS / 桌面 JVM 共用
+include(":shared")

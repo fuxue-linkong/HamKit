@@ -351,6 +351,77 @@ else
   [ -s "$CSV_SRC" ] || log "无 active.3le，跳过 CSV 生成"
 fi
 
+# ---------- 4c) SatNOGS 转发器快照（App「转发器 / 上下行频率」的主源）----------
+# 客户端取数顺序（shared/.../SatnogsTransmitters.kt）：
+#   主 = tle.hamkit.click/tle/transmitters.json
+#   备 = db.satnogs.org/api/transmitters/?format=json
+# db.satnogs.org 在国内经常超时/被 DNS 污染，所以这里把上游 JSON 原样镜像到
+# 同一个 tle/ 前缀下（和 satnogs.3le 等文件并列），国内可直连。
+#
+# 上游数据变动很慢，按 24 小时窗口刷新；记录数低于阈值时拒绝替换，
+# 避免上游返回半截/空响应把 CDN 上的好数据覆盖掉。
+SATNOGS_TRANSMITTERS_URL="https://db.satnogs.org/api/transmitters/?format=json"
+# 刻意放在 DL_DIR 之外：第 5 步的 `aws s3 sync --delete` 只处理 DL_DIR，
+# 这样即使带 --prune 也不可能把 S3 上的 transmitters.json 删掉。
+TX_OUT="${WORK_DIR}/transmitters.json"
+TX_RAW="${WORK_DIR}/transmitters.raw.json"
+TX_STAMP="${WORK_DIR}/transmitters.ts"
+# 与 Android `TransmitterDataSource.parseTransmitterItem` 同规则的裁剪脚本
+# （只保留 App 用得到的 7 个字段，体积约为原始的 1/3～1/5）
+TX_TRIM="/usr/local/bin/trim-transmitters.mjs"
+TX_MIN_INTERVAL_SEC=86400     # 24 小时
+TX_MIN_RECORDS=3000           # 当前 4000+ 条；低于此值视为异常响应
+
+tx_due() {
+  [ "$FORCE" -eq 1 ] && return 0
+  [ -f "$TX_STAMP" ] || return 0
+  local last now
+  last="$(cat "$TX_STAMP" 2>/dev/null || echo 0)"
+  now="$(date +%s)"
+  [ $(( now - last )) -ge "$TX_MIN_INTERVAL_SEC" ]
+}
+
+if tx_due; then
+  tx_code=$(curl -s -o "$TX_RAW" -w '%{http_code}' --max-time 240 --retry 2 --retry-delay 5 \
+              -A 'hamkit-tle-sync/1.0 (+https://hamkit.click)' \
+              "$SATNOGS_TRANSMITTERS_URL" 2>/dev/null || echo 000)
+  tx_raw_size="$(stat -c%s "$TX_RAW" 2>/dev/null || echo 0)"
+  tx_count=0
+  [ "$tx_raw_size" -gt 0 ] && tx_count="$(grep -o '"norad_cat_id"' "$TX_RAW" | wc -l | tr -d ' ')"
+
+  if [ "$tx_code" != "200" ] || [ "$tx_count" -lt "$TX_MIN_RECORDS" ]; then
+    log "  ✗ transmitters.json 获取失败/异常（HTTP ${tx_code}, ${tx_raw_size} B, ${tx_count} 条），保留 S3 现有文件"
+    rm -f "$TX_RAW"
+  else
+    # 裁剪（规则照抄 Android）。脚本不存在或失败时退回原始 JSON，功能不受影响。
+    tx_new="${TX_OUT}.new"
+    if [ -x "$TX_TRIM" ] && node "$TX_TRIM" "$TX_RAW" "$tx_new" 2>&1 | sed 's/^/    /' | tee -a "$LOG_FILE"; then
+      :
+    elif [ -x "$TX_TRIM" ]; then
+      log "  ! 裁剪失败，退回原始 JSON（体积更大但可用）"
+      cp -f "$TX_RAW" "$tx_new"
+    else
+      log "  · 未安装 $TX_TRIM，直接镜像原始 JSON"
+      cp -f "$TX_RAW" "$tx_new"
+    fi
+
+    if [ ! -s "$tx_new" ]; then
+      log "  ✗ 裁剪输出为空，保留 S3 现有文件"
+      rm -f "$tx_new"
+    elif [ -f "$TX_OUT" ] && cmp -s "$tx_new" "$TX_OUT"; then
+      log "  · transmitters.json 内容未变化，跳过替换（省一次上传）"
+      rm -f "$tx_new"
+    else
+      mv -f "$tx_new" "$TX_OUT"
+      log "  ✓ transmitters.json（$(stat -c%s "$TX_OUT") B，来自 ${tx_count} 条原始记录）"
+    fi
+    rm -f "$TX_RAW"
+    date +%s > "$TX_STAMP"
+  fi
+else
+  log "  - transmitters.json 在 24 小时窗口内，跳过"
+fi
+
 # ---------- 5) 上传 ----------
 # 覆盖三类产物：
 #   *.tle —— 镜像仓库的分组文件
@@ -376,8 +447,22 @@ else
   exit 1
 fi
 
+# transmitters.json 单独上传：content-type 用 application/json（sync 那一步
+# 给 .tle/.3le/.csv 统一用了 text/plain），缓存 6 小时。
+if [ -s "$TX_OUT" ]; then
+  if $AWS s3 cp "$TX_OUT" "s3://${BUCKET}/${PREFIX}/transmitters.json" \
+       --only-show-errors --no-progress \
+       --content-type 'application/json' \
+       --cache-control 'public, max-age=21600' 2>&1 | sed 's/^/    /' | tee -a "$LOG_FILE"; then
+    log "  ✓ transmitters.json 已上传（$(stat -c%s "$TX_OUT") B）"
+  else
+    log "  ✗ transmitters.json 上传失败"
+  fi
+fi
+
 # ---------- 6) 汇总 ----------
 TLE_N="$($AWS s3 ls "s3://${BUCKET}/${PREFIX}/" 2>/dev/null | grep -c '\.tle$' || echo '?')"
 THREE_N="$($AWS s3 ls "s3://${BUCKET}/${PREFIX}/" 2>/dev/null | grep -c '\.3le$' || echo '?')"
 CSV_N="$($AWS s3 ls "s3://${BUCKET}/${PREFIX}/" 2>/dev/null | grep -c '\.csv$' || echo '?')"
-log "同步完成。s3://${BUCKET}/${PREFIX}/ 下 .tle=${TLE_N} 个，.3le=${THREE_N} 个，.csv=${CSV_N} 个"
+TX_N="$($AWS s3 ls "s3://${BUCKET}/${PREFIX}/transmitters.json" 2>/dev/null | wc -l | tr -d ' ')"
+log "同步完成。s3://${BUCKET}/${PREFIX}/ 下 .tle=${TLE_N} 个，.3le=${THREE_N} 个，.csv=${CSV_N} 个，transmitters.json=${TX_N}"
