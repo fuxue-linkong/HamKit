@@ -188,4 +188,145 @@ class AiChatEngineTest {
         assertEquals(AiErrorKind.NO_CONFIG, listener.error?.kind)
         assertTrue(transport.requests.isEmpty())
     }
+
+    // ── 意图路由 / 结果截断 / 只读并行 ──────────────────────────────────────
+
+    private fun hostWith(
+        specs: List<AiToolSpec>,
+        run: (AiToolCall, (AiToolResult) -> Unit) -> Unit,
+    ): AiToolHost = object : AiToolHost {
+        override fun specs(): List<AiToolSpec> = specs
+
+        override fun execute(call: AiToolCall, callback: (AiToolResult) -> Unit) = run(call, callback)
+    }
+
+    private fun spec(name: String, risk: AiToolRisk = AiToolRisk.READ_ONLY) =
+        AiToolSpec(name, name, name, """{"type":"object"}""", risk)
+
+    @Test
+    fun `intent routing hides unrelated tools from request`() {
+        val transport = FakeTransport()
+        val listener = RecordingListener()
+        val engine = AiChatEngine(transport, listener)
+        val host = hostWith(
+            listOf(spec("get_utc_time"), spec("search_satellites")),
+        ) { _, callback -> callback(AiToolResult("{}", "ok")) }
+
+        engine.start(config(), "key", listOf(AiMessage.user("现在几点")), host)
+
+        // 只看 tools 段：系统提示词里本来就列了全部工具名，不能作为判断依据
+        val tools = transport.requests.first().body.substringAfter("\"tools\":", "")
+        assertTrue(tools.contains("get_utc_time"))
+        assertTrue(!tools.contains("search_satellites"), "无关工具不应下发：$tools")
+    }
+
+    @Test
+    fun `empty route falls back to all tools`() {
+        val transport = FakeTransport()
+        val listener = RecordingListener()
+        val engine = AiChatEngine(transport, listener)
+        val host = hostWith(listOf(spec("get_utc_time"), spec("search_satellites"))) { _, cb ->
+            cb(AiToolResult("{}", "ok"))
+        }
+
+        engine.start(config(), "key", listOf(AiMessage.user("你好呀")), host)
+
+        val tools = transport.requests.first().body.substringAfter("\"tools\":", "")
+        assertTrue(
+            tools.contains("get_utc_time") && tools.contains("search_satellites"),
+            "未命中分类时应下发全部工具：$tools",
+        )
+    }
+
+    @Test
+    fun `oversized tool result is truncated before going back to model`() {
+        val transport = FakeTransport()
+        val listener = RecordingListener()
+        val engine = AiChatEngine(transport, listener)
+        val huge = "x".repeat(MAX_TOOL_RESULT_CHARS) + "TAILMARK"
+        val host = hostWith(listOf(spec("get_utc_time"))) { _, cb ->
+            cb(AiToolResult(huge, "huge"))
+        }
+
+        engine.start(config(), "key", listOf(AiMessage.user("现在几点")), host)
+        transport.emit(
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"c1\"," +
+                "\"function\":{\"name\":\"get_utc_time\",\"arguments\":\"{}\"}}]}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n",
+        )
+
+        val body = transport.requests[1].body
+        assertTrue(body.contains("（结果已截断）"), "超长工具结果应被截断")
+        assertTrue(!body.contains("TAILMARK"), "截断后不应保留尾部内容")
+        // UI 侧摘要保持原样
+        assertEquals("huge", listener.toolSummaries.last())
+    }
+
+    @Test
+    fun `read only tools in one round run in parallel and keep order`() {
+        val transport = FakeTransport()
+        val listener = RecordingListener()
+        val engine = AiChatEngine(transport, listener)
+
+        val deferred = HashMap<String, (AiToolResult) -> Unit>()
+        val executed = ArrayList<String>()
+        val host = hostWith(listOf(spec("search_satellites"), spec("get_utc_time"))) { call, cb ->
+            executed += call.name
+            if (call.name == "get_utc_time") {
+                // 第二个工具同步返回；第一个先挂起，验证「等齐再回填」
+                cb(AiToolResult("""{"utc":"B"}""", "第二个"))
+            } else {
+                deferred[call.name] = cb
+            }
+        }
+
+        engine.start(config(), "key", listOf(AiMessage.user("ISS 现在几点")), host)
+        transport.emit(
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"c1\"," +
+                "\"function\":{\"name\":\"search_satellites\",\"arguments\":\"{}\"}}]}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":1,\"id\":\"c2\"," +
+                "\"function\":{\"name\":\"get_utc_time\",\"arguments\":\"{}\"}}]}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n",
+        )
+
+        // 两个工具都已发起，但第一个没回调 → 还不能进入下一轮请求
+        assertEquals(listOf("search_satellites", "get_utc_time"), executed)
+        assertEquals(1, transport.requests.size)
+        assertTrue(listener.toolSummaries.isEmpty())
+
+        deferred["search_satellites"]?.invoke(AiToolResult("""{"a":1}""", "第一个"))
+
+        assertEquals(2, transport.requests.size)
+        assertEquals(listOf("第一个", "第二个"), listener.toolSummaries)
+        // 消息里 tool 结果按 calls 顺序排列
+        val body = transport.requests[1].body
+        assertTrue(body.indexOf("c1") < body.indexOf("c2"), body)
+    }
+
+    @Test
+    fun `side effect tools stay sequential`() {
+        val transport = FakeTransport()
+        val listener = RecordingListener()
+        val engine = AiChatEngine(transport, listener)
+        val executed = ArrayList<String>()
+        val host = hostWith(
+            listOf(spec("open_screen", AiToolRisk.NAVIGATION), spec("get_utc_time")),
+        ) { call, cb ->
+            executed += call.name
+            cb(AiToolResult("{}", call.name))
+        }
+
+        engine.start(config(), "key", listOf(AiMessage.user("打开页面看时间")), host)
+        transport.emit(
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"c1\"," +
+                "\"function\":{\"name\":\"open_screen\",\"arguments\":\"{}\"}}]}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":1,\"id\":\"c2\"," +
+                "\"function\":{\"name\":\"get_utc_time\",\"arguments\":\"{}\"}}]}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n",
+        )
+
+        assertEquals(listOf("open_screen", "get_utc_time"), executed)
+        assertEquals(listOf("open_screen", "get_utc_time"), listener.toolSummaries)
+        assertEquals(2, transport.requests.size)
+    }
 }

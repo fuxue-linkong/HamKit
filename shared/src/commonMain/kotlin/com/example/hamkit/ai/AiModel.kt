@@ -228,6 +228,18 @@ data class AiToolResult(
     val cardJson: String = "",
 )
 
+/** 回传模型的工具结果最大字符数：超出截断，避免一次查询占满上下文。 */
+const val MAX_TOOL_RESULT_CHARS: Int = 6000
+
+/**
+ * 截断工具结果（只作用于给模型的文本，UI 摘要与卡片保持原样）。
+ *
+ * 与 Android `truncateToolResult` 同义：`max` 是字符数上限，超出时保留前缀并追加说明，
+ * 让模型知道「还有更多」而不是误以为结果就这么点。
+ */
+fun truncateToolResult(text: String, max: Int = MAX_TOOL_RESULT_CHARS): String =
+    if (text.length <= max) text else text.take(max) + "\n…（结果已截断）"
+
 // ── 流式事件 ────────────────────────────────────────────────────────────────
 
 enum class AiEventKind {

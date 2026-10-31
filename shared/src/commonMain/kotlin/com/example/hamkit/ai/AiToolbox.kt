@@ -5,7 +5,10 @@ import com.example.hamkit.data.satellite.predict.SatellitePropagator
 import com.example.hamkit.data.satellite.predict.TleElements
 import com.example.hamkit.data.zone.ZoneResolver
 import kotlin.math.PI
+import kotlin.math.atan2
+import kotlin.math.cos
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 /**
  * 平台数据门面：iOS / Android 各自实现，把「当前卫星列表、转发器、定位」交给内核。
@@ -41,7 +44,62 @@ interface AiAppFacade {
      * @param screen 页面 id（`add_pass_reminder` 时为空）
      */
     fun performAction(action: String, norad: Int, screen: String): String
+
+    /** FT8 当前会话快照（解码 + QSO）；模块不可用时返回 null。 */
+    fun ft8Snapshot(): AiFt8Snapshot?
+
+    /** APRS 当前会话已接收的台站（已脱敏，不含经纬度）；模块不可用时返回 null。 */
+    fun aprsSnapshot(): AiAprsSnapshot?
+
+    /** QSO 日志全量摘要（FT8 与手动记录同一库）。 */
+    fun qsoRecords(): List<AiQsoSummary>
 }
+
+/** 一条 FT8 解码（工具只读快照）。 */
+data class AiFt8Decode(
+    val timeMs: Long,
+    val message: String,
+    val snrDb: Double,
+    val freqHz: Double,
+)
+
+/** QSO 记录摘要。 */
+data class AiQsoSummary(
+    val callsign: String,
+    val grid: String,
+    val band: String,
+    val mode: String,
+    val qsoTimeMs: Long,
+    val isComplete: Boolean,
+)
+
+/** FT8 模块快照。 */
+data class AiFt8Snapshot(
+    val decoding: Boolean,
+    val decoded: List<AiFt8Decode>,
+    val qso: List<AiQsoSummary>,
+)
+
+/**
+ * APRS 已接收台站摘要。
+ *
+ * 只带经纬度供内核换算「距离/方位」，工具输出**不含**坐标 —— 模型看到的始终是
+ * 距离与方位，与 Android 的脱敏口径一致。换算放在内核是为了两端同一份公式，
+ * 也避免 Kotlin `Double?` 跨语言装箱给 Swift 侧增加构造负担。
+ */
+data class AiAprsStationSummary(
+    val callsign: String,
+    val latitude: Double,
+    val longitude: Double,
+    val timestampMs: Long,
+    val comment: String,
+)
+
+/** APRS 模块快照（只读当前会话已接收的站点）。 */
+data class AiAprsSnapshot(
+    val connected: Boolean,
+    val stations: List<AiAprsStationSummary>,
+)
 
 data class AiSatelliteInfo(
     val norad: Int,
@@ -98,6 +156,9 @@ class AiToolbox(private val facade: AiAppFacade) : AiToolHost {
         SatelliteTransmittersTool,
         SearchSatellitesTool,
         AmsatStatusTool,
+        Ft8ActivityTool,
+        AprsStationsTool,
+        QsoLogTool,
         UtcTimeTool,
         OpenScreenTool,
         PassReminderTool,
@@ -200,6 +261,27 @@ private fun floorDiv(a: Long, b: Long): Long {
     return if ((a % b != 0L) && ((a < 0) != (b < 0))) q - 1 else q
 }
 
+/** 两点球面距离（km），haversine 公式。 */
+internal fun haversineKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+    val earthRadiusKm = 6371.0
+    val dLat = (lat2 - lat1) * PI / 180.0
+    val dLon = (lon2 - lon1) * PI / 180.0
+    val a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(lat1 * PI / 180.0) * cos(lat2 * PI / 180.0) * sin(dLon / 2) * sin(dLon / 2)
+    return earthRadiusKm * 2 * atan2(kotlin.math.sqrt(a), kotlin.math.sqrt(1 - a))
+}
+
+/** 初始方位角（度，0 = 正北，顺时针）。 */
+internal fun bearingDeg(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+    val phi1 = lat1 * PI / 180.0
+    val phi2 = lat2 * PI / 180.0
+    val dLon = (lon2 - lon1) * PI / 180.0
+    val y = sin(dLon) * cos(phi2)
+    val x = cos(phi1) * sin(phi2) - sin(phi1) * cos(phi2) * cos(dLon)
+    val deg = atan2(y, x) * 180.0 / PI
+    return if (deg < 0) deg + 360.0 else deg
+}
+
 /** 儒略日 → 公历年月日（Howard Hinnant 的 civil_from_days）。 */
 private fun civilFromDays(daysSinceEpoch: Long): Triple<Long, Long, Long> {
     var z = daysSinceEpoch + 719468
@@ -277,14 +359,45 @@ private object SearchSatellitesTool : AiTool() {
     override val spec = AiToolSpec(
         name = "search_satellites",
         title = "搜索卫星",
-        description = "按名称关键词、工作模式或是否在境筛选卫星列表，返回名称、NORAD、模式与状态。" +
+        description = "按名称关键词、标签（tag）或是否在境检索当前卫星列表，返回名称、NORAD、模式与状态。" +
+            AiSatelliteTag.DOC +
+            "。max 控制返回条数，默认 20、最大 100；被截断时返回 truncated=true 与 total。" +
             "在境卫星的 AOS 可能已过去，用 visible 与 los 判断；next_aos 仅在未来有值时返回。",
-        parametersJson = schema(
-            Triple("query", "string", "名称关键词，如 ISS、AO-91；可省略"),
-            Triple("mode", "string", "工作模式，如 FM、SSTV；可省略"),
-            Triple("only_above", "boolean", "只返回当前在境的卫星"),
-            Triple("limit", "integer", "返回条数，默认 10，最大 20"),
-        ),
+        parametersJson = Json.obj()
+            .put("type", "object")
+            .put(
+                "properties",
+                Json.obj()
+                    .put(
+                        "query",
+                        Json.obj().put("type", "string")
+                            .put("description", "名称关键词或 NORAD 编号，如 ISS、25544；可省略"),
+                    )
+                    .put(
+                        "tags",
+                        Json.obj()
+                            .put("type", "array")
+                            .put("description", AiSatelliteTag.DOC)
+                            .put("items", Json.obj().put("type", "string")),
+                    )
+                    .put(
+                        "max",
+                        Json.obj().put("type", "integer")
+                            .put("description", "返回上限，默认 20")
+                            .put("minimum", 1).put("maximum", 100),
+                    )
+                    .put(
+                        "mode",
+                        Json.obj().put("type", "string")
+                            .put("description", "（兼容旧参数）工作模式，等价 tags 里的模式"),
+                    )
+                    .put(
+                        "only_above",
+                        Json.obj().put("type", "boolean")
+                            .put("description", "（兼容旧参数）只返回当前在境卫星"),
+                    ),
+            )
+            .stringify(),
     )
 
     override fun execute(facade: AiAppFacade, args: Json.Obj): AiToolResult {
@@ -293,39 +406,39 @@ private object SearchSatellitesTool : AiTool() {
             return AiToolResult("卫星列表为空，请先在首页刷新卫星数据", "列表为空", isError = true)
         }
         val query = args.str("query")
-        val mode = args.str("mode")?.uppercase()
-        val queryNorad = query?.toIntOrNull()
-        val onlyAbove = args.bool("only_above") == true
-        val limit = (args.int("limit") ?: 10).coerceIn(1, 20)
+        val rawTags = when (val raw = args["tags"]) {
+            is Json.Arr -> raw.items.mapNotNull { it.stringOrNull() }
+            is Json.Str -> raw.value.split(',')
+            else -> emptyList()
+        }
+        val tags = when (
+            val parsed = parseAiSatelliteTags(
+                rawTags = rawTags,
+                mode = args.str("mode"),
+                onlyAbove = args.bool("only_above") == true,
+            )
+        ) {
+            is AiTagParseResult.Success -> parsed.tags
+            is AiTagParseResult.Failure ->
+                return AiToolResult(parsed.message, "标签无效", isError = true)
+        }
+        val location = facade.location()
+        if (AiSatelliteTag.DAYLIGHT in tags && location == null) {
+            return AiToolResult(
+                modelText = "没有定位结果，无法判断白天过境；请先授权定位",
+                summary = "缺少定位",
+                isError = true,
+            )
+        }
+        // 默认 20 颗；兼容旧参数 limit
+        val max = (args.int("max") ?: args.int("limit") ?: 20).coerceIn(1, 100)
         val now = facade.nowMs()
 
-        val matched = all.filter { sat ->
-            val nameOk = query == null ||
-                (queryNorad != null && sat.norad == queryNorad) ||
-                SatelliteNameMatcher.nameTier(query, sat.name) != null
-            val modeOk = mode == null ||
-                sat.modesCsv.split(',').any { it.trim().uppercase() == mode }
-            (!onlyAbove || sat.visible) && nameOk && modeOk
+        val sorted = filterAiSatellites(all, query, tags, now, location) { norad ->
+            facade.radios(norad)
         }
-
-        // 有查询词时先按匹配层次排序，避免「子串假阳性」卫星排到精确命中前面
-        val sorted = if (query != null) {
-            matched.sortedWith(
-                compareBy(
-                    { SatelliteNameMatcher.nameTier(query, it.name) ?: Int.MAX_VALUE },
-                    { if (it.visible) 0 else 1 },
-                    { if (it.hasPass) it.aosMs else Long.MAX_VALUE },
-                )
-            )
-        } else {
-            matched.sortedWith(
-                compareBy(
-                    { if (it.visible) 0 else 1 },
-                    { if (it.hasPass) it.aosMs else Long.MAX_VALUE },
-                )
-            )
-        }
-        val picked = sorted.take(limit)
+        val picked = sorted.take(max)
+        val truncated = sorted.size > picked.size
 
         val array = Json.arr()
         picked.forEach { sat ->
@@ -352,13 +465,26 @@ private object SearchSatellitesTool : AiTool() {
         }
 
         val text = Json.obj()
-            .put("count", picked.size)
+            .put("total", sorted.size)
+            .put("returned", picked.size)
+            .put("truncated", truncated)
+            .put("tags", Json.Arr().also { arr -> tags.forEach { arr.add(it.wire) } })
             .put("in_pass_count", picked.count { it.visible })
             .put("satellites", array)
+            .also {
+                if (AiSatelliteTag.REPEATER in tags && picked.isEmpty()) {
+                    it.put("note", "转发器库为空或没有匹配的活跃转发器，可先到卫星页刷新转发器数据")
+                }
+            }
             .stringify()
+        val summary = if (truncated) {
+            "找到 ${picked.size} 颗（共 ${sorted.size}，已截断）"
+        } else {
+            "找到 ${picked.size} 颗"
+        }
         return AiToolResult(
             modelText = text,
-            summary = "找到 ${picked.size} 颗卫星",
+            summary = summary,
             cardJson = satelliteCardJson(picked.firstOrNull(), facade),
         )
     }
@@ -624,6 +750,210 @@ private object PassReminderTool : AiTool() {
         return AiToolResult(modelText = result, summary = result)
     }
 }
+
+// ── 社区类工具：FT8 / APRS / QSO 日志 ───────────────────────────────────────
+//
+// 三个工具都**只读**：不发起网络连接、不改 filter、不写日志。APRS 尤其如此——
+// 模型只能看到「本次会话已经收到的台站」，避免它把结果说成「你附近全部台站」。
+
+private object Ft8ActivityTool : AiTool() {
+
+    override val spec = AiToolSpec(
+        name = "get_ft8_activity",
+        title = "FT8 活动",
+        description = "读取本次会话最近的 FT8 解码（消息、SNR、频偏）与 QSO 记录。" +
+            "解码列表在内存中，重启 App 后为空；需要历史通联请用 search_qso_log。",
+        parametersJson = schema(
+            Triple("max", "integer", "最多返回条数，默认 10，最大 50"),
+            Triple("callsign", "string", "按呼号过滤，可省略"),
+        ),
+    )
+
+    override fun execute(facade: AiAppFacade, args: Json.Obj): AiToolResult {
+        val snapshot = facade.ft8Snapshot()
+            ?: return AiToolResult("FT8 模块不可用", "FT8 不可用", isError = true)
+        val max = (args.int("max") ?: 10).coerceIn(1, 50)
+        val callsign = args.str("callsign")
+
+        val decoded = snapshot.decoded
+            .filter { callsign == null || it.message.contains(callsign, ignoreCase = true) }
+            .sortedByDescending { it.timeMs }
+            .take(max)
+        val qso = snapshot.qso
+            .filter { callsign == null || it.callsign.contains(callsign, ignoreCase = true) }
+            .sortedByDescending { it.qsoTimeMs }
+            .take(max)
+
+        val decodedArray = Json.arr()
+        decoded.forEach { entry ->
+            decodedArray.add(
+                Json.obj()
+                    .put("time", entry.timeMs)
+                    .put("message", entry.message)
+                    .put("snr", entry.snrDb)
+                    .put("freq_hz", entry.freqHz),
+            )
+        }
+        val qsoArray = Json.arr()
+        qso.forEach { record -> qsoArray.add(record.toJson()) }
+
+        val text = Json.obj()
+            .put("decoding", snapshot.decoding)
+            .put("decoded", decodedArray)
+            .put("qso", qsoArray)
+            .also {
+                if (decoded.isEmpty() && qso.isEmpty()) {
+                    it.put("note", "本次会话还没有 FT8 解码或 QSO 记录")
+                }
+            }
+            .stringify()
+        return AiToolResult(
+            modelText = text,
+            summary = "FT8 解码 ${decoded.size} 条，QSO ${qso.size} 条",
+        )
+    }
+}
+
+private object AprsStationsTool : AiTool() {
+
+    override val spec = AiToolSpec(
+        name = "get_aprs_stations",
+        title = "APRS 台站",
+        description = "列出当前 APRS 会话已接收的台站（呼号、距离、方位、最后报告）。" +
+            "只读内存数据：不发起新查询、不修改 filter、不自动连接；" +
+            "接收范围是固定 filter，不代表以你为中心的完整列表。",
+        parametersJson = Json.obj()
+            .put("type", "object")
+            .put(
+                "properties",
+                Json.obj()
+                    .put(
+                        "radius_km",
+                        Json.obj().put("type", "number")
+                            .put("description", "在已接收台站里按距离过滤，默认 100")
+                            .put("minimum", 1).put("maximum", 1000),
+                    )
+                    .put(
+                        "max",
+                        Json.obj().put("type", "integer")
+                            .put("description", "最多返回条数，默认 10，最大 50")
+                            .put("minimum", 1).put("maximum", 50),
+                    ),
+            )
+            .stringify(),
+    )
+
+    override fun execute(facade: AiAppFacade, args: Json.Obj): AiToolResult {
+        val snapshot = facade.aprsSnapshot()
+            ?: return AiToolResult("APRS 模块不可用", "APRS 不可用", isError = true)
+        if (!snapshot.connected) {
+            return AiToolResult(
+                modelText = "APRS 未连接，工具不会自动连接；请先在 APRS 页连接",
+                summary = "APRS 未连接",
+                isError = true,
+            )
+        }
+        val radiusKm = (args["radius_km"] as? Json.Num)?.value?.coerceIn(1.0, 1000.0) ?: 100.0
+        val max = (args.int("max") ?: 10).coerceIn(1, 50)
+        val here = facade.location()
+
+        // 距离/方位由内核换算：模型只看距离与方位，拿不到台站坐标
+        val withDistance = snapshot.stations.map { station ->
+            val distance = here?.let {
+                haversineKm(it.latitude, it.longitude, station.latitude, station.longitude)
+            }
+            val bearing = here?.let {
+                bearingDeg(it.latitude, it.longitude, station.latitude, station.longitude)
+            }
+            Triple(station, distance, bearing)
+        }
+        val filtered = withDistance
+            .filter { (_, distance, _) -> distance?.let { it <= radiusKm } ?: true }
+            .sortedBy { (_, distance, _) -> distance ?: Double.MAX_VALUE }
+            .take(max)
+
+        val array = Json.arr()
+        filtered.forEach { (station, distance, bearing) ->
+            val obj = Json.obj()
+                .put("callsign", station.callsign)
+                .put("last_report", station.timestampMs)
+            distance?.let { obj.put("distance_km", it) }
+            bearing?.let { obj.put("bearing", it) }
+            if (station.comment.isNotBlank()) obj.put("comment", station.comment)
+            array.add(obj)
+        }
+
+        val text = Json.obj()
+            .put("connected", true)
+            .put("scope", "session")
+            .put("filter_note", "当前为固定范围接收（非以你为中心），仅含本次会话已收到的台站")
+            .put("total", snapshot.stations.size)
+            .put("returned", filtered.size)
+            .put("stations", array)
+            .also {
+                if (filtered.isEmpty()) {
+                    it.put("note", "本次会话还没有收到符合范围的 APRS 台站")
+                }
+            }
+            .stringify()
+        return AiToolResult(modelText = text, summary = "APRS 台站 ${filtered.size} 个")
+    }
+}
+
+private object QsoLogTool : AiTool() {
+
+    override val spec = AiToolSpec(
+        name = "search_qso_log",
+        title = "QSO 日志检索",
+        description = "按呼号与时间范围检索本机 QSO 日志（FT8 与手动记录都在同一库）。",
+        parametersJson = schema(
+            Triple("callsign", "string", "按呼号过滤，可省略"),
+            Triple("days", "integer", "最近多少天，默认 30，最大 365"),
+            Triple("max", "integer", "最多返回条数，默认 20，最大 100"),
+        ),
+    )
+
+    override fun execute(facade: AiAppFacade, args: Json.Obj): AiToolResult {
+        val records = facade.qsoRecords()
+        if (records.isEmpty()) {
+            return AiToolResult("QSO 日志为空", "日志为空", isError = true)
+        }
+        val callsign = args.str("callsign")
+        val days = (args.int("days") ?: 30).coerceIn(1, 365)
+        val max = (args.int("max") ?: 20).coerceIn(1, 100)
+        val cutoff = facade.nowMs() - days * 24L * 60L * 60L * 1000L
+
+        val filtered = records
+            .filter { record ->
+                (callsign == null || record.callsign.contains(callsign, ignoreCase = true)) &&
+                    record.qsoTimeMs >= cutoff
+            }
+            .sortedByDescending { it.qsoTimeMs }
+        val page = filtered.take(max)
+
+        val array = Json.arr()
+        page.forEach { array.add(it.toJson()) }
+        val text = Json.obj()
+            .put("total", filtered.size)
+            .put("returned", page.size)
+            .put("days", days)
+            .put("truncated", filtered.size > page.size)
+            .put("records", array)
+            .stringify()
+        return AiToolResult(
+            modelText = text,
+            summary = "QSO ${page.size} 条（共 ${filtered.size}）",
+        )
+    }
+}
+
+private fun AiQsoSummary.toJson(): Json.Obj = Json.obj()
+    .put("callsign", callsign)
+    .put("grid", grid)
+    .put("band", band)
+    .put("mode", mode)
+    .put("time", qsoTimeMs)
+    .put("complete", isComplete)
 
 /** 卫星卡片的 JSON（iOS 侧解析后画卡片；字段与 Android `SatelliteCardData` 对齐）。 */
 private fun satelliteCardJson(

@@ -108,6 +108,14 @@ class AiChatEngine(
     private var streamFailed = false
     private var rounds = 0
 
+    /**
+     * 本轮对话命中的工具集（按用户意图裁剪）。
+     *
+     * 空集表示未命中任何分类 → 下发全部工具（保守回退）。只在 [start] 里算一次，
+     * 后续工具往返沿用同一份，避免「同一句话前后两轮看到的工具不一样」。
+     */
+    private var route: Set<String> = emptySet()
+
     private class MutableCall(val index: Int, val id: String, val name: String) {
         val args = StringBuilder()
     }
@@ -133,6 +141,10 @@ class AiChatEngine(
         this.cancelled = false
         this.completed = false
         this.rounds = 0
+        // 用本轮最后一条用户消息做意图路由（历史里的旧问题不参与）
+        this.route = AiToolRouter.route(
+            messages.lastOrNull { it.role == AiRole.USER }?.text.orEmpty(),
+        )
         sendRequest(allowTools = toolHost != null)
     }
 
@@ -167,7 +179,7 @@ class AiChatEngine(
         streamFailed = false
 
         val specs = if (allowTools) toolHost?.specs()?.filter {
-            it.name !in cfg.disabledToolNames
+            it.name !in cfg.disabledToolNames && (route.isEmpty() || it.name in route)
         }.orEmpty() else emptyList()
 
         val body = AiCodecs.chatBody(
@@ -283,13 +295,54 @@ class AiChatEngine(
                 )
                 sendRequest(allowTools = false)
             } else {
-                runTools(host, calls, 0)
+                startTools(host, calls)
             }
             return
         }
 
         completed = true
         listener.onTurnCompleted(messages, finalStop)
+    }
+
+    /**
+     * 执行本轮工具调用。
+     *
+     * 同一轮里如果**全部是只读工具**就并行发起（典型场景：一次问「ISS 过境 + 转发器 + 实时位置」），
+     * 否则保持串行——副作用/导航类工具需要按顺序确认，不能并发弹窗。
+     * 无论并行还是串行，结果都按模型给出的 `calls` 顺序回填消息列表，
+     * 保证多轮请求里 tool_call 与 tool_result 的配对顺序稳定。
+     */
+    private fun startTools(host: AiToolHost, calls: List<AiToolCall>) {
+        if (cancelled) return
+        val specs = host.specs()
+        val allReadOnly = calls.size > 1 && calls.all { call ->
+            specs.firstOrNull { it.name == call.name }?.risk == AiToolRisk.READ_ONLY
+        }
+        if (!allReadOnly) {
+            runTools(host, calls, 0)
+            return
+        }
+        val results = arrayOfNulls<AiToolResult>(calls.size)
+        var remaining = calls.size
+        calls.forEachIndexed { index, call ->
+            host.execute(call) { result ->
+                results[index] = result
+                remaining -= 1
+                if (remaining == 0 && !cancelled) {
+                    calls.forEachIndexed { i, done ->
+                        appendToolResult(
+                            done,
+                            results[i] ?: AiToolResult(
+                                modelText = "工具没有返回结果",
+                                summary = "无结果",
+                                isError = true,
+                            ),
+                        )
+                    }
+                    sendRequest(allowTools = true)
+                }
+            }
+        }
     }
 
     private fun runTools(host: AiToolHost, calls: List<AiToolCall>, index: Int) {
@@ -300,22 +353,26 @@ class AiChatEngine(
         }
         val call = calls[index]
         host.execute(call) { result ->
-            messages = messages + AiMessage.toolResult(
-                callId = call.id,
-                name = call.name,
-                content = result.errorTextForModel(),
-                isError = result.isError,
-            )
-            listener.onToolFinished(
-                callId = call.id,
-                name = call.name,
-                title = titleOf(call.name),
-                summary = result.summary,
-                isError = result.isError,
-                cardJson = result.cardJson,
-            )
+            appendToolResult(call, result)
             runTools(host, calls, index + 1)
         }
+    }
+
+    private fun appendToolResult(call: AiToolCall, result: AiToolResult) {
+        messages = messages + AiMessage.toolResult(
+            callId = call.id,
+            name = call.name,
+            content = result.errorTextForModel(),
+            isError = result.isError,
+        )
+        listener.onToolFinished(
+            callId = call.id,
+            name = call.name,
+            title = titleOf(call.name),
+            summary = result.summary,
+            isError = result.isError,
+            cardJson = result.cardJson,
+        )
     }
 
     private fun finishWithError(error: AiError) {
@@ -334,7 +391,9 @@ class AiChatEngine(
  * 给模型看的工具结果文本。
  *
  * 失败时补一层 `[错误]` 前缀：模型对「工具报错」和「工具查到了空结果」是两种反应，
- * 不加前缀时容易把错误当成数据继续推理。
+ * 不加前缀时容易把错误当成数据继续推理。超长结果统一截断，避免一次查询占满上下文。
  */
-private fun AiToolResult.errorTextForModel(): String =
-    if (isError) "[错误] $modelText" else modelText
+private fun AiToolResult.errorTextForModel(): String {
+    val text = truncateToolResult(modelText)
+    return if (isError) "[错误] $text" else text
+}
