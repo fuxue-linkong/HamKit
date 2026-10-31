@@ -32,15 +32,23 @@ class AiSseParser {
         if (chunk.isEmpty()) return emptyList()
         lineBuffer.append(chunk)
         val frames = ArrayList<AiSseFrame>()
+
+        // 一次性取出缓冲区内容按行扫描，最后把「不完整的尾巴」回填。
+        // 不要用 StringBuilder.delete(start, end)：那是 JVM 的 java.lang.StringBuilder，
+        // commonMain 里没有，JVM 测试能过但 Kotlin/Native 编译不过。
+        val text = lineBuffer.toString()
+        var start = 0
         while (true) {
-            val newline = lineBuffer.indexOf('\n')
+            val newline = text.indexOf('\n', start)
             if (newline < 0) break
-            var line = lineBuffer.substring(0, newline)
-            lineBuffer.delete(0, newline + 1)
+            var line = text.substring(start, newline)
+            start = newline + 1
             // 兼容 CRLF
             if (line.endsWith("\r")) line = line.dropLast(1)
             handleLine(line, frames)
         }
+        lineBuffer.setLength(0)
+        lineBuffer.append(text.substring(start))
         return frames
     }
 
