@@ -6,7 +6,6 @@ import com.example.hamkit.data.ai.tool.tools.filterSatellites
 import com.example.hamkit.data.ai.tool.tools.matches
 import com.example.hamkit.data.ai.tool.tools.parseSatelliteTags
 import com.example.hamkit.data.satellite.SatelliteInfo
-import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -43,7 +42,7 @@ class SatelliteTagsTest {
 
     @Test
     fun `parses tag array`() {
-        val result = parseSatelliteTags(JSONObject("""{"tags":["amateur","visible"]}"""))
+        val result = parseSatelliteTags(listOf("amateur", "visible"), null, false)
         assertTrue(result is TagParseResult.Success)
         assertEquals(
             setOf(SatelliteTag.AMATEUR, SatelliteTag.VISIBLE),
@@ -53,7 +52,7 @@ class SatelliteTagsTest {
 
     @Test
     fun `parses comma separated tags`() {
-        val result = parseSatelliteTags(JSONObject("""{"tags":"amateur, fm"}"""))
+        val result = parseSatelliteTags(listOf("amateur", "fm"), null, false)
         assertTrue(result is TagParseResult.Success)
         assertEquals(
             setOf(SatelliteTag.AMATEUR, SatelliteTag.FM),
@@ -63,7 +62,7 @@ class SatelliteTagsTest {
 
     @Test
     fun `keeps legacy mode and only_above`() {
-        val result = parseSatelliteTags(JSONObject("""{"mode":"FM","only_above":true}"""))
+        val result = parseSatelliteTags(null, "FM", true)
         assertTrue(result is TagParseResult.Success)
         assertEquals(
             setOf(SatelliteTag.FM, SatelliteTag.VISIBLE),
@@ -73,7 +72,7 @@ class SatelliteTagsTest {
 
     @Test
     fun `unknown tag fails with hint`() {
-        val result = parseSatelliteTags(JSONObject("""{"tags":["foo"]}"""))
+        val result = parseSatelliteTags(listOf("foo"), null, false)
         assertTrue(result is TagParseResult.Failure)
         assertTrue((result as TagParseResult.Failure).message.contains("foo"))
     }
