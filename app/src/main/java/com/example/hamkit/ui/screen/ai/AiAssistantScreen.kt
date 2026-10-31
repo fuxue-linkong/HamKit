@@ -34,6 +34,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
@@ -263,7 +264,8 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
                 LazyColumn(
                     modifier = Modifier
                         .weight(1f)
-                        .fillMaxWidth(),
+                        .fillMaxWidth()
+                        .clipToBounds(),
                     state = listState,
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(
                         start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp,
@@ -271,9 +273,7 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     items(state.messages, key = { it.id }) { message ->
-                        Box(Modifier.animateItem()) {
-                            MessageItemMiuix(message)
-                        }
+                        MessageItemMiuix(message)
                     }
                 }
             }
