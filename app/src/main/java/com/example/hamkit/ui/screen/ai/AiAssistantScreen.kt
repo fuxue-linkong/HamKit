@@ -118,6 +118,8 @@ import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Notifications
@@ -802,8 +804,21 @@ private fun ToolCardMiuix(tool: AiToolUi) {
         targetValue = (tool.progress ?: 0f).coerceIn(0f, 1f),
         label = "aiToolProgress",
     )
+    // 完成后自动折叠；运行中/失败默认展开，用户点击可手动切换
+    var expanded by remember(tool.callId) { mutableStateOf(tool.state != AiToolUiState.SUCCESS) }
+    LaunchedEffect(tool.state) {
+        when (tool.state) {
+            AiToolUiState.SUCCESS -> expanded = false
+            AiToolUiState.ERROR -> expanded = true
+            AiToolUiState.RUNNING -> Unit
+        }
+    }
     Card(modifier = Modifier.fillMaxWidth().animateContentSize()) {
-        Column(Modifier.padding(12.dp)) {
+        Column(
+            Modifier
+                .clickable { expanded = !expanded }
+                .padding(12.dp),
+        ) {
             val statusColor = when (tool.state) {
                 AiToolUiState.RUNNING -> colorScheme.primary
                 AiToolUiState.SUCCESS -> SafeColors.successIcon
@@ -829,50 +844,94 @@ private fun ToolCardMiuix(tool: AiToolUi) {
                     )
                 }
                 Spacer(Modifier.width(8.dp))
-                Text(
-                    tool.title,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f),
-                )
-                Box(
-                    Modifier
-                        .size(6.dp)
-                        .background(statusColor, CircleShape),
-                )
-                Spacer(Modifier.width(4.dp))
-                Text(label, fontSize = 10.sp, color = statusColor)
-            }
-            val progress = tool.progress
-            if (tool.state == AiToolUiState.RUNNING && progress != null) {
-                LinearProgressIndicator(
-                    progress = animatedProgress,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp),
-                )
-            }
-            tool.stage?.let {
-                Text(
-                    it,
-                    fontSize = 11.sp,
-                    color = colorScheme.onSurfaceVariantSummary,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-            }
-            if (tool.state == AiToolUiState.RUNNING && progress == null) {
-                Text(
-                    "执行中…",
-                    fontSize = 11.sp,
-                    color = colorScheme.onSurfaceVariantSummary,
-                    modifier = Modifier.padding(top = 4.dp),
+                Column(Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            tool.title,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Box(
+                            Modifier
+                                .size(6.dp)
+                                .background(statusColor, CircleShape),
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(label, fontSize = 10.sp, color = statusColor)
+                    }
+                    if (!expanded) {
+                        tool.summary?.let {
+                            Text(
+                                it,
+                                fontSize = 11.sp,
+                                color = colorScheme.onSurfaceVariantSummary,
+                                maxLines = 1,
+                                modifier = Modifier.padding(top = 2.dp),
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.width(6.dp))
+                Icon(
+                    if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                    contentDescription = null,
+                    tint = colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.size(16.dp),
                 )
             }
-            tool.summary?.let {
-                Text(it, fontSize = 11.sp, color = colorScheme.onSurfaceVariantSummary)
-            }
-            tool.error?.let {
-                Text(it, fontSize = 11.sp, color = colorScheme.error)
+
+            if (expanded) {
+                val progress = tool.progress
+                if (tool.state == AiToolUiState.RUNNING && progress != null) {
+                    LinearProgressIndicator(
+                        progress = animatedProgress,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp),
+                    )
+                }
+                tool.stage?.let {
+                    Text(
+                        it,
+                        fontSize = 11.sp,
+                        color = colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+                if (tool.state == AiToolUiState.RUNNING && progress == null) {
+                    Text(
+                        stringResource(R.string.ai_executing),
+                        fontSize = 11.sp,
+                        color = colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+                tool.summary?.let {
+                    Text(
+                        it,
+                        fontSize = 11.sp,
+                        color = colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+                tool.argsPreview.takeIf { it.isNotBlank() }?.let {
+                    Text(
+                        it,
+                        fontSize = 9.sp,
+                        color = colorScheme.onSurfaceVariantSummary,
+                        maxLines = 3,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+                tool.error?.let {
+                    Text(
+                        it,
+                        fontSize = 11.sp,
+                        color = colorScheme.error,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
             }
         }
     }
