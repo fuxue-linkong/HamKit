@@ -576,9 +576,50 @@ private fun MessageItemMiuix(message: AiChatMessageUi) {
             }
             if (message.tools.isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))
-                message.tools.forEach { tool ->
-                    ToolCardMiuix(tool)
+                // 工具调用默认折叠成一行（运行中/失败时展开），历史消息不含工具，天然不显示
+                val anyActive = message.tools.any { it.state != AiToolUiState.SUCCESS }
+                var toolsExpanded by remember(message.id) { mutableStateOf(anyActive) }
+                LaunchedEffect(anyActive) { toolsExpanded = anyActive }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                            RoundedCornerShape(10.dp),
+                        )
+                        .clickable { toolsExpanded = !toolsExpanded }
+                        .padding(horizontal = 10.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Rounded.Build,
+                        contentDescription = null,
+                        tint = colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        stringResource(
+                            if (toolsExpanded) R.string.ai_tools_expanded else R.string.ai_tools_collapsed,
+                            message.tools.size,
+                        ),
+                        fontSize = 11.sp,
+                        color = colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Icon(
+                        if (toolsExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                        contentDescription = null,
+                        tint = colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.size(14.dp),
+                    )
+                }
+                if (toolsExpanded) {
                     Spacer(Modifier.height(8.dp))
+                    message.tools.forEach { tool ->
+                        ToolCardMiuix(tool)
+                        Spacer(Modifier.height(8.dp))
+                    }
                 }
             }
             message.cards.forEach { card ->

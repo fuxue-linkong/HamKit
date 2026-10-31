@@ -166,4 +166,6 @@
     <string name="ai_history_delete_title">删除对话</string>
     <string name="ai_history_delete_desc">删除后不可恢复。</string>
     <string name="ai_history_open">打开对话历史</string>
+    <string name="ai_tools_collapsed">已折叠 %1$d 次工具调用</string>
+    <string name="ai_tools_expanded">%1$d 次工具调用</string>
 </resources>
