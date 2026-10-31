@@ -123,14 +123,27 @@ object SearchSatellitesTool : AiTool {
     override val spec = AiToolSpec(
         name = "search_satellites",
         title = "搜索卫星",
-        description = "按名称关键词、工作模式或是否在境筛选当前卫星列表，返回名称、NORAD、模式与 AMSAT 状态。" +
-            "在境卫星的 AOS 可能已过去，用 visible=true 与 los 判断；next_aos 仅在未来有值时返回。",
+        description = "按名称关键词、标签（tag）或是否在境检索当前卫星列表，返回名称、NORAD、模式与 AMSAT 状态。" +
+            SatelliteTag.DOC +
+            "。max 控制返回条数，默认 20、最大 100；被截断时返回 truncated=true 与 total。" +
+            "在境卫星的 AOS 可能已过去，用 visible 与 los 判断；next_aos 仅在未来有值时返回。",
         parameters = toolSchema(
             JSONObject()
-                .put("query", stringProperty("名称关键词，如 ISS、AO-91；可省略"))
-                .put("mode", stringProperty("工作模式，如 FM、SSB、SSTV；可省略"))
-                .put("only_above", JSONObject().put("type", "boolean").put("description", "只返回当前在境卫星"))
-                .put("limit", integerProperty("最多返回条数", 1, 20)),
+                .put("query", stringProperty("名称关键词或 NORAD 编号，如 ISS、25544；可省略"))
+                .put(
+                    "tags",
+                    JSONObject()
+                        .put("type", "array")
+                        .put("description", SatelliteTag.DOC)
+                        .put("items", JSONObject().put("type", "string")),
+                )
+                .put("max", integerProperty("返回上限，默认 20", 1, 100))
+                .put("mode", stringProperty("（兼容旧参数）工作模式，等价 tags 里的模式"))
+                .put(
+                    "only_above",
+                    JSONObject().put("type", "boolean")
+                        .put("description", "（兼容旧参数）只返回当前在境卫星"),
+                ),
         ),
         category = ToolCategory.SATELLITE,
     )
@@ -141,52 +154,52 @@ object SearchSatellitesTool : AiTool {
         if (all.isEmpty()) return errorOutcome("卫星列表为空，请先在首页刷新卫星数据")
 
         val query = args.optStringOrNullArg("query")?.trim()?.takeIf { it.isNotEmpty() }
-        val mode = args.optStringOrNullArg("mode")?.lowercase()
-        val queryNorad = query?.toIntOrNull()
-        val onlyAbove = args.has("only_above") && !args.isNull("only_above") && args.optBoolean("only_above")
-        val limit = (args.optIntOrNullArg("limit") ?: 10).coerceIn(1, 20)
+        val rawTags = when (val raw = args.opt("tags")) {
+            is JSONArray -> (0 until raw.length()).map { raw.optString(it) }
+            is String -> raw.split(',')
+            null, JSONObject.NULL -> emptyList()
+            else -> return errorOutcome("tags 必须是字符串数组。${SatelliteTag.DOC}")
+        }
+        val tags = when (
+            val result = parseSatelliteTags(
+                rawTags = rawTags,
+                mode = args.optStringOrNullArg("mode"),
+                onlyAbove = args.optBoolean("only_above", false),
+            )
+        ) {
+            is TagParseResult.Success -> result.tags
+            is TagParseResult.Failure -> return errorOutcome(result.message)
+        }
+        // 默认 20 颗；兼容旧参数 limit
+        val max = (args.optIntOrNullArg("max") ?: args.optIntOrNullArg("limit") ?: 20)
+            .coerceIn(1, 100)
         val now = Instant.now()
 
-        // 名称匹配按相关度分层（精确/前缀优先），不再让 visible 排序把
-        // “子串假阳性”卫星（如 OUTPOST MISSION2 命中 ISS）排到正确卫星前面。
-        val matched = all.filter { sat ->
-            val nameOk = query == null ||
-                (queryNorad != null && sat.catalogNumber == queryNorad) ||
-                SatelliteNameMatcher.nameTier(query, sat.name) != null
-            val modeOk = mode == null || sat.modes.any { it.lowercase() == mode }
-            val aboveOk = !onlyAbove || sat.isCurrentlyVisible
-            nameOk && modeOk && aboveOk
+        val sorted = filterSatellites(all, query, tags, now) { catalog ->
+            ctx.facade.radios(catalog)
         }
-
-        val sorted = if (query != null) {
-            matched.sortedWith(
-                compareBy<SatelliteInfo>(
-                    { SatelliteNameMatcher.nameTier(query, it.name) ?: Int.MAX_VALUE },
-                    { if (it.isCurrentlyVisible) 0 else 1 },
-                    { it.aosTime },
-                )
-            )
-        } else {
-            matched.sortedWith(
-                compareBy<SatelliteInfo>(
-                    { if (it.isCurrentlyVisible) 0 else 1 },
-                    { it.aosTime },
-                )
-            )
-        }
-        val filtered = sorted.take(limit)
+        val filtered = sorted.take(max)
+        val truncated = sorted.size > filtered.size
 
         val array = JSONArray()
         filtered.forEach { array.put(it.toModelJson(now)) }
         val json = JSONObject().apply {
-            put("count", filtered.size)
+            put("total", sorted.size)
+            put("returned", filtered.size)
+            put("truncated", truncated)
+            put("tags", JSONArray(tags.map { it.wire }))
             put("in_pass_count", filtered.count { it.isCurrentlyVisible })
             put("satellites", array)
+            if (tags.contains(SatelliteTag.REPEATER) && filtered.isEmpty()) {
+                put("note", "转发器库为空或没有匹配的活跃转发器，可先到卫星页刷新转发器数据")
+            }
         }
-        return ToolOutcome(
-            modelText = json.toString(),
-            summary = "找到 ${filtered.size} 颗卫星",
-        )
+        val summary = if (truncated) {
+            "找到 ${filtered.size} 颗（共 ${sorted.size}，已截断）"
+        } else {
+            "找到 ${filtered.size} 颗"
+        }
+        return ToolOutcome(modelText = json.toString(), summary = summary)
     }
 }
 

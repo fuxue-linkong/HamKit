@@ -89,6 +89,8 @@ import com.example.hamkit.ui.navigation3.LocalNavigator
 import com.example.hamkit.ui.appViewModel
 import com.example.hamkit.ui.navigation3.Route
 import com.example.hamkit.ui.viewmodel.AiAppFacadeImpl
+import com.example.hamkit.ui.viewmodel.AprsViewModel
+import com.example.hamkit.ui.viewmodel.Ft8ViewModel
 import com.example.hamkit.ui.viewmodel.AiConfirmRequest
 import com.example.hamkit.ui.viewmodel.AiAssistantViewModel
 import com.example.hamkit.ui.viewmodel.AiChatMessageUi
@@ -149,7 +151,11 @@ fun AiAssistantScreenMaterial(bottomInnerPadding: Dp = 0.dp) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val navigator = LocalNavigator.current
     val mainViewModel = LocalMainViewModel.current
-    val facade = remember(mainViewModel, navigator) { AiAppFacadeImpl(mainViewModel, navigator) }
+    val ft8ViewModel = appViewModel<Ft8ViewModel>()
+    val aprsViewModel = appViewModel<AprsViewModel>()
+    val facade = remember(mainViewModel, navigator, ft8ViewModel, aprsViewModel) {
+        AiAppFacadeImpl(mainViewModel, navigator, ft8ViewModel, aprsViewModel)
+    }
     val sstvViewModel = appViewModel<SstvViewModel>()
     DisposableEffect(facade, sstvViewModel) {
         viewModel.attachFacade(facade)
