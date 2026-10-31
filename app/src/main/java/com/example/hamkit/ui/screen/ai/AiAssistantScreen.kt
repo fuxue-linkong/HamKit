@@ -59,6 +59,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.example.hamkit.R
 import com.example.hamkit.data.ai.AiAttachment
+import com.example.hamkit.data.ai.AiAttachmentKind
 import com.example.hamkit.data.ai.AiAttachmentStatus
 import com.example.hamkit.data.ai.AiRole
 import com.example.hamkit.data.ai.AiSessionSummary
@@ -92,6 +93,7 @@ import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.LinearProgressIndicator
 import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
@@ -100,6 +102,37 @@ import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.border
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.ArrowForward
+import androidx.compose.material.icons.rounded.AudioFile
+import androidx.compose.material.icons.rounded.Build
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.Place
+import androidx.compose.material.icons.rounded.SatelliteAlt
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
+import java.util.Locale
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.example.hamkit.ui.theme.SafeColors
 
 /**
  * AI 助手主页（底部导航第 2 项）。
@@ -167,30 +200,20 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
             TopAppBar(
                 title = stringResource(R.string.ai_title),
                 actions = {
-                    Text(
-                        stringResource(R.string.ai_history),
-                        style = MiuixTheme.textStyles.body1,
-                        color = colorScheme.primary,
-                        modifier = Modifier
-                            .clickable { viewModel.refreshSessions(); showHistory = true }
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                    )
-                    Text(
-                        stringResource(R.string.ai_new_chat),
-                        style = MiuixTheme.textStyles.body1,
-                        color = colorScheme.primary,
-                        modifier = Modifier
-                            .clickable { viewModel.newSession() }
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                    )
-                    Text(
-                        stringResource(R.string.ai_settings),
-                        style = MiuixTheme.textStyles.body1,
-                        color = colorScheme.primary,
-                        modifier = Modifier
-                            .clickable { navigator.push(Route.AiSettings) }
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                    )
+                    IconButton(onClick = { viewModel.refreshSessions(); showHistory = true }) {
+                        Icon(
+                            Icons.Rounded.History,
+                            contentDescription = stringResource(R.string.ai_history_desc),
+                            tint = colorScheme.primary,
+                        )
+                    }
+                    IconButton(onClick = { navigator.push(Route.AiSettings) }) {
+                        Icon(
+                            Icons.Rounded.Settings,
+                            contentDescription = stringResource(R.string.ai_settings_desc),
+                            tint = colorScheme.primary,
+                        )
+                    }
                 },
             )
         },
@@ -215,8 +238,11 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
                 KeyGuideCardMiuix(onOpenSettings = { navigator.push(Route.AiSettings) })
             }
 
-            state.error?.let { message ->
-                ErrorCardMiuix(message = message, onDismiss = viewModel::consumeError)
+            // 最后一条消息已带错误时不再重复显示顶层错误卡
+            if (state.messages.lastOrNull()?.error == null) {
+                state.error?.let { message ->
+                    ErrorCardMiuix(message = message, onDismiss = viewModel::consumeError)
+                }
             }
 
             if (state.messages.isEmpty()) {
@@ -252,6 +278,7 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
             if (showHistory) {
                 AiHistoryDialogMiuix(
                     sessions = state.sessions,
+                    onNewChat = { viewModel.newSession(); showHistory = false },
                     onDismiss = { showHistory = false },
                     onLoad = { id -> viewModel.loadSession(id); showHistory = false },
                     onDelete = viewModel::deleteSession,
@@ -333,38 +360,59 @@ private fun EmptyStateMiuix(onPick: (String) -> Unit) {
         stringResource(R.string.ai_sample_3),
         stringResource(R.string.ai_sample_4),
     )
-    Card(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(16.dp),
+            .padding(horizontal = 24.dp, vertical = 28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Column(Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Rounded.AutoAwesome,
-                    contentDescription = null,
-                    tint = colorScheme.primary,
-                    modifier = Modifier.size(20.dp),
-                )
-                Spacer(Modifier.width(8.dp))
-                Text("HamKit AI", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-            }
-            Spacer(Modifier.height(8.dp))
-            Text(
-                stringResource(R.string.ai_empty_desc),
-                fontSize = 12.sp,
-                color = colorScheme.onSurfaceVariantSummary,
+        Box(
+            modifier = Modifier
+                .size(56.dp)
+                .background(colorScheme.primary.copy(alpha = 0.12f), CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Rounded.AutoAwesome,
+                contentDescription = null,
+                tint = colorScheme.primary,
+                modifier = Modifier.size(28.dp),
             )
-            Spacer(Modifier.height(12.dp))
-            samples.forEach { sample ->
+        }
+        Spacer(Modifier.height(12.dp))
+        Text("HamKit AI", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(6.dp))
+        Text(
+            stringResource(R.string.ai_empty_desc),
+            fontSize = 12.sp,
+            color = colorScheme.onSurfaceVariantSummary,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(20.dp))
+        samples.forEach { sample ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+                    .background(
+                        colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        RoundedCornerShape(12.dp),
+                    )
+                    .clickable { onPick(sample) }
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Text(
                     sample,
                     fontSize = 12.sp,
-                    color = colorScheme.primary,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onPick(sample) }
-                        .padding(vertical = 7.dp),
+                    color = colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+                Icon(
+                    Icons.Rounded.ArrowForward,
+                    contentDescription = null,
+                    tint = colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.size(14.dp),
                 )
             }
         }
@@ -377,19 +425,45 @@ private fun MessageItemMiuix(message: AiChatMessageUi) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             Box(
                 Modifier
-                    .widthIn(max = 300.dp)
-                    .background(colorScheme.primary, RoundedCornerShape(16.dp))
+                    .widthIn(max = 320.dp)
+                    .background(
+                        colorScheme.primary,
+                        RoundedCornerShape(18.dp, 18.dp, 6.dp, 18.dp),
+                    )
                     .padding(horizontal = 14.dp, vertical = 10.dp),
             ) {
                 Column {
-                    Text(message.text, fontSize = 14.sp, color = colorScheme.onPrimary)
+                    Text(
+                        message.text,
+                        fontSize = 14.sp,
+                        lineHeight = 21.sp,
+                        color = colorScheme.onPrimary,
+                    )
                     message.attachments.forEach { attachment ->
-                        Text(
-                            "📎 ${attachment.name}",
-                            fontSize = 10.sp,
-                            color = colorScheme.onPrimary.copy(alpha = 0.8f),
-                            modifier = Modifier.padding(top = 3.dp),
-                        )
+                        Row(
+                            modifier = Modifier
+                                .padding(top = 6.dp)
+                                .background(
+                                    colorScheme.onPrimary.copy(alpha = 0.15f),
+                                    RoundedCornerShape(8.dp),
+                                )
+                                .padding(horizontal = 8.dp, vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                Icons.Rounded.Description,
+                                contentDescription = null,
+                                tint = colorScheme.onPrimary.copy(alpha = 0.85f),
+                                modifier = Modifier.size(12.dp),
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                attachment.name,
+                                fontSize = 10.sp,
+                                color = colorScheme.onPrimary.copy(alpha = 0.9f),
+                                maxLines = 1,
+                            )
+                        }
                     }
                 }
             }
@@ -397,22 +471,33 @@ private fun MessageItemMiuix(message: AiChatMessageUi) {
     } else {
         Column(Modifier.fillMaxWidth()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Rounded.AutoAwesome,
-                    contentDescription = null,
-                    tint = colorScheme.primary,
-                    modifier = Modifier.size(16.dp),
-                )
-                Spacer(Modifier.width(6.dp))
+                Box(
+                    modifier = Modifier
+                        .size(26.dp)
+                        .background(colorScheme.primary.copy(alpha = 0.12f), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Rounded.AutoAwesome,
+                        contentDescription = null,
+                        tint = colorScheme.primary,
+                        modifier = Modifier.size(15.dp),
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
                 Text(
-                    if (message.isStreaming) "正在生成…" else "AI",
+                    if (message.isStreaming) stringResource(R.string.ai_generating) else "AI",
                     fontSize = 11.sp,
                     color = colorScheme.onSurfaceVariantSummary,
                 )
+                if (message.isStreaming) {
+                    Spacer(Modifier.width(6.dp))
+                    StreamingDotsMiuix()
+                }
                 message.elapsedMs?.let { elapsed ->
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "${elapsed / 1000.0} s",
+                        String.format(Locale.US, "%.1fs", elapsed / 1000.0),
                         fontSize = 10.sp,
                         color = colorScheme.onSurfaceVariantSummary,
                     )
@@ -420,7 +505,6 @@ private fun MessageItemMiuix(message: AiChatMessageUi) {
             }
             Spacer(Modifier.height(6.dp))
             if (!message.isStreaming && message.text.isNotBlank()) {
-                // 生成完成后用 Compose 原生 Markdown 渲染（流式阶段保持纯文本，避免频繁重排）
                 MarkdownText(
                     markdown = message.text,
                     colors = MarkdownPalette(
@@ -432,20 +516,36 @@ private fun MessageItemMiuix(message: AiChatMessageUi) {
                     ),
                 )
             } else {
-                Text(
-                    message.text.ifBlank { if (message.isStreaming) "…" else stringResource(R.string.ai_no_text) },
-                    fontSize = 14.sp,
-                    lineHeight = 22.sp,
-                    color = if (message.text.isBlank() && !message.isStreaming) {
-                        colorScheme.onSurfaceVariantSummary
-                    } else {
-                        colorScheme.onSurface
-                    },
-                )
+                Row {
+                    Text(
+                        message.text.ifBlank {
+                            if (message.isStreaming) "" else stringResource(R.string.ai_no_text)
+                        },
+                        fontSize = 14.sp,
+                        lineHeight = 22.sp,
+                        color = if (message.text.isBlank() && !message.isStreaming) {
+                            colorScheme.onSurfaceVariantSummary
+                        } else {
+                            colorScheme.onSurface
+                        },
+                    )
+                    if (message.isStreaming) StreamingCursorMiuix()
+                }
             }
             message.error?.let { error ->
-                Spacer(Modifier.height(4.dp))
-                Text(error, fontSize = 11.sp, color = colorScheme.error)
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    error,
+                    fontSize = 11.sp,
+                    color = colorScheme.error,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            colorScheme.error.copy(alpha = 0.10f),
+                            RoundedCornerShape(8.dp),
+                        )
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                )
             }
             if (message.tools.isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))
@@ -460,8 +560,8 @@ private fun MessageItemMiuix(message: AiChatMessageUi) {
                     is AiCard.Zone -> ZoneCardMiuix(card.data)
                     is AiCard.Sstv -> SstvCardMiuix(card.mode, card.imagePath)
                     is AiCard.Reminder -> InfoCardMiuix(
-                        title = "过境提醒已创建",
-                        detail = card.nextAos?.let { "${card.satellite} · 下次 AOS ${formatAiTime(it)}" }
+                        title = stringResource(R.string.ai_reminder_created),
+                        detail = card.nextAos?.let { "${card.satellite} · ${formatAiTime(it)}" }
                             ?: card.satellite,
                     )
                     is AiCard.Error -> Unit
@@ -470,6 +570,38 @@ private fun MessageItemMiuix(message: AiChatMessageUi) {
             }
         }
     }
+}
+
+@Composable
+private fun StreamingDotsMiuix() {
+    val transition = rememberInfiniteTransition(label = "aiDots")
+    val alpha by transition.animateFloat(
+        initialValue = 0.25f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(600), RepeatMode.Reverse),
+        label = "aiDotsAlpha",
+    )
+    Text(
+        "● ● ●",
+        fontSize = 8.sp,
+        color = colorScheme.primary.copy(alpha = alpha),
+    )
+}
+
+@Composable
+private fun StreamingCursorMiuix() {
+    val transition = rememberInfiniteTransition(label = "aiCursor")
+    val alpha by transition.animateFloat(
+        initialValue = 0.2f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(500), RepeatMode.Reverse),
+        label = "aiCursorAlpha",
+    )
+    Text(
+        "▍",
+        fontSize = 14.sp,
+        color = colorScheme.primary.copy(alpha = alpha),
+    )
 }
 
 @Composable
@@ -486,12 +618,21 @@ private fun ComposerMiuix(
 ) {
     val canSend = (input.isNotBlank() || attachments.any { it.status == AiAttachmentStatus.READY }) &&
         attachments.none { it.status == AiAttachmentStatus.PARSING }
+    var focused by remember { mutableStateOf(false) }
     Column(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 8.dp)
-            .background(colorScheme.surface, RoundedCornerShape(24.dp))
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .background(
+                colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                RoundedCornerShape(24.dp),
+            )
+            .border(
+                width = 1.dp,
+                color = if (focused) colorScheme.primary else colorScheme.onSurface.copy(alpha = 0.18f),
+                shape = RoundedCornerShape(24.dp),
+            )
+            .padding(horizontal = 10.dp, vertical = 8.dp),
     ) {
         if (attachments.isNotEmpty()) {
             Row(
@@ -502,50 +643,64 @@ private fun ComposerMiuix(
                     AttachmentChipMiuix(attachment, onRemoveAttachment)
                 }
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(6.dp))
         }
 
-        Box {
-            TextField(
-                value = input,
-                onValueChange = onInputChange,
-                modifier = Modifier.fillMaxWidth(),
-                maxLines = 6,
-            )
-            if (input.isEmpty()) {
-                Text(
-                    stringResource(R.string.ai_input_hint),
-                    fontSize = 14.sp,
-                    color = colorScheme.onSurfaceVariantSummary,
-                    modifier = Modifier.padding(start = 16.dp, top = 16.dp),
-                )
-            }
-        }
-
-        Row(
+        BasicTextField(
+            value = input,
+            onValueChange = onInputChange,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 4.dp),
+                .onFocusChanged { focused = it.isFocused },
+            textStyle = TextStyle(
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+                color = colorScheme.onSurface,
+            ),
+            cursorBrush = SolidColor(colorScheme.primary),
+            maxLines = 6,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+            keyboardActions = KeyboardActions(onSend = { if (canSend) onSend() }),
+            decorationBox = { innerTextField ->
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                ) {
+                    if (input.isEmpty()) {
+                        Text(
+                            stringResource(R.string.ai_input_hint),
+                            fontSize = 14.sp,
+                            color = colorScheme.onSurfaceVariantSummary,
+                        )
+                    }
+                    innerTextField()
+                }
+            },
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                "+",
-                fontSize = 24.sp,
-                color = colorScheme.primary,
-                modifier = Modifier
-                    .clickable(onClick = onPickFiles)
-                    .padding(horizontal = 8.dp, vertical = 2.dp),
-            )
+            IconButton(onClick = onPickFiles) {
+                Icon(
+                    Icons.Rounded.Add,
+                    contentDescription = stringResource(R.string.ai_attach_desc),
+                    tint = colorScheme.primary,
+                )
+            }
+            if (attachments.isEmpty()) {
+                Text(
+                    stringResource(R.string.ai_attach_hint),
+                    fontSize = 10.sp,
+                    color = colorScheme.onSurfaceVariantSummary,
+                )
+            }
             Spacer(Modifier.weight(1f))
-            Text(
-                stringResource(R.string.ai_attach_hint),
-                fontSize = 9.sp,
-                color = colorScheme.onSurfaceVariantSummary,
-            )
-            Spacer(Modifier.width(8.dp))
             Box(
                 modifier = Modifier
-                    .size(38.dp)
+                    .size(40.dp)
                     .background(
                         when {
                             streaming -> colorScheme.surfaceVariant
@@ -559,14 +714,17 @@ private fun ComposerMiuix(
                     },
                 contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    if (streaming) "■" else "↑",
-                    fontSize = 16.sp,
-                    color = if (streaming || !canSend) {
+                Icon(
+                    if (streaming) Icons.Rounded.Stop else Icons.AutoMirrored.Rounded.Send,
+                    contentDescription = stringResource(
+                        if (streaming) R.string.ai_stop_desc else R.string.ai_send_desc,
+                    ),
+                    tint = if (streaming || !canSend) {
                         colorScheme.onSurfaceVariantSummary
                     } else {
                         colorScheme.onPrimary
                     },
+                    modifier = Modifier.size(20.dp),
                 )
             }
         }
@@ -575,45 +733,68 @@ private fun ComposerMiuix(
 
 @Composable
 private fun AttachmentChipMiuix(attachment: AiAttachment, onRemove: (String) -> Unit) {
+    val icon = when (attachment.kind) {
+        AiAttachmentKind.AUDIO -> Icons.Rounded.AudioFile
+        AiAttachmentKind.IMAGE -> Icons.Rounded.Image
+        else -> Icons.Rounded.Description
+    }
     Row(
         modifier = Modifier
-            .background(colorScheme.surfaceVariant, RoundedCornerShape(50))
-            .padding(horizontal = 10.dp, vertical = 6.dp),
+            .background(
+                colorScheme.surfaceVariant.copy(alpha = 0.8f),
+                RoundedCornerShape(50),
+            )
+            .padding(start = 8.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = colorScheme.onSurfaceVariantSummary,
+            modifier = Modifier.size(13.dp),
+        )
+        Spacer(Modifier.width(5.dp))
         Text(
             attachment.name,
             fontSize = 11.sp,
             maxLines = 1,
-            modifier = Modifier.widthIn(max = 140.dp),
+            modifier = Modifier.widthIn(max = 120.dp),
         )
         when (attachment.status) {
             AiAttachmentStatus.PARSING -> {
                 Spacer(Modifier.width(4.dp))
-                Text(stringResource(R.string.ai_att_parsing), fontSize = 9.sp, color = colorScheme.onSurfaceVariantSummary)
+                Text(
+                    stringResource(R.string.ai_att_parsing),
+                    fontSize = 9.sp,
+                    color = colorScheme.onSurfaceVariantSummary,
+                )
             }
             AiAttachmentStatus.ERROR -> {
                 Spacer(Modifier.width(4.dp))
-                Text(stringResource(R.string.ai_tool_failed), fontSize = 9.sp, color = colorScheme.error)
+                Box(
+                    Modifier
+                        .size(6.dp)
+                        .background(colorScheme.error, CircleShape),
+                )
             }
             AiAttachmentStatus.READY -> Unit
         }
-        Spacer(Modifier.width(6.dp))
-        Text(
-            "×",
-            fontSize = 14.sp,
-            color = colorScheme.onSurfaceVariantSummary,
+        Spacer(Modifier.width(2.dp))
+        Box(
             modifier = Modifier
-                .clickable { onRemove(attachment.id) }
-                .padding(2.dp),
-        )
+                .size(22.dp)
+                .clickable { onRemove(attachment.id) },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Rounded.Close,
+                contentDescription = null,
+                tint = colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.size(12.dp),
+            )
+        }
     }
 }
-
-private val AI_TIME_FMT: DateTimeFormatter =
-    DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(ZoneId.systemDefault())
-
-private fun formatAiTime(instant: Instant): String = AI_TIME_FMT.format(instant)
 
 @Composable
 private fun ToolCardMiuix(tool: AiToolUi) {
@@ -623,19 +804,44 @@ private fun ToolCardMiuix(tool: AiToolUi) {
     )
     Card(modifier = Modifier.fillMaxWidth().animateContentSize()) {
         Column(Modifier.padding(12.dp)) {
+            val statusColor = when (tool.state) {
+                AiToolUiState.RUNNING -> colorScheme.primary
+                AiToolUiState.SUCCESS -> SafeColors.successIcon
+                AiToolUiState.ERROR -> colorScheme.error
+            }
+            val label = when (tool.state) {
+                AiToolUiState.RUNNING -> stringResource(R.string.ai_tool_running)
+                AiToolUiState.SUCCESS -> stringResource(R.string.ai_tool_done)
+                AiToolUiState.ERROR -> stringResource(R.string.ai_tool_failed)
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .background(colorScheme.primary.copy(alpha = 0.10f), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        toolIcon(tool.name),
+                        contentDescription = null,
+                        tint = colorScheme.primary,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
                 Text(
                     tool.title,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f),
                 )
-                val (label, color) = when (tool.state) {
-                    AiToolUiState.RUNNING -> stringResource(R.string.ai_tool_running) to colorScheme.primary
-                    AiToolUiState.SUCCESS -> stringResource(R.string.ai_tool_done) to colorScheme.primary
-                    AiToolUiState.ERROR -> stringResource(R.string.ai_tool_failed) to colorScheme.error
-                }
-                Text(label, fontSize = 10.sp, color = color)
+                Box(
+                    Modifier
+                        .size(6.dp)
+                        .background(statusColor, CircleShape),
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(label, fontSize = 10.sp, color = statusColor)
             }
             val progress = tool.progress
             if (tool.state == AiToolUiState.RUNNING && progress != null) {
@@ -882,6 +1088,7 @@ private fun AiConfirmDialogMiuix(
 @Composable
 private fun AiHistoryDialogMiuix(
     sessions: List<AiSessionSummary>,
+    onNewChat: () -> Unit,
     onDismiss: () -> Unit,
     onLoad: (String) -> Unit,
     onDelete: (String) -> Unit,
@@ -971,4 +1178,19 @@ private fun SstvCardMiuix(mode: String?, imagePath: String?) {
             }
         }
     }
+}
+
+private val AI_TIME_FMT: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(ZoneId.systemDefault())
+
+private fun formatAiTime(instant: Instant): String = AI_TIME_FMT.format(instant)
+
+private fun toolIcon(name: String): ImageVector = when {
+    name == "get_zone_info" -> Icons.Rounded.Place
+    name == "search_satellites" || name.startsWith("get_satellite") ||
+        name == "get_amsat_status" -> Icons.Rounded.SatelliteAlt
+    name == "start_sstv_receive" -> Icons.Rounded.Image
+    name == "open_screen" -> Icons.Rounded.ArrowForward
+    name == "add_pass_reminder" -> Icons.Rounded.Notifications
+    else -> Icons.Rounded.Build
 }
