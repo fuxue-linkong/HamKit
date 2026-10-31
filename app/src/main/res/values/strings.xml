@@ -516,4 +516,5 @@
     <string name="ai_attach_desc">Attach file</string>
     <string name="ai_open_gallery">Open gallery</string>
     <string name="ai_reminder_created">Pass reminder created</string>
+    <string name="ai_remove_attachment">Remove attachment</string>
 </resources>

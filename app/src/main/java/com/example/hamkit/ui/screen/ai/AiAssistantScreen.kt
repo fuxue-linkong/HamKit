@@ -135,6 +135,9 @@ import androidx.compose.ui.text.style.TextAlign
 import java.util.Locale
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.example.hamkit.ui.theme.SafeColors
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 
 /**
  * AI 助手主页（底部导航第 2 项）。
@@ -518,7 +521,7 @@ private fun MessageItemMiuix(message: AiChatMessageUi) {
                     ),
                 )
             } else {
-                Row {
+                Row(Modifier.semantics { liveRegion = LiveRegionMode.Polite }) {
                     Text(
                         message.text.ifBlank {
                             if (message.isStreaming) "" else stringResource(R.string.ai_no_text)
@@ -790,7 +793,7 @@ private fun AttachmentChipMiuix(attachment: AiAttachment, onRemove: (String) -> 
         ) {
             Icon(
                 Icons.Rounded.Close,
-                contentDescription = null,
+                contentDescription = stringResource(R.string.ai_remove_attachment),
                 tint = colorScheme.onSurfaceVariantSummary,
                 modifier = Modifier.size(12.dp),
             )
@@ -971,10 +974,14 @@ private fun InfoCardMiuix(title: String, detail: String) {
 }
 
 @Composable
-private fun MetricMiuix(label: String, value: String) {
+private fun MetricMiuix(label: String, value: String, compact: Boolean = false) {
     Column {
         Text(label, fontSize = 9.5.sp, color = colorScheme.onSurfaceVariantSummary)
-        Text(value, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        Text(
+            value,
+            fontSize = if (compact) 14.sp else 16.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
 
@@ -1016,27 +1023,36 @@ private fun SatelliteCardMiuix(data: SatelliteCardData) {
 
             data.live?.let { live ->
                 Spacer(Modifier.height(10.dp))
-                SatelliteRadar(
-                    azimuthDeg = live.azimuthDeg,
-                    elevationDeg = live.elevationDeg,
-                    primary = colorScheme.primary,
-                    outline = colorScheme.onSurface.copy(alpha = 0.25f),
-                    modifier = Modifier.align(Alignment.CenterHorizontally),
-                )
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                    MetricMiuix("方位 AZ", "%.1f°".format(live.azimuthDeg))
-                    MetricMiuix("仰角 EL", "%.1f°".format(live.elevationDeg))
-                    MetricMiuix("距离", "%.0f km".format(live.rangeKm))
-                }
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                    MetricMiuix("高度", "%.0f km".format(live.altitudeKm))
-                    MetricMiuix(
-                        "星下点",
-                        "%.1f°, %.1f°".format(live.subpointLatDeg, live.subpointLonDeg),
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SatelliteRadar(
+                        azimuthDeg = live.azimuthDeg,
+                        elevationDeg = live.elevationDeg,
+                        primary = colorScheme.primary,
+                        outline = colorScheme.onSurface.copy(alpha = 0.25f),
+                        diameter = 112.dp,
                     )
-                    MetricMiuix("相位", "%.0f°".format(live.phaseDeg))
+                    Spacer(Modifier.width(12.dp))
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            MetricMiuix("方位 AZ", "%.1f°".format(live.azimuthDeg), compact = true)
+                            MetricMiuix("仰角 EL", "%.1f°".format(live.elevationDeg), compact = true)
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            MetricMiuix("距离", "%.0f km".format(live.rangeKm), compact = true)
+                            MetricMiuix("高度", "%.0f km".format(live.altitudeKm), compact = true)
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            MetricMiuix(
+                                "星下点",
+                                "%.1f°,%.1f°".format(live.subpointLatDeg, live.subpointLonDeg),
+                                compact = true,
+                            )
+                            MetricMiuix("相位", "%.0f°".format(live.phaseDeg), compact = true)
+                        }
+                    }
                 }
                 Text(
                     if (live.isEclipsed) "蚀中（地影）" else "日照中",
