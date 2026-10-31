@@ -1202,15 +1202,20 @@ class MainViewModel : ViewModel() {
             // 会长时间占用 CPU；列表展示仍用全量 TLE（卫星太少问题），
             // 无转发器数据的卫星仅显示信息、不预测过境。
             val predictable = filterPredictableTles(tles)
+            // 预测基准时刻与缓存写入时刻保持一致，避免在境卫星回溯出的 AOS
+            // 与缓存时间出现毫秒级边界差异。
+            val predictedAt = Instant.now()
             val satellites = withContext(Dispatchers.Default) {
                 satellitePredictor.predictUpcomingPasses(
                     sourcedTles = predictable,
                     latitude = latitude,
-                    longitude = longitude
+                    longitude = longitude,
+                    now = predictedAt,
+                    // 转发器库用于聚合工作模式，避免 only-catalog 的 modes 缺失
+                    radiosByCatalogNumber = _radioMap.value,
                 )
             }
             // 更新预测缓存
-            val predictedAt = Instant.now()
             cachedPredictionSatellites = satellites
             cachedPredictionLat = latitude
             cachedPredictionLon = longitude
@@ -1274,8 +1279,9 @@ class MainViewModel : ViewModel() {
 
         val settings = _reminderSettings.value
         // 仅对未来过境创建提醒：AOS 必须在未来。
-        // 旧逻辑用 !isCurrentlyVisible 过滤，但预测器对在境卫星返回的是下次过境，
-        // 旧过滤会把下次过境一起丢弃。改以 AOS 时间为准。
+        // 预测器对在境卫星返回的是“本次过境”（AOS 已过去、LOS 尚未到来），
+        // 因此本次跳过；待本次结束后的下一次预测再创建下一次过境提醒。
+        // 注意：不要用 !isCurrentlyVisible 过滤，否则会把下一次过境一起丢弃。
         val nowMillis = java.lang.System.currentTimeMillis()
         val futureReminders = satellites.filter {
             it.catalogNumber in reminderFlags && it.aosTime.toEpochMilli() > nowMillis

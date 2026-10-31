@@ -66,18 +66,22 @@ class SatellitePredictor {
      * @param longitude 地面站经度（度）
      * @param altitude 地面站海拔（米）
      * @param hoursAhead 预测未来小时数
+     * @param now 预测基准时刻，默认当前时间；测试可注入固定时刻
+     * @param radiosByCatalogNumber 转发器库（NORAD → 转发器），用于聚合工作模式；
+     *   为空时仅使用硬编码目录模式
      */
     suspend fun predictUpcomingPasses(
         sourcedTles: List<SourcedTLE>,
         latitude: Double,
         longitude: Double,
         altitude: Double = 0.0,
-        hoursAhead: Int = 48
+        hoursAhead: Int = 48,
+        now: Instant = Instant.now(),
+        radiosByCatalogNumber: Map<Int, List<RadioInfo>> = emptyMap(),
     ): List<SatelliteInfo> = withContext(Dispatchers.Default) {
         if (sourcedTles.isEmpty()) return@withContext emptyList()
 
-        val utcNow = Instant.now()
-        val nowMs = utcNow.toEpochMilli()
+        val nowMs = now.toEpochMilli()
         val searchEndMs = nowMs + hoursAhead * 60L * 60L * 1000L
 
         // 全量并发：每颗卫星的 SGP4/SDP4 计算独立，一次性派发让 Default 线程池自行调度。
@@ -86,7 +90,15 @@ class SatellitePredictor {
             sourcedTles
                 .map { sourcedTle ->
                     async(Dispatchers.Default) {
-                        predictSinglePass(sourcedTle, latitude, longitude, altitude, nowMs, searchEndMs)
+                        predictSinglePass(
+                            sourcedTle = sourcedTle,
+                            latitude = latitude,
+                            longitude = longitude,
+                            altitude = altitude,
+                            nowMs = nowMs,
+                            searchEndMs = searchEndMs,
+                            radiosByCatalogNumber = radiosByCatalogNumber,
+                        )
                     }
                 }
                 .awaitAll()
@@ -137,6 +149,14 @@ class SatellitePredictor {
             val periodMin = 1440.0 / meanMotion
             return ((periodMin * 1.5) * 60L * 1000L).toLong()
         }
+
+        /**
+         * 在境卫星回溯真实 AOS 的上限（6 小时）。
+         *
+         * 非 GEO 的常见在境过境远短于 6 小时；限制上限避免高轨异常 TLE 触发
+         * 过长的回溯扫描。超过上限仍找不到 AOS 时回退为预测基准时刻。
+         */
+        private const val MAX_IN_PASS_LOOKBACK_MS = 6L * 60L * 60L * 1000L
     }
 
     private fun predictSinglePass(
@@ -145,11 +165,17 @@ class SatellitePredictor {
         longitude: Double,
         altitude: Double,
         nowMs: Long,
-        searchEndMs: Long
+        searchEndMs: Long,
+        radiosByCatalogNumber: Map<Int, List<RadioInfo>>,
     ): SatelliteInfo? {
         return try {
             val tle = sourcedTle.tle
-            val modes = SatelliteCatalog.MODES_BY_CATALOG_NUMBER[tle.catnum].orEmpty()
+            // 工作模式 = 活跃转发器模式 ∪ 硬编码目录模式。仅靠硬编码目录会让
+            // 目录外卫星（如只有 SatNOGS 转发器的 OUTPOST MISSION2）模式为空。
+            val modes = SatelliteCatalog.effectiveModes(
+                catalogNumber = tle.catnum,
+                radios = radiosByCatalogNumber[tle.catnum].orEmpty(),
+            )
 
             val meanMotion = tle.meanmo
 
@@ -191,15 +217,21 @@ class SatellitePredictor {
                 )
             }
 
-            val pass = findNextPass(propagator, nowMs2, searchEndMs) ?: return null
-            val aosMs = pass.aosMs
-            val losMs = pass.losMs
-            if (aosMs >= searchEndMs) return null
-
             // 动态过境时长校验：基于卫星轨道周期，而非固定 3 小时一刀切。
             // SGP4 传播器在 TLE 过期 / 近再入时可能产生假性恒定可见的仰角，
             // 导致 AOS-LOS 跨整个搜索窗口。以 1.5 × 轨道周期为上限滤除。
             val maxDurationMs = maxPassDurationMs(meanMotion)
+            // 在境时向前回溯真实 AOS，避免所有在境卫星共享同一个预测时刻。
+            val pass = findNextPass(
+                propagator = propagator,
+                fromMs = nowMs2,
+                toMs = searchEndMs,
+                lookbackMs = maxDurationMs.coerceAtMost(MAX_IN_PASS_LOOKBACK_MS),
+            ) ?: return null
+            val aosMs = pass.aosMs
+            val losMs = pass.losMs
+            if (aosMs >= searchEndMs) return null
+
             if (losMs - aosMs > maxDurationMs) return null
 
             // 白天过境标记：取 AOS 时刻地面站太阳仰角 > -0.833°。
@@ -245,51 +277,46 @@ class SatellitePredictor {
      * 按固定步长采样仰角，寻找 [fromMs, toMs] 内的下次过境（仰角从 ≤0 穿越到 >0）。
      * 命中后用二分法精化 AOS/LOS 到秒级，并取过境窗口内的最大仰角。
      *
-     * 当前已在境内时，取本次过境的剩余 LOS 作为结果（AOS 回退到 fromMs），
-     * 确保 UI 列表与提醒项不会丢失在境卫星。
+     * 当前已在境内时，向前回溯本次过境的真实 AOS，再向后找 LOS：
+     * 早期实现直接把 AOS 设为 [fromMs]，导致同一批在境卫星的 AOS 全部等于
+     * 预测基准时刻（表现为“所有卫星 next_aos 相同且已过期”）。
+     *
+     * @param lookbackMs 在境时向前回溯 AOS 的最大时长；回溯失败时回退到 [fromMs]
      */
     private fun findNextPass(
         propagator: SatellitePropagator,
         fromMs: Long,
-        toMs: Long
+        toMs: Long,
+        lookbackMs: Long,
     ): PassResult? {
         val stepMs = SAMPLE_STEP_MINUTES * 60L * 1000L
-        var prevEl = elevationAt(propagator, fromMs)
+        val prevEl = elevationAt(propagator, fromMs)
 
-        // 当前已在境内：记录本次过境，继续扫描 LOS
+        // 当前已在境内：回溯真实 AOS，记录本次剩余 LOS。
         if (prevEl > 0) {
-            var losMs = -1L
-            var t = fromMs + stepMs
-            var maxEl = prevEl
-            var maxElMs = fromMs
-            while (t <= toMs) {
-                val el = elevationAt(propagator, t)
-                if (el > maxEl) {
-                    maxEl = el
-                    maxElMs = t
-                }
-                if (el <= 0) {
-                    losMs = refineZeroCrossing(propagator, t - stepMs, t, crossingUp = false)
-                    break
-                }
-                t += stepMs
-            }
-            if (losMs < 0) return null // 整个窗口内都在境内（异常情况），跳过
-            val maxElInfo = maxElevationAzimuthAt(propagator, maxElMs, fromMs, losMs)
+            val realAosMs = findAosBefore(propagator, fromMs, lookbackMs)
+            val effectiveAosMs = realAosMs ?: fromMs
+            val losResult = findLosAfter(propagator, fromMs, toMs, stepMs)
+                ?: return null // 整个窗口内都在境内（异常情况），跳过
+            val losMs = losResult.first
+            if (losMs - effectiveAosMs > lookbackMs) return null
+            // 当前在境时 TCA 可能已经过去，必须在完整 [AOS, LOS] 窗口内重新找峰值。
+            val maxElInfo = scanMaxElevation(propagator, effectiveAosMs, losMs)
             return PassResult(
-                aosMs = fromMs,
+                aosMs = effectiveAosMs,
                 losMs = losMs,
                 maxElevation = maxElInfo.first,
-                aosAzimuth = azimuthAt(propagator, fromMs),
-                losAzimuth = azimuthAt(propagator, losMs)
+                aosAzimuth = azimuthAt(propagator, effectiveAosMs),
+                losAzimuth = azimuthAt(propagator, losMs),
             )
         }
 
         // 正常搜索：仰角从 ≤0 穿越到 >0 = AOS
         var t = fromMs + stepMs
+        var previousEl = prevEl
         while (t <= toMs) {
             val el = elevationAt(propagator, t)
-            if (prevEl <= 0 && el > 0) {
+            if (previousEl <= 0 && el > 0) {
                 // 命中 AOS：精化 AOS，然后向前找 LOS
                 val aosMs = refineZeroCrossing(propagator, t - stepMs, t, crossingUp = true)
                 val losResult = findLosAfter(propagator, aosMs, toMs, stepMs)
@@ -308,10 +335,66 @@ class SatellitePredictor {
                     losAzimuth = azimuthAt(propagator, losMs)
                 )
             }
-            prevEl = el
+            previousEl = el
             t += stepMs
         }
         return null
+    }
+
+    /**
+     * 从 [fromMs]（该时刻仰角 > 0）向前回溯，找到本次过境的真实 AOS。
+     *
+     * 以 [SAMPLE_STEP_MINUTES] 步长回溯，找到仰角 ≤0 的采样点后用二分法精化。
+     * 超过 [maxLookbackMs] 仍未找到（长时间在境或异常 TLE）时返回 null，
+     * 由调用方回退为 [fromMs]。
+     */
+    private fun findAosBefore(
+        propagator: SatellitePropagator,
+        fromMs: Long,
+        maxLookbackMs: Long,
+    ): Long? {
+        val stepMs = SAMPLE_STEP_MINUTES * 60L * 1000L
+        var hiMs = fromMs
+        var t = fromMs - stepMs
+        var elapsed = stepMs
+        while (elapsed <= maxLookbackMs) {
+            val el = elevationAt(propagator, t)
+            if (el <= 0) {
+                // t 处 ≤0、hiMs 处 >0：二分精化上升过零点
+                return refineZeroCrossing(propagator, t, hiMs, crossingUp = true)
+            }
+            hiMs = t
+            t -= stepMs
+            elapsed += stepMs
+        }
+        return null
+    }
+
+    /**
+     * 在完整过境窗口 [aosMs, losMs] 内以 1 分钟步长扫描最大仰角及其方位角。
+     *
+     * 与 [maxElevationAzimuthAt] 不同，这里不假设峰值在某个采样点附近，
+     * 适用于“当前在境、TCA 可能已过去”的场景。
+     */
+    private fun scanMaxElevation(
+        propagator: SatellitePropagator,
+        aosMs: Long,
+        losMs: Long,
+    ): Pair<Double, Int> {
+        val stepMs = 60L * 1000L
+        var bestEl = Double.NEGATIVE_INFINITY
+        var bestMs = aosMs
+        var t = aosMs
+        while (t <= losMs) {
+            val el = elevationAt(propagator, t)
+            if (el > bestEl) {
+                bestEl = el
+                bestMs = t
+            }
+            t += stepMs
+        }
+        val pos = propagator.getPosition(bestMs)
+        return bestEl to (pos?.let { Math.toDegrees(it.azimuthRad).toInt() } ?: 0)
     }
 
     /**

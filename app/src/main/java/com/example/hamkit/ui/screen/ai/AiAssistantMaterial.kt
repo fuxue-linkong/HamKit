@@ -1126,14 +1126,17 @@ private fun SatelliteCardMaterial(data: SatelliteCardData) {
             if (data.passes.isNotEmpty()) {
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    "未来过境",
+                    "过境",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 data.passes.take(3).forEach { pass ->
                     Row(Modifier.padding(top = 4.dp)) {
                         Text(
-                            "${formatAiTimeMaterial(pass.aos)} – ${formatAiTimeMaterial(pass.los)}",
+                            buildString {
+                                if (pass.isInPass) append("正在过境 · ")
+                                append("${formatAiTimeMaterial(pass.aos)} – ${formatAiTimeMaterial(pass.los)}")
+                            },
                             style = MaterialTheme.typography.labelSmall,
                             modifier = Modifier.weight(1f),
                         )

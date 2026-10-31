@@ -1140,11 +1140,14 @@ private fun SatelliteCardMiuix(data: SatelliteCardData) {
 
             if (data.passes.isNotEmpty()) {
                 Spacer(Modifier.height(10.dp))
-                Text("未来过境", fontSize = 11.sp, color = colorScheme.onSurfaceVariantSummary)
+                Text("过境", fontSize = 11.sp, color = colorScheme.onSurfaceVariantSummary)
                 data.passes.take(3).forEach { pass ->
                     Row(Modifier.padding(top = 4.dp)) {
                         Text(
-                            "${formatAiTime(pass.aos)} – ${formatAiTime(pass.los)}",
+                            buildString {
+                                if (pass.isInPass) append("正在过境 · ")
+                                append("${formatAiTime(pass.aos)} – ${formatAiTime(pass.los)}")
+                            },
                             fontSize = 11.sp,
                             modifier = Modifier.weight(1f),
                         )

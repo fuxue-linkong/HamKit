@@ -7,6 +7,7 @@ import com.example.hamkit.data.ai.tool.AiSatelliteRef
 import com.example.hamkit.data.satellite.RadioInfo
 import com.example.hamkit.data.satellite.SatelliteCatalog
 import com.example.hamkit.data.satellite.SatelliteInfo
+import com.example.hamkit.data.satellite.SatelliteNameMatcher
 import com.example.hamkit.data.satellite.SatelliteStatusQuery
 import com.example.hamkit.data.satellite.SourcedTLE
 import com.example.hamkit.data.weather.WeatherResult
@@ -69,29 +70,54 @@ class AiAppFacadeImpl(
 
     override fun weather(): WeatherResult? = mainViewModel.weather.value
 
-    override fun resolveSatellite(query: String): AiSatelliteRef? {
+    override fun resolveSatellite(query: String): AiSatelliteRef? =
+        satelliteCandidates(query).singleOrNull()
+
+    /**
+     * 名称/编号 → 候选列表。
+     *
+     * 名称来源合并“预测结果名称”和“全量 TLE 名称”：前者与卫星列表展示一致，
+     * 后者覆盖当前没有过境、因此不在预测结果里的卫星。
+     *
+     * 名称匹配走 [SatelliteNameMatcher] 的分层规则（精确 → 前缀 → 单词 → 子串），
+     * 同一层多颗卫星时返回全部候选，由工具层提示改用 NORAD，避免 `ISS`
+     * 因 `MISSION` 含 `iss` 而静默命中 `OUTPOST MISSION2`。
+     */
+    override fun satelliteCandidates(query: String): List<AiSatelliteRef> {
         val trimmed = query.trim()
-        if (trimmed.isEmpty()) return null
+        if (trimmed.isEmpty()) return emptyList()
+
+        val namesByCatalog = LinkedHashMap<Int, String>()
+        satellites().forEach { namesByCatalog[it.catalogNumber] = it.name }
+        mainViewModel.satelliteState.value.cachedTles.forEach { sourced ->
+            val catnum = sourced.tle.catnum
+            if (!namesByCatalog.containsKey(catnum)) {
+                val name = sourced.tle.name.trim()
+                if (name.isNotEmpty()) namesByCatalog[catnum] = name
+            }
+        }
+        if (namesByCatalog.isEmpty()) return emptyList()
 
         trimmed.toIntOrNull()?.let { norad ->
-            val passName = satellites().firstOrNull { it.catalogNumber == norad }?.name
-            val tleName = mainViewModel.satelliteState.value.cachedTles
-                .firstOrNull { it.tle.catnum == norad }?.tle?.name?.trim()
-            val name = passName ?: tleName ?: mainViewModel.satelliteNameOf(norad)
-            return name.takeIf { it.isNotBlank() }?.let { AiSatelliteRef(norad, it) }
+            // 数字查询必须是已知 NORAD，避免对不存在的编号返回“名称=编号”的假引用
+            val name = namesByCatalog[norad] ?: return emptyList()
+            return listOf(AiSatelliteRef(norad, name))
         }
 
-        val lower = trimmed.lowercase()
-        satellites().firstOrNull { it.name.lowercase().contains(lower) }?.let {
-            return AiSatelliteRef(it.catalogNumber, it.name)
+        val candidates = namesByCatalog.map { (catnum, name) ->
+            SatelliteNameMatcher.Candidate(catnum, name)
         }
-        mainViewModel.satelliteState.value.cachedTles
-            .firstOrNull { it.tle.name.lowercase().contains(lower) }
-            ?.let {
-                return AiSatelliteRef(it.tle.catnum, it.tle.name.trim())
-            }
-        return null
+        return when (val resolution = SatelliteNameMatcher.resolve(trimmed, candidates)) {
+            is SatelliteNameMatcher.Resolution.Unique ->
+                listOf(resolution.candidate.toRef())
+            is SatelliteNameMatcher.Resolution.Ambiguous ->
+                resolution.candidates.map { it.toRef() }
+            SatelliteNameMatcher.Resolution.NotFound -> emptyList()
+        }
     }
+
+    private fun SatelliteNameMatcher.Candidate.toRef(): AiSatelliteRef =
+        AiSatelliteRef(catalogNumber = catalogNumber, name = name)
 
     override fun navigate(target: AiNavTarget) {
         navigator.push(target.toRoute())

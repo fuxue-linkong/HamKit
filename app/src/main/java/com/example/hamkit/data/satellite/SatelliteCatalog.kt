@@ -42,6 +42,20 @@ object SatelliteCatalog {
     val catalogNumbers: Set<Int> get() = MODES_BY_CATALOG_NUMBER.keys
 
     /**
+     * 有效工作模式：活跃转发器的模式 ∪ 硬编码目录模式，按首次出现顺序去重。
+     *
+     * 单一事实来源：[com.example.hamkit.data.satellite.SatelliteListItem] 与过境预测
+     * 都调用这里，避免“列表页有模式、AI 工具/提醒项没模式”的两套聚合逻辑。
+     */
+    fun effectiveModes(catalogNumber: Int, radios: List<RadioInfo>): List<String> =
+        (
+            radios.filter { it.isActive }
+                .map { it.mode }
+                .filter { it.isNotBlank() } +
+                MODES_BY_CATALOG_NUMBER[catalogNumber].orEmpty()
+            ).distinct()
+
+    /**
      * TLE 名称到 AMSAT 状态 API 名称的映射。
      * AMSAT API 使用带模式的名称（如 "AO-91_[FM]"），而 TLE 名称可能不同。
      */

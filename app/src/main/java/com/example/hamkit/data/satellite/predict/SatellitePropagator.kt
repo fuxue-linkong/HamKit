@@ -10,7 +10,8 @@ import java.time.Instant
  * - 方位角/仰角/星下点经纬度均为**弧度**
  * - 斜距单位为 km，径向速度单位为 km/s，高度单位为 km
  *
- * 实例创建后只读、线程安全，可并发调用 [getPosition] / [getTrack]。
+ * 实例内部持有 SGP4 传播状态，需单线程使用；预测器为每颗卫星创建独立实例，
+ * 不跨卫星/线程复用同一实例。
  *
  * @param tle 卫星 TLE 元素集
  * @param latitudeDeg 地面站纬度（度，北正南负）
