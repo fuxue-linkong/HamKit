@@ -33,6 +33,9 @@ class AiToolRegistryTest {
             "get_satellite_transmitters",
             "search_satellites",
             "get_amsat_status",
+            "get_ft8_activity",
+            "get_aprs_stations",
+            "search_qso_log",
             "get_utc_time",
             "get_weather",
             "cw_encode",
@@ -58,7 +61,7 @@ class AiToolRegistryTest {
         val specs = registry.specs(setOf("get_weather", "get_utc_time"))
         assertTrue(specs.none { it.name == "get_weather" })
         assertTrue(specs.none { it.name == "get_utc_time" })
-        assertEquals(10, specs.size)
+        assertEquals(13, specs.size)
     }
 
     @Test
