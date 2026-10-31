@@ -249,6 +249,7 @@ iOS 端已经不再使用硬编码 TLE，改为运行时拉取：
 | HF Fax | `HfFaxDecoder`（WEFAX 解调/解码） | 接收、解码、保存相册 | ✅ 仅前台接收 |
 | QSO 日志 | `QsoRecord`、`QsoExporter`（ADIF 3.1.4 / ADX XML） | 列表、新增/编辑、删除、分享导出 | ✅ 持久化用 JSON 文件（Android 用 Room） |
 | 天气 | `WeatherApi`（高德 Web 直连，Key 写死在 `AmapKey.swift`） | 首页时间卡天气 + 城市 | ✅ 与 Android 同源；Key 随 App 分发 |
+| AI 助手 | `AiChatEngine` / 三协议适配 / SSE / 工具层 / 会话编解码（全部在 `commonMain`） | 对话页、历史抽屉、AI 设置 | ✅ P0+P1 核心：文本对话、工具调用（9 个）、副作用确认、历史与导出；缺图片/文件附件、Markdown 表格、思考过程展示 |
 
 ### iOS 无等价能力的近似方案
 
@@ -273,4 +274,8 @@ iOS 端已经不再使用硬编码 TLE，改为运行时拉取：
 - SSTV：滚动预览（`SstvRollingImage`）与「播放捕获」未移植；仅前台接收
 - APRS：无 HTTP 上传器、无消息重试/ack 跟踪、地图仅 MapKit 标注
 - 天气：Key 写死在 `iosApp/HamKit/AmapKey.swift`，公开仓库会暴露 Key（用户明确要求）
+- AI 助手：图片/文件附件、模型列表自动获取、测试连接、工具卡折叠动效、Markdown 表格未移植；
+  内核侧接口（`AiImage`、`AiProtocolCodec.probe`）已留好，属 UI 与探测入口的后续工作
+- 隐私：首启同意页在 iOS 上「不同意」只停留本页（系统不允许主动退出），与 Android 的退出行为不同
+
 - Android 的 WorkManager 后台提醒刷新在 iOS 上退化为「启动/回前台时重建」

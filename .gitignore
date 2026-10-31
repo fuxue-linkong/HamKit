@@ -21,6 +21,8 @@ signing-report/
 *.log
 *.txt
 *.png
+# 文档里要引用的配图（论坛帖 / 说明文档），单独放行
+!docs/images/**
 ui.xml
 /.codex
 /.kotlin

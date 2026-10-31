@@ -2,7 +2,7 @@ import Foundation
 import UserNotifications
 import Shared
 
-/// 过境提醒：AOS 前 5 分钟发一条本地通知。
+/// 过境提醒：AOS 前 N 分钟发一条本地通知。
 ///
 /// 用本地通知（`UNUserNotificationCenter`）而不是远程推送：
 /// 过境时间完全可以在本地算出来，不需要服务器，也不需要推送证书。
@@ -11,19 +11,38 @@ final class NotificationManager {
     static let shared = NotificationManager()
 
     private let center = UNUserNotificationCenter.current()
-    private var didRequestAuthorization = false
 
-    /// 只在用户第一次点「提醒」时申请权限，避免一启动就弹窗。
-    func requestAuthorizationIfNeeded() {
-        guard !didRequestAuthorization else { return }
-        didRequestAuthorization = true
-        center.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+    /// 通知 ID：`pass-<NORAD>-<aosMs>`。
+    /// 之前只有 `pass-<aosMs>`，两颗卫星同时刻过境时后一条会覆盖前一条。
+    static func identifier(norad: Int32, aosMs: Int64) -> String {
+        "pass-\(norad)-\(aosMs)"
+    }
+
+    /// 只在用户第一次用到提醒时申请权限；结果通过回调回传，
+    /// 排程方据此提示「已设提醒」还是「通知权限被拒绝」。
+    func requestAuthorizationIfNeeded(completion: ((Bool) -> Void)? = nil) {
+        center.getNotificationSettings { [weak self] settings in
+            guard let self else { return }
+            switch settings.authorizationStatus {
+            case .authorized, .provisional, .ephemeral:
+                completion?(true)
+            case .denied:
+                completion?(false)
+            case .notDetermined:
+                self.center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+                    completion?(granted)
+                }
+            @unknown default:
+                completion?(false)
+            }
+        }
     }
 
     /// 为一次过境安排提醒；AOS 已过（或不足提前量）时忽略。
     @discardableResult
     func schedulePassReminder(
         satelliteName: String,
+        norad: Int32,
         aosMs: Int64,
         leadSeconds: TimeInterval = 300
     ) -> Bool {
@@ -41,7 +60,7 @@ final class NotificationManager {
             repeats: false
         )
         let request = UNNotificationRequest(
-            identifier: "pass-\(aosMs)",
+            identifier: Self.identifier(norad: norad, aosMs: aosMs),
             content: content,
             trigger: trigger
         )
@@ -50,11 +69,21 @@ final class NotificationManager {
     }
 
     /// 清掉所有过境提醒（关闭提醒、改提前量、重新排期前都会先调它）。
-    func cancelPassReminders() {
+    /// `completion` 在删除真正落盘后回调——重建流程必须等它再排新通知，
+    /// 否则异步删除会把刚排上的新提醒一并删掉。
+    func cancelPassReminders(completion: (() -> Void)? = nil) {
         center.getPendingNotificationRequests { [weak self] requests in
             let identifiers = requests.map(\.identifier).filter { $0.hasPrefix("pass-") }
-            guard !identifiers.isEmpty else { return }
+            if identifiers.isEmpty {
+                completion?()
+                return
+            }
             self?.center.removePendingNotificationRequests(withIdentifiers: identifiers)
+            // removePendingNotificationRequests 没有完成回调；给系统一点处理时间，
+            // 重建流程等 completion 再排新通知，避免删除和排程交叠。
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                completion?()
+            }
         }
     }
 }

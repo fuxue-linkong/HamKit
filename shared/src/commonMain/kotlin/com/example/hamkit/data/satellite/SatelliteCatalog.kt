@@ -44,14 +44,17 @@ object SatelliteCatalog {
     /**
      * 有效工作模式：活跃转发器的模式 ∪ 硬编码目录模式，按首次出现顺序去重。
      *
-     * 单一事实来源：[com.example.hamkit.data.satellite.SatelliteListItem] 与过境预测
-     * 都调用这里，避免“列表页有模式、AI 工具/提醒项没模式”的两套聚合逻辑。
+     * 单一事实来源：卫星列表项、过境预测、AI 工具都调用这里，避免“列表页有模式、
+     * 其它地方没模式”的两套聚合逻辑。
+     *
+     * **参数为什么是模式字符串而不是转发器对象**：内核（commonMain）不能依赖各平台的
+     * 转发器模型（Android 是 `RadioInfo`、iOS 是 `Transmitter`），所以由调用方先把
+     * 「活跃转发器的模式」投影成字符串再传进来。语义与 Android 侧
+     * `radios.filter { it.isActive }.map { it.mode }` 完全一致。
      */
-    fun effectiveModes(catalogNumber: Int, radios: List<RadioInfo>): List<String> =
+    fun effectiveModes(catalogNumber: Int, activeRadioModes: List<String>): List<String> =
         (
-            radios.filter { it.isActive }
-                .map { it.mode }
-                .filter { it.isNotBlank() } +
+            activeRadioModes.filter { it.isNotBlank() } +
                 MODES_BY_CATALOG_NUMBER[catalogNumber].orEmpty()
             ).distinct()
 

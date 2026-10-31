@@ -13,6 +13,7 @@
  *   - `uplink_low` / `downlink_low` 至少一个 > 0，否则丢弃；
  *   - `mode`：uplink_mode → downlink_mode → mode；
  *   - `name`：name → description → `<mode> <频率 MHz>`；
+ *   - `description`：保留（Android `RadioInfo.displayName` 优先用它作标题）；
  *   - `status`：缺省 `unknown`；字面量 "null" 视为缺失；
  *   - `inverted`：缺省 false（上游有的版本叫 `invert`，两个都认）。
  *
@@ -121,6 +122,9 @@ function trimItem(item) {
     mode: mode || undefined,
     inverted: inverted ? true : undefined,
     status,
+    // Android 端 displayName 优先用 description 作标题（Look4Sat 同款规则），
+    // 不保留会让升级后转发器名称从 description 退化成 name。
+    description: description ?? undefined,
   };
   return out;
 }

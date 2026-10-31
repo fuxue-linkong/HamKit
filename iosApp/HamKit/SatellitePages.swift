@@ -62,28 +62,12 @@ struct ReminderListView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(model.passes, id: \.aosMs) { pass in
-                        HStack {
-                            PassRow(pass: pass, satelliteName: model.selectedSatelliteName, onRemind: {})
-                            Spacer()
-                            Button {
-                                let settings = ReminderSettingsStore.shared
-                                let ok = NotificationManager.shared.schedulePassReminder(
-                                    satelliteName: model.selectedSatelliteName,
-                                    aosMs: pass.aosMs,
-                                    leadSeconds: settings.leadSeconds
-                                )
-                                if ok {
-                                    scheduledIds.insert(pass.aosMs)
-                                    NotificationManager.shared.requestAuthorizationIfNeeded()
-                                    message = "已设提醒（AOS 前 \(settings.leadMinutes) 分钟）"
-                                } else {
-                                    message = "这次过境来不及提醒"
-                                }
-                            } label: {
-                                Image(systemName: scheduledIds.contains(pass.aosMs) ? "bell.fill" : "bell")
-                            }
-                            .buttonStyle(.borderless)
-                        }
+                        PassRow(
+                            pass: pass,
+                            satelliteName: model.selectedSatelliteName,
+                            onRemind: { scheduleReminder(for: pass) },
+                            isReminded: scheduledIds.contains(pass.aosMs)
+                        )
                     }
                 }
             } header: {
@@ -105,6 +89,34 @@ struct ReminderListView: View {
             }
         }
     }
+
+    /// 先确认通知权限（首次会弹窗，且要知道用户是否拒绝），再排程并回传结果。
+    /// 之前是先排程再请求授权、且不看授权结果：权限被拒时界面仍显示「已设提醒」，
+    /// 实际上一条通知都收不到。
+    private func scheduleReminder(for pass: PassSnapshot) {
+        guard let norad = model.selectedNorad else { return }
+        let settings = ReminderSettingsStore.shared
+        NotificationManager.shared.requestAuthorizationIfNeeded { granted in
+            DispatchQueue.main.async {
+                guard granted else {
+                    message = "通知权限被拒绝，请到「设置 → HamKit → 通知」开启"
+                    return
+                }
+                let ok = NotificationManager.shared.schedulePassReminder(
+                    satelliteName: model.selectedSatelliteName,
+                    norad: norad,
+                    aosMs: pass.aosMs,
+                    leadSeconds: settings.leadSeconds
+                )
+                if ok {
+                    scheduledIds.insert(pass.aosMs)
+                    message = "已设提醒（AOS 前 \(settings.leadMinutes) 分钟）"
+                } else {
+                    message = "这次过境来不及提醒"
+                }
+            }
+        }
+    }
 }
 
 // MARK: - 过境行（首页 / 详情 / 提醒列表共用）
@@ -115,6 +127,8 @@ struct PassRow: View {
     let pass: PassSnapshot
     let satelliteName: String
     let onRemind: () -> Void
+    /// 是否已为这次过境设过提醒（铃铛填充态）；首页等未接提醒的调用点保持 false。
+    var isReminded: Bool = false
 
     private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -140,7 +154,7 @@ struct PassRow: View {
                 }
                 Spacer()
                 Button(action: onRemind) {
-                    Image(systemName: "bell")
+                    Image(systemName: isReminded ? "bell.fill" : "bell")
                         .foregroundStyle(Color.accentColor)
                 }
                 .buttonStyle(.borderless)

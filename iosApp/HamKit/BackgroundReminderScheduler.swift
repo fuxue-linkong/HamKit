@@ -87,7 +87,7 @@ final class BackgroundReminderScheduler {
                 repeats: false
             )
             center.add(UNNotificationRequest(
-                identifier: "pass-\(plan.aosMs)",
+                identifier: NotificationManager.identifier(norad: plan.norad, aosMs: plan.aosMs),
                 content: content,
                 trigger: trigger
             ))

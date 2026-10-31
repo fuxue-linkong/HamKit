@@ -11,6 +11,8 @@ struct AppRootView: View {
     @StateObject private var model = TrackerModel()
     @StateObject private var location = LocationProvider()
     @ObservedObject private var theme = ThemeStore.shared
+    /// 隐私同意状态：未同意时不请求定位（对齐 Android 首启流程：同意前不申请权限）。
+    @StateObject private var consent = PrivacyConsentStore.shared
     @Environment(\.scenePhase) private var scenePhase
     /// 首页的导航栈。平时由 `NavigationLink(value:)` 驱动；
     /// CI 冒烟场景（`-smokeManage` / `-smokeDetail`）需要代码里主动入栈，
@@ -52,15 +54,33 @@ struct AppRootView: View {
         // 主题：强调色 + 深浅模式（设置里改完立即生效）
         .tint(theme.accentColor)
         .preferredColorScheme(theme.appearance.colorScheme)
+        // 首启隐私同意：盖住整个 Tab（Android 是独立 Activity，iOS 用全屏覆盖）
+        .overlay {
+            if !consent.accepted {
+                PrivacyConsentView { aprsPublic in
+                    consent.accept(aprsPublic: aprsPublic)
+                    // 同意之后才请求定位：与 Android「同意前不初始化高德、不申请权限」一致
+                    location.requestLocation()
+                }
+                .transition(.opacity)
+            }
+        }
         .onAppear {
             // 数据层必须在启动时就接上：之前 SatelliteStore.configure 只在
             // 「卫星管理」页的 init 里调用，导致筛选页 / 分类页 / 详情页在首次
             // 进入管理页之前全是空数据——表现就是「必须退出再进一次才看得到」。
             SatelliteStore.shared.configure(model: model)
+            // AI 工具层需要同一份卫星 / 定位数据；「打开页面」走首页导航栈
+            AiAppFacadeImpl.shared.attach(model: model)
+            AiAppFacadeImpl.shared.onNavigate = { [self] route in
+                homePath.append(route)
+            }
             model.start()
-            // 首次进入主动要一次定位：定位类 App 的默认预期，
-            // 也让 CI 冒烟测试能验证 CoreLocation 链路
-            location.requestLocation()
+            // 只有已经同意过隐私政策的用户才主动要定位；
+            // 首启时等用户在同意页点「同意并继续」再请求（见上面的 overlay）。
+            if consent.accepted {
+                location.requestLocation()
+            }
             runSmokeScenarioIfNeeded()
         }
         .onReceive(location.$coordinate.dropFirst()) { coordinate in
@@ -93,6 +113,11 @@ struct AppRootView: View {
     /// 正常启动时这两个分支都不会命中，对用户零影响。
     private func runSmokeScenarioIfNeeded() {
         let args = ProcessInfo.processInfo.arguments
+        // 冒烟/截图场景是全新安装，隐私同意页会挡在前面；CI 只验证界面，
+        // 这类启动参数下直接记为已同意，避免截图全部停在同意页。
+        if args.contains(where: { $0.hasPrefix("-smoke") }), !consent.accepted {
+            consent.accept(aprsPublic: false)
+        }
         let wantsManage = args.contains("-smokeManage") || args.contains("-smokeDetail")
         guard wantsManage else { return }
         // 给 TLE（业余源 + 全量目录）留出下载与解析时间。

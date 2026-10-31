@@ -35,7 +35,12 @@ struct SatelliteFilter {
             || onlyUpcoming || onlyInPass || onlyAmsat
     }
 
-    static let selectableModes = ["FM", "SSTV", "DSTAR", "CW", "USB", "LSB"]
+    /// 模式全集来自共享内核（对齐 Android SatelliteFilterScreen 的 SatelliteModes.ALL）。
+    /// 静态列表只在首次访问时跨一次边界，之后缓存。
+    static let selectableModes: [String] =
+        HamKitApi.shared.allSatelliteModes()
+            .split(separator: ",")
+            .map(String.init)
 }
 
 /// 卫星业务层：对齐 Android `MainViewModel` 的卫星状态 + 列表排序/筛选。
@@ -115,9 +120,14 @@ final class SatelliteStore: ObservableObject {
 
         let newItems = satellites.map { record in
             let radios = radiosFor[record.norad] ?? []
-            // 模式：优先转发器实际模式，其次共享目录里的静态模式
-            let radioModes = Set(radios.map { $0.mode }.filter { !$0.isEmpty })
-            let modes = radioModes.isEmpty ? catalogModes(of: record.norad) : Array(radioModes)
+            // 模式：活跃转发器模式 ∪ 共享目录里的静态模式（去重，保持首次出现顺序）。
+            // 与共享内核 `SatelliteCatalog.effectiveModes` 同一条规则：早期 iOS 用的是
+            // 「有转发器模式就不用目录模式」的替换语义，会漏掉目录里的模式，
+            // 导致同样的筛选条件在两端筛出不同结果。
+            let modes = Self.mergeModes(
+                activeRadioModes: radios.filter { $0.isActive }.map { $0.mode },
+                catalogModes: catalogModes(of: record.norad)
+            )
             return SatelliteListItem(
                 record: record,
                 pass: passes[record.norad],
@@ -130,6 +140,16 @@ final class SatelliteStore: ObservableObject {
             )
         }
         items = newItems
+    }
+
+    /// 活跃转发器模式 ∪ 目录模式，去空、去重、保持首次出现顺序（对齐内核实现）。
+    static func mergeModes(activeRadioModes: [String], catalogModes: [String]) -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        for mode in activeRadioModes + catalogModes where !mode.isEmpty {
+            if seen.insert(mode).inserted { result.append(mode) }
+        }
+        return result
     }
 
     // MARK: - 筛选 + 排序（对齐 Android）
@@ -158,12 +178,33 @@ final class SatelliteStore: ObservableObject {
             if filter.onlyAmsat && item.amsatStatus == nil { return false }
             return true
         }
-        return sorted(filtered)
+        return keyword.isEmpty ? sorted(filtered) : sorted(filtered, keyword: keyword)
     }
 
     /// 已分类 → 在境 → 有活跃转发器 → AOS 升序 → NORAD 升序（兜底键）
-    private func sorted(_ list: [SatelliteListItem]) -> [SatelliteListItem] {
-        list.sorted { lhs, rhs in
+    private func sorted(_ list: [SatelliteListItem], keyword: String = "") -> [SatelliteListItem] {
+        // 有查询词时先按「名称匹配层次」排序（0 最精确，-1 表示只在编号上命中）。
+        // 层次来自共享内核，与 Android 搜索同一套规则：`ISS` 会精确/前缀命中
+        // `ISS (ZARYA)`，不会因为 `MISSION` 含 `iss` 就把它排到前面。
+        // 逐项跨语言调用太贵，先按候选集算好再排序（候选集通常只有几十条）。
+        var tiers: [Int32: Int] = [:]
+        if !keyword.isEmpty {
+            for item in list {
+                tiers[item.record.norad] = Int(
+                    HamKitApi.shared.nameMatchTier(query: keyword, name: item.record.name)
+                )
+            }
+        }
+
+        return list.sorted { lhs, rhs in
+            if !keyword.isEmpty {
+                let lhsTier = tiers[lhs.record.norad] ?? Int(Int32.max)
+                let rhsTier = tiers[rhs.record.norad] ?? Int(Int32.max)
+                // -1（不匹配名称、只匹配编号）排在所有名称命中之后
+                let lhsKey = lhsTier < 0 ? Int.max : lhsTier
+                let rhsKey = rhsTier < 0 ? Int.max : rhsTier
+                if lhsKey != rhsKey { return lhsKey < rhsKey }
+            }
             let lhsCat = !lhs.categoryIds.isEmpty
             let rhsCat = !rhs.categoryIds.isEmpty
             if lhsCat != rhsCat { return lhsCat }

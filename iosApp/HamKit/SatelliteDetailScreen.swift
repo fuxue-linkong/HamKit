@@ -32,8 +32,9 @@ struct SatelliteDetailScreen: View {
     private var eclipse: Bool {
         guard let position else { return false }
         return Self.isEclipsed(
-            latitude: position.subLatitudeDeg,
-            longitude: position.subLongitudeDeg,
+            subLatitudeDeg: position.subLatitudeDeg,
+            subLongitudeDeg: position.subLongitudeDeg,
+            altitudeKm: position.altitudeKm,
             date: now
         )
     }
@@ -348,8 +349,17 @@ struct SatelliteDetailScreen: View {
         return parts.joined(separator: "  ")
     }
 
-    /// 近似地影判定：星下点太阳高度角 < 0 视为在阴影中。
-    private static func isEclipsed(latitude: Double, longitude: Double, date: Date) -> Bool {
+    /// 地影判定：从卫星位置看，太阳高度角是否被地球遮挡。
+    ///
+    /// 判据是「卫星处」的太阳高度角 < −acos(Re/(Re+h))（地球对卫星的俯角），
+    /// 而不是星下点处的太阳高度角 < 0：LEO 卫星高度 400km 时俯角约 20°，
+    /// 不修正的话日落之后卫星早就进影了，界面还会显示「日照中」。
+    private static func isEclipsed(
+        subLatitudeDeg: Double,
+        subLongitudeDeg: Double,
+        altitudeKm: Double,
+        date: Date
+    ) -> Bool {
         let calendar = Calendar(identifier: .gregorian)
         let dayOfYear = calendar.ordinality(of: .day, in: .year, for: date) ?? 1
         let comps = calendar.dateComponents([.hour, .minute, .second], from: date)
@@ -357,10 +367,13 @@ struct SatelliteDetailScreen: View {
             + Double(comps.second ?? 0) / 3600
 
         let declination = -23.44 * cos(2 * .pi * Double(dayOfYear + 10) / 365.0) * .pi / 180
-        let hourAngle = (utcHour + longitude / 15.0 - 12.0) * 15.0 * .pi / 180
-        let lat = latitude * .pi / 180
-        let elevation = asin(sin(lat) * sin(declination)
-                             + cos(lat) * cos(declination) * cos(hourAngle))
-        return elevation < 0
+        let hourAngle = (utcHour + subLongitudeDeg / 15.0 - 12.0) * 15.0 * .pi / 180
+        let lat = subLatitudeDeg * .pi / 180
+        // 卫星位置的太阳高度角 = 星下点太阳高度角 + 地球俯角
+        let earthRadiusKm = 6371.0
+        let horizonDip = acos(earthRadiusKm / (earthRadiusKm + max(altitudeKm, 1)))
+        let elevationAtSat = asin(sin(lat) * sin(declination)
+                                  + cos(lat) * cos(declination) * cos(hourAngle)) + horizonDip
+        return elevationAtSat < 0
     }
 }

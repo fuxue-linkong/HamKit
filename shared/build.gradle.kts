@@ -45,6 +45,14 @@ kotlin {
             isStatic = true
         }
     }
+
+    sourceSets {
+        // 内核的协议解析 / SSE 分帧 / 工具注册都需要单测锁定行为：
+        // 这些代码在 iOS 上无法断点调试，只能靠 JVM 侧的单测保证不回归。
+        commonTest.dependencies {
+            implementation(kotlin("test"))
+        }
+    }
 }
 
 // ── 离线构建兜底 ────────────────────────────────────────────────────────────

@@ -53,6 +53,11 @@ struct RouteDestination: View {
         case .sstvGallery(let pick): SstvGalleryView(pickForTx: pick)
         case .sstvTx:              SstvTxView()
 
+        // AI 助手
+        case .aiAssistant:       AiAssistantView()
+        case .aiSettings:        AiSettingsView()
+        case .aiHistory:         AiHistoryView()
+
         // 其他
         case .hfFax:             HfFaxView()
         case .cwPractice:        CwPracticeHomeView()

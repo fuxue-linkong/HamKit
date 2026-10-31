@@ -24,6 +24,13 @@ struct ContentView: View {
                 NearbyPassesCard(model: model)
 
                 EntryCard(
+                    title: "AI 助手",
+                    summary: "卫星过境 / 频率 / 分区，直接问；可调用工具查真实数据",
+                    systemImage: "sparkles",
+                    route: .aiAssistant
+                )
+
+                EntryCard(
                     title: "定位详情",
                     summary: "定位状态与地面站坐标",
                     systemImage: "location.fill",

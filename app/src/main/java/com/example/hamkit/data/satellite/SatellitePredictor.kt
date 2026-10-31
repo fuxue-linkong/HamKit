@@ -121,7 +121,9 @@ class SatellitePredictor {
             // 目录外卫星（如只有 SatNOGS 转发器的 OUTPOST MISSION2）模式为空。
             val modes = SatelliteCatalog.effectiveModes(
                 catalogNumber = tle.catnum,
-                radios = radiosByCatalogNumber[tle.catnum].orEmpty(),
+                activeRadioModes = radiosByCatalogNumber[tle.catnum].orEmpty()
+                    .filter { it.isActive }
+                    .map { it.mode },
             )
 
             val meanMotion = tle.meanmo

@@ -84,7 +84,10 @@ data class PassSnapshot(
     val losAzimuthDeg: Int,
     /** 过境时长（秒） */
     val durationSeconds: Long,
-    /** 查询时刻是否已经可见（此时 [aosMs] 等于查询时刻） */
+    /**
+     * 查询时刻是否已经可见。为 true 时 [aosMs] 是**本次过境的真实 AOS**（可能早于
+     * 查询时刻），UI 需要把它当成「正在过境，LOS 还有 N 分钟」而不是「下一次过境」。
+     */
     val isCurrentlyVisible: Boolean,
 )
 
@@ -623,6 +626,39 @@ object HamKitApi {
         com.example.hamkit.data.satellite.SatelliteCatalog.MODES_BY_CATALOG_NUMBER[norad]
             .orEmpty()
             .joinToString(",")
+
+    /**
+     * 筛选页可选模式全集（对齐 Look4Sat 60 种），逗号分隔。
+     * Android 筛选页直接引用 [com.example.hamkit.data.satellite.SatelliteModes.ALL]；
+     * Swift 侧无法访问 Kotlin object 内部属性，经此桥接。
+     */
+    fun allSatelliteModes(): String =
+        com.example.hamkit.data.satellite.SatelliteModes.ALL.joinToString(",")
+
+    /**
+     * 有效工作模式（逗号分隔）：活跃转发器模式 ∪ 目录模式，去重后按首次出现顺序。
+     *
+     * Android 侧由 `SatelliteListItem.effectiveModes` 调用同一份内核逻辑；iOS 侧
+     * 把转发器模式拼成逗号串传进来即可，避免两端各写一套聚合规则（早期 iOS 用的是
+     * 「有转发器模式就不用目录模式」的替换语义，会和 Android 的模式筛选结果不一致）。
+     *
+     * @param activeRadioModes 活跃转发器的模式，逗号分隔（空串表示没有活跃转发器）
+     */
+    fun effectiveModes(norad: Int, activeRadioModes: String): String =
+        com.example.hamkit.data.satellite.SatelliteCatalog.effectiveModes(
+            catalogNumber = norad,
+            activeRadioModes = activeRadioModes.split(',')
+                .map { it.trim() }
+                .filter { it.isNotEmpty() },
+        ).joinToString(",")
+
+    /**
+     * 名称匹配层级：0=NORAD 全等，1=精确，2=前缀，3=单词边界，4=子串，-1=不匹配。
+     *
+     * 供 Swift 侧搜索排序使用；规则与 Android 的 `SatelliteNameMatcher` 同源。
+     */
+    fun nameMatchTier(query: String, name: String): Int =
+        com.example.hamkit.data.satellite.SatelliteNameMatcher.nameTier(query, name) ?: -1
 
     private fun resolveCategoryId(id: String): String =
         if (id.isBlank()) {

@@ -43,6 +43,11 @@ enum Route: Hashable {
     // MARK: HF Fax
     case hfFax
 
+    // MARK: AI 助手
+    case aiAssistant
+    case aiSettings
+    case aiHistory
+
     // MARK: CW / QSO
     case cwPractice
     case cwFreePractice

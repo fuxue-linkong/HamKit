@@ -507,8 +507,14 @@ final class TrackerModel: ObservableObject {
     /// 后台刷新由系统调度近似（见 docs/IOS_ADAPTATION.md）。
     private func refreshScheduledReminders() {
         let settings = ReminderSettingsStore.shared
-        // 先清掉旧通知再按当前设置重建，避免「改了提前量/关了开关还要等重启」
-        NotificationManager.shared.cancelPassReminders()
+        // 先清掉旧通知再按当前设置重建：必须等删除完成再排新通知，
+        // 否则异步的 removePendingNotificationRequests 会把刚排上的新提醒删掉。
+        NotificationManager.shared.cancelPassReminders { [weak self] in
+            self?.rebuildScheduledReminders(settings: settings)
+        }
+    }
+
+    private func rebuildScheduledReminders(settings: ReminderSettingsStore) {
         guard settings.enabled else {
             BackgroundReminderScheduler.shared.updatePlans([])
             return
@@ -530,6 +536,7 @@ final class TrackerModel: ObservableObject {
             )
             NotificationManager.shared.schedulePassReminder(
                 satelliteName: item.name,
+                norad: Int32(item.norad),
                 aosMs: item.pass.aosMs,
                 leadSeconds: settings.leadSeconds
             )

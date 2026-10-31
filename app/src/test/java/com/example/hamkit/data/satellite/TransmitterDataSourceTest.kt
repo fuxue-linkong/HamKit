@@ -198,6 +198,39 @@ class TransmitterDataSourceTest {
         assertTrue(item.hasActiveTransmitter)
     }
 
+    // ── CDN 快照（去直连 SatNOGS 后的数据形态） ──
+
+    @Test
+    fun `transmitters url - hardcoded to self-hosted cdn mirror`() {
+        // Android 端固定读自建 CDN 快照，不再直连 db.satnogs.org（国内易超时/污染）
+        assertEquals(
+            "https://tle.hamkit.click/tle/transmitters.json",
+            TransmitterDataSource.TRANSMITTERS_URL
+        )
+    }
+
+    @Test
+    fun `parseTransmitters - parses trimmed cdn record without uuid and high fields`() {
+        // trim-transmitters.mjs 产出的形态：无 uuid / *_high 字段，0 频率字段直接省略
+        val json = """
+            [
+              {"norad_cat_id":43017,"name":"FM","downlink_low":145880000,"mode":"FM",
+               "status":"active","description":"FM Voice"},
+              {"norad_cat_id":43017,"name":"FM 145.880 MHz","downlink_low":145880000,
+               "mode":"FM","status":"active"}
+            ]
+        """.trimIndent()
+        val radios = TransmitterDataSource().parseTransmitters(json)
+        assertEquals(2, radios.size)
+        val first = radios[0]
+        assertEquals(43017, first.noradCatId)
+        assertEquals(145880000L, first.downlinkHz)
+        assertNull(first.uplinkHz)
+        assertEquals("FM Voice", first.displayName)
+        // 镜像里没有 description 时，displayName 回退到 name，不会变成空串
+        assertEquals("FM 145.880 MHz", radios[1].displayName)
+    }
+
     // ── 模式提取 ──
 
     @Test

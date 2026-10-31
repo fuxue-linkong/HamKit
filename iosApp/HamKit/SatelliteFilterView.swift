@@ -55,8 +55,15 @@ struct SatelliteFilterView: View {
             }
 
             Section("状态") {
-                Toggle("仅当前在境", isOn: $draft.onlyInPass)
-                Toggle("仅即将入境", isOn: $draft.onlyUpcoming)
+                // 在境与即将入境互斥（对齐 Android）：同时开启会筛出空集
+                Toggle("仅当前在境", isOn: Binding(
+                    get: { draft.onlyInPass },
+                    set: { draft.onlyInPass = $0; if $0 { draft.onlyUpcoming = false } }
+                ))
+                Toggle("仅即将入境", isOn: Binding(
+                    get: { draft.onlyUpcoming },
+                    set: { draft.onlyUpcoming = $0; if $0 { draft.onlyInPass = false } }
+                ))
                 Toggle("仅有 AMSAT 状态报告", isOn: $draft.onlyAmsat)
             }
 

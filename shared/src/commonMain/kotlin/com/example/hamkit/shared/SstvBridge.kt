@@ -79,7 +79,8 @@ object SstvBridge {
      *
      * @param forcedVis 强制模式 VIS；0 表示自动识别
      */
-    fun decodePcm(bytes: ByteArray, forcedVis: Int): SstvDecodeOutcome {        if (bytes.size < 4) return failure("音频过短")
+    fun decodePcm(bytes: ByteArray, forcedVis: Int): SstvDecodeOutcome {
+        if (bytes.size < 4) return failure("音频过短")
         val samples = FloatArray(bytes.size / 2)
         for (i in samples.indices) {
             val lo = bytes[i * 2].toInt() and 0xFF

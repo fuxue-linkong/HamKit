@@ -14,8 +14,11 @@ package com.example.hamkit.data.satellite
  * 3. 单词边界匹配（`ISS` 不命中 `MISSION` 中间的子串）
  * 4. 子串
  *
- * 同一层命中多颗卫星时由 [resolve] 返回 [Resolution.Ambiguous]，
- * 由调用方提示用户改用 NORAD 编号，禁止静默取第一条。
+ * 同一层命中多颗卫星时返回 [Resolution.Ambiguous]，由调用方提示改用 NORAD 编号，
+ * 禁止静默取第一条。
+ *
+ * 位置：放在共享内核（commonMain）而不是平台侧，Android 的 AI 工具与 iOS 的
+ * AI 工具因此共用同一套匹配规则，不会两边对同一句 "ISS" 给出不同答案。
  */
 object SatelliteNameMatcher {
 
@@ -33,19 +36,19 @@ object SatelliteNameMatcher {
     }
 
     /** NORAD 编号全等层。 */
-    private const val TIER_NORAD = 0
+    const val TIER_NORAD = 0
 
     /** 完整名称或主名称全等层。 */
-    private const val TIER_NAME_EXACT = 1
+    const val TIER_NAME_EXACT = 1
 
     /** 名称前缀层。 */
-    private const val TIER_NAME_PREFIX = 2
+    const val TIER_NAME_PREFIX = 2
 
     /** 单词边界层。 */
-    private const val TIER_WORD = 3
+    const val TIER_WORD = 3
 
     /** 子串层（最低优先级）。 */
-    private const val TIER_SUBSTRING = 4
+    const val TIER_SUBSTRING = 4
 
     /**
      * 计算 [query] 与 [candidate] 的匹配层级；不匹配返回 null。
@@ -55,14 +58,15 @@ object SatelliteNameMatcher {
     fun matchTier(query: String, candidate: Candidate): Int? {
         val normalized = normalizeQuery(query)
         if (normalized.isEmpty()) return null
-        normalized.toIntOrNull()?.let { norad ->
+        val norad = normalized.toIntOrNull()
+        if (norad != null) {
             return if (candidate.catalogNumber == norad) TIER_NORAD else null
         }
         return nameTier(normalized, candidate.name)
     }
 
     /**
-     * 仅按名称计算匹配层级（供搜索工具复用）；不匹配返回 null。
+     * 仅按名称计算匹配层级（供搜索复用）；不匹配返回 null。
      *
      * `query` 必须已归一化，或由本函数内部归一化。
      */

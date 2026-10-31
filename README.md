@@ -23,6 +23,7 @@
   - **工具调用**：双区定位、卫星过境/实时追踪/转发器/AMSAT、搜索卫星、天气/UTC、摩斯编码、页面跳转、开始 SSTV 接收、过境提醒
   - 对话内嵌**卫星详情卡**（实时数值、过境时间、转发器）与工具执行进度条
   - 回答支持 **Markdown 渲染**（标题 / 列表 / 代码块 / 引用 / 链接），设置页可**自动获取模型列表**
+- **跨平台内核**（Kotlin Multiplatform `:shared`：分区定位、SGP4/SDP4 过境计算由 Android 与 iOS 共用；iOS 壳工程与迁移路线见 [docs/IOS_ADAPTATION.md](docs/IOS_ADAPTATION.md)，UI 功能持续补齐中）
 
 ### 短期计划
 

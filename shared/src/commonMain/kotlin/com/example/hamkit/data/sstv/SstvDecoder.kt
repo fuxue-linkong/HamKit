@@ -80,8 +80,20 @@ class SstvDecoder(
 
         // ── ① VIS 检测：即使手动指定模式也尝试读取，以获得失谐补偿量 ──
         val visOutcome = SstvVisDetector(sampleRate).process(audio)
-        val mode = forcedMode ?: visOutcome?.mode
-        ?: return Outcome.Failure("未识别到 VIS 头，请手动选择模式")
+        val mode: SstvMode
+        if (forcedMode != null) {
+            mode = forcedMode
+        } else if (visOutcome?.mode != null) {
+            mode = visOutcome.mode
+        } else if (visOutcome != null) {
+            // VIS 头读到了，但模式表里没有这个码（私有/非标模式）：把码值报出来。
+            // 与「压根没读到 VIS 头」是两种问题，提示也应不同（对齐 Android 端文案）。
+            return Outcome.Failure(
+                "该 VIS 码未收录，暂不支持解码（0x${visOutcome.visCode.toString(16).uppercase()}）"
+            )
+        } else {
+            return Outcome.Failure("未识别到 VIS 头，请手动选择模式")
+        }
         val hedrShiftHz = visOutcome?.hedrShiftHz ?: 0.0
         val searchFrom = visOutcome?.stopEndSample?.toInt()?.coerceAtLeast(0) ?: 0
 
