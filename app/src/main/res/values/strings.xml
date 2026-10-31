@@ -506,4 +506,14 @@
     <string name="ai_settings_probe_fail">Connection failed: %1$s</string>
     <string name="ai_settings_tool_ok">Tool calling: available</string>
     <string name="ai_settings_tool_unsupported">Tool calling: not supported by this model</string>
+    <string name="ai_generating">Generating…</string>
+    <string name="ai_executing">Running…</string>
+    <string name="ai_history_desc">Chat history</string>
+    <string name="ai_new_chat_desc">New chat</string>
+    <string name="ai_settings_desc">AI settings</string>
+    <string name="ai_send_desc">Send</string>
+    <string name="ai_stop_desc">Stop generating</string>
+    <string name="ai_attach_desc">Attach file</string>
+    <string name="ai_open_gallery">Open gallery</string>
+    <string name="ai_reminder_created">Pass reminder created</string>
 </resources>
