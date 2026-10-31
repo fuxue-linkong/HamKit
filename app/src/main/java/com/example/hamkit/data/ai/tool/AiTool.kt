@@ -116,6 +116,41 @@ sealed interface AiCard {
     data class Error(val message: String) : AiCard
 }
 
+/** FT8 解码条目（工具只读快照）。 */
+data class Ft8Decoded(val time: Long, val message: String, val snr: Float, val freqHz: Float)
+
+/** QSO 记录摘要。 */
+data class QsoSummary(
+    val callsign: String,
+    val grid: String?,
+    val band: String,
+    val mode: String,
+    val qsoTime: Long,
+    val isComplete: Boolean,
+)
+
+/** FT8 模块快照。 */
+data class Ft8Snapshot(
+    val decoding: Boolean,
+    val decoded: List<Ft8Decoded>,
+    val qso: List<QsoSummary>,
+)
+
+/** APRS 已接收台站摘要（已脱敏，不含经纬度）。 */
+data class AprsStationSummary(
+    val callsign: String,
+    val distanceKm: Double?,
+    val bearing: Double?,
+    val timestamp: Long,
+    val comment: String,
+)
+
+/** APRS 模块快照（只读当前会话已接收的站点）。 */
+data class AprsSnapshot(
+    val connected: Boolean,
+    val stations: List<AprsStationSummary>,
+)
+
 /**
  * 工具执行上下文。
  *
@@ -160,6 +195,15 @@ interface AiAppFacade {
     fun navigate(target: AiNavTarget)
     fun startSstvReceive(presetMode: String?)
     fun setReminder(catalogNumber: Int, enabled: Boolean)
+
+    /** FT8 当前快照；模块不可用时返回 null。 */
+    fun ft8Snapshot(): Ft8Snapshot? = null
+
+    /** APRS 当前会话已接收的台站（脱敏）；模块不可用时返回 null。 */
+    fun aprsSnapshot(): AprsSnapshot? = null
+
+    /** QSO 日志全量摘要。 */
+    fun qsoRecords(): List<QsoSummary> = emptyList()
 }
 
 // ── JSON Schema 构造小工具 ──────────────────────────────────────────────────
@@ -184,6 +228,12 @@ fun integerProperty(description: String, minimum: Int, maximum: Int): JSONObject
 
 fun booleanProperty(description: String): JSONObject =
     JSONObject().put("type", "boolean").put("description", description)
+
+/** 工具结果回传模型的最大字符数，超出截断并注明。 */
+const val MAX_TOOL_RESULT_CHARS = 6000
+
+fun truncateToolResult(text: String, max: Int = MAX_TOOL_RESULT_CHARS): String =
+    if (text.length <= max) text else text.take(max) + "\n…（结果已截断）"
 
 /** 统一把异常转成给模型看的错误 JSON。 */
 fun errorOutcome(message: String): ToolOutcome = ToolOutcome(

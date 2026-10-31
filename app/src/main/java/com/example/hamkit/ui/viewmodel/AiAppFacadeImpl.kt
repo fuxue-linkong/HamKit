@@ -4,6 +4,11 @@ import com.example.hamkit.data.LocationResult
 import com.example.hamkit.data.ai.tool.AiAppFacade
 import com.example.hamkit.data.ai.tool.AiNavTarget
 import com.example.hamkit.data.ai.tool.AiSatelliteRef
+import com.example.hamkit.data.ai.tool.AprsSnapshot
+import com.example.hamkit.data.ai.tool.AprsStationSummary
+import com.example.hamkit.data.ai.tool.Ft8Decoded
+import com.example.hamkit.data.ai.tool.Ft8Snapshot
+import com.example.hamkit.data.ai.tool.QsoSummary
 import com.example.hamkit.data.satellite.RadioInfo
 import com.example.hamkit.data.satellite.SatelliteCatalog
 import com.example.hamkit.data.satellite.SatelliteInfo
@@ -20,6 +25,10 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 /**
  * [AiAppFacade] 的 UI 层实现：把 MainViewModel 的 Compose State 与导航能力暴露给工具。
@@ -30,6 +39,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 class AiAppFacadeImpl(
     private val mainViewModel: MainViewModel,
     private val navigator: Navigator,
+    private val ft8: Ft8ViewModel? = null,
+    private val aprs: AprsViewModel? = null,
 ) : AiAppFacade {
 
     override fun location(): LocationResult? = mainViewModel.locationState.value.result
@@ -129,6 +140,66 @@ class AiAppFacadeImpl(
 
     override fun setReminder(catalogNumber: Int, enabled: Boolean) {
         mainViewModel.setSatelliteReminderEnabled(catalogNumber, enabled)
+    }
+
+    override fun ft8Snapshot(): Ft8Snapshot? {
+        val vm = ft8 ?: return null
+        val state = vm.uiState.value
+        return Ft8Snapshot(
+            decoding = state.isDecoding,
+            decoded = state.decodedEntries.map { entry ->
+                Ft8Decoded(
+                    time = entry.time,
+                    message = entry.result.messageText,
+                    snr = entry.result.snr,
+                    freqHz = entry.result.freqHz,
+                )
+            },
+            qso = state.qsoRecords.map { it.toSummary() },
+        )
+    }
+
+    override fun aprsSnapshot(): AprsSnapshot? {
+        val vm = aprs ?: return null
+        val location = location()
+        return AprsSnapshot(
+            connected = vm.connectionState.value != AprsViewModel.ConnectionState.DISCONNECTED,
+            stations = vm.stations.value.map { station ->
+                val distance = station.distance ?: location?.let {
+                    haversine(it.latitude, it.longitude, station.latitude, station.longitude)
+                }
+                AprsStationSummary(
+                    callsign = station.callsign,
+                    distanceKm = distance,
+                    bearing = station.bearing,
+                    timestamp = station.timestamp,
+                    comment = station.comment,
+                )
+            },
+        )
+    }
+
+    override fun qsoRecords(): List<QsoSummary> =
+        ft8?.uiState?.value?.qsoRecords?.map { it.toSummary() }.orEmpty()
+
+    private fun com.example.hamkit.data.ft8.Ft8QsoRecord.toSummary(): QsoSummary = QsoSummary(
+        callsign = callsign,
+        grid = grid,
+        band = band.name,
+        mode = mode,
+        qsoTime = qsoTime,
+        isComplete = isComplete,
+    )
+
+    /** 球面距离（km），APRS 台站没有预计算距离时使用。 */
+    private fun haversine(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val earthRadiusKm = 6371.0
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val a = sin(dLat / 2).let { it * it } +
+            cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) *
+            sin(dLon / 2).let { it * it }
+        return earthRadiusKm * 2 * atan2(sqrt(a), sqrt(1 - a))
     }
 
     private fun AiNavTarget.toRoute(): Route = when (this) {

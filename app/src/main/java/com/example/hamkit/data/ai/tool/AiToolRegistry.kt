@@ -6,6 +6,9 @@ import com.example.hamkit.data.ai.tool.tools.GetAmsatStatusTool
 import com.example.hamkit.data.ai.tool.tools.GetSatelliteLiveTool
 import com.example.hamkit.data.ai.tool.tools.GetSatellitePassesTool
 import com.example.hamkit.data.ai.tool.tools.GetSatelliteTransmittersTool
+import com.example.hamkit.data.ai.tool.tools.GetFt8ActivityTool
+import com.example.hamkit.data.ai.tool.tools.GetAprsStationsTool
+import com.example.hamkit.data.ai.tool.tools.SearchQsoLogTool
 import com.example.hamkit.data.ai.tool.tools.GetUtcTimeTool
 import com.example.hamkit.data.ai.tool.tools.GetWeatherTool
 import com.example.hamkit.data.ai.tool.tools.GetZoneInfoTool
@@ -40,6 +43,9 @@ class AiToolRegistry {
             GetSatelliteTransmittersTool,
             SearchSatellitesTool,
             GetAmsatStatusTool,
+            GetFt8ActivityTool,
+            GetAprsStationsTool,
+            SearchQsoLogTool,
             GetUtcTimeTool,
             GetWeatherTool,
             CwEncodeTool,
