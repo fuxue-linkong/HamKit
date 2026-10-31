@@ -81,7 +81,12 @@ class SatellitePredictCacheStoreTest {
         assertNotNull(loaded)
         val satellite = loaded!!.satellites.single()
         assertEquals(12345, satellite.catalogNumber)
-        assertEquals("在境卫星的真实 AOS 应保留", now.minusSeconds(600), satellite.aosTime)
+        // 缓存以毫秒存储，比较 epochMillis 而不是带纳秒的 Instant
+        assertEquals(
+            "在境卫星的真实 AOS 应保留",
+            now.minusSeconds(600).toEpochMilli(),
+            satellite.aosTime.toEpochMilli(),
+        )
         assertEquals(true, satellite.isCurrentlyVisible)
     }
 
