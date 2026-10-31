@@ -92,8 +92,8 @@ final class AiAppFacadeImpl: NSObject, AiAppFacade {
 
     // ── 社区数据（FT8 / APRS / QSO） ────────────────────────────────────────
     //
-    // 三个工具都是只读：这里只做「读内存 + 换算」，不触发任何连接或写入。
-    // APRS 台站按上游约定脱敏——不把经纬度交给模型，只给距离/方位。
+    // 三个工具都是只读：这里只做「读内存」，不触发任何连接或写入。
+    // APRS 台站按上游约定脱敏——只把坐标交给内核换距离/方位，模型拿不到坐标。
 
     func ft8Snapshot() -> AiFt8Snapshot? {
         let log = Ft8LogStore.shared
