@@ -43,11 +43,7 @@ data class SatelliteListItem(
      * 筛选与展示均基于此列表。
      */
     val effectiveModes: List<String>
-        get() {
-            val fromRadios = radios.filter { it.isActive }.map { it.mode }.filter { it.isNotBlank() }
-            val fromCatalog = SatelliteCatalog.MODES_BY_CATALOG_NUMBER[catalogNumber].orEmpty()
-            return (fromRadios + fromCatalog).distinct()
-        }
+        get() = SatelliteCatalog.effectiveModes(catalogNumber, radios)
 
     /** AMSAT 状态（来自过境结果，无则空） */
     val status: String

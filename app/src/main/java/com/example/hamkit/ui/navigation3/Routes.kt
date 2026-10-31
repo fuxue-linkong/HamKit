@@ -26,6 +26,11 @@ sealed interface Route : NavKey, Parcelable {
     @Serializable
     data object About : Route
 
+    /** 隐私政策（离线全文，首启同意与“关于”页共用） */
+    @Parcelize
+    @Serializable
+    data object PrivacyPolicy : Route
+
     @Parcelize
     @Serializable
     data object ColorPalette : Route
@@ -162,4 +167,9 @@ sealed interface Route : NavKey, Parcelable {
     @Parcelize
     @Serializable
     data object QsoLogList : Route
+
+    /** AI 助手设置：协议、Base URL、API Key、内网与隐私 */
+    @Parcelize
+    @Serializable
+    data object AiSettings : Route
 }

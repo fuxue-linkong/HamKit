@@ -24,7 +24,7 @@ import kotlin.math.round
  * | 输出 | 触发 | 定位依据 | 用途 |
  * |---|---|---|---|
  * | 实时 | 每次 [feed] | 在线最小二乘（因果） | 边收边显示，延迟低 |
- * | 收尾 | [finalize] | 全局拟合 + 按帧重解 | 保存 / 跨帧融合 |
+ * | 收尾 | [finalize] | 全局拟合 + 按帧重解 | 保存 |
  *
  * ## 行号语义（重要）
  *
@@ -45,7 +45,7 @@ import kotlin.math.round
  *
  * | 段 | 保存什么 | 回收条件 |
  * |---|---|---|
- * | **高频段** `buffer` | 最近的一小段样本（[TAIL_SAMPLES]） | 恒定的环形窗口，超过即丢最老 |
+ * | **高频段** `buffer` | 最近 `TAIL_LINES` 个行周期的样本（至少 `MIN_TAIL_SAMPLES`，容量取 2 的幂） | 恒定的环形窗口，超过即丢最老 |
  * | **低频段** `segments`（按帧） | 每帧「行起点 → 帧尾起点」的浮点频率，按行抽样（stride） | 帧数超过 [maxSegments] 时整帧丢弃最老；[dropHistory] 可全部丢弃 |
  *
  * 抽样（stride）的代价只落在 [finalize] 的**同步拟合精度**上（亚行周期的抖动，由逐行
@@ -76,7 +76,6 @@ class SstvStreamDecoder(
      * @param imageRow 图像行号（流水号，见类注释「行号语义」）
      * @param pixels 该行的打包 RGB（0xRRGGBB），长度 = [SstvMode.linePixels]
      * @param locked 该行是否由**实测同步脉冲**定位（false 表示用的是拟合外推）。
-     *   跨帧融合需要这个信号来判断「这一行值不值得采信」
      */
     data class LineEvent(val imageRow: Int, val pixels: IntArray, val locked: Boolean) {
         // IntArray 的默认语义是引用比较，这里按内容比较，避免调用方踩坑
@@ -92,7 +91,7 @@ class SstvStreamDecoder(
             (imageRow * 31 + pixels.contentHashCode()) * 31 + locked.hashCode()
     }
 
-    /** 解码统计快照，供 UI 展示与跨帧融合的质量筛选。 */
+    /** 解码统计快照，供 UI 展示。 */
     data class Stats(
         /** 已解出的图像行数 */
         val decodedLines: Int,
@@ -321,6 +320,19 @@ class SstvStreamDecoder(
     // ══════════════════════════════════════════════════════════════════
 
     /**
+     * 解码器内部互斥锁。
+     *
+     * 持续接收场景下本类会被多个协程并发调用：采集协程调 [feed]/[feedAudio]，
+     * 预览刷新协程周期性调 [stats]，用户停止时（join 超时后）还会调 [finalizeFrames]。
+     * 全部可变状态都没有同步原语，参照 [SstvRollingImage] 的做法在对外入口统一加锁，
+     * 保证任一时刻只有一个线程在改内部状态。
+     */
+    private val decoderLock = Any()
+
+    /** 在 [decoderLock] 上执行 [block]；锁内不可回调回对外入口（会重入死锁）。 */
+    private inline fun <T> locked(block: () -> T): T = synchronized(decoderLock, block)
+
+    /**
      * 喂入一段**新的**频率流（必须是上次之后的新样本，长度任意、可为 0）。
      *
      * 内部会：写高频段与历史段 → 检测同步脉冲 → 更新滚动回归 → 把能确定已完整到达的
@@ -329,6 +341,13 @@ class SstvStreamDecoder(
      */
     fun feed(newFreqs: FloatArray) {
         if (newFreqs.isEmpty()) return
+        // 整次喂入持锁处理：块间状态（环、脉冲检测、回归）必须对其它线程不可见，
+        // 否则 stats()/finalizeFrames() 可能读到半块写入的中间态
+        locked { feedLocked(newFreqs) }
+    }
+
+    /** [feed] 的锁内实现（不持锁调用！）。 */
+    private fun feedLocked(newFreqs: FloatArray) {
         // 内部按「不超过半个环容量」切块处理。
         //
         // 为什么必须切块：脉冲扫描发生在样本写入环之后，而环只保留最近 tailCapacity
@@ -361,10 +380,13 @@ class SstvStreamDecoder(
      * @return 本次新解出的行数
      */
     fun flush(): Int {
-        val before = decodedRadioLines
-        drainRadioLines(force = true)
-        maintainHistory()
-        return decodedRadioLines - before
+        // 收尾前强制推出行的路径同样可能被收尾线程调用，纳入同一把锁
+        return locked {
+            val before = decodedRadioLines
+            drainRadioLines(force = true)
+            maintainHistory()
+            decodedRadioLines - before
+        }
     }
 
     /**
@@ -377,35 +399,42 @@ class SstvStreamDecoder(
      */
     fun feedAudio(pcm: FloatArray) {
         if (pcm.isEmpty()) return
-        // 增量喂给 VIS 检测器：它内部自己维护窗口与丢弃策略，这里不保留音频
-        val result = visDetector.process(pcm)
-        // 中途捕到 VIS：失谐量可信度远高于「未锁定时的 0」，立刻用于脉冲搜索。
-        // 模式仍不切换 —— 切换会让流水号断裂、已收内容与新模式的行周期不匹配
-        // 写运行时镜像 [initialShiftHz]（构造参数初始化的可变副本），
-        // 而不是构造参数本身 —— 参数在 Kotlin 里是只读的
-        if (result != null && !fitLocked) {
-            initialShiftHz = result.hedrShiftHz
+        // 与 feed 竞争同一份可变状态（visDetector 与 initialShiftHz），纳入同一把锁
+        locked {
+            // 增量喂给 VIS 检测器：它内部自己维护窗口与丢弃策略，这里不保留音频
+            val result = visDetector.process(pcm)
+            // 中途捕到 VIS：失谐量可信度远高于「未锁定时的 0」，立刻用于脉冲搜索。
+            // 模式仍不切换 —— 切换会让流水号断裂、已收内容与新模式的行周期不匹配
+            // 写运行时镜像 [initialShiftHz]（构造参数初始化的可变副本），
+            // 而不是构造参数本身 —— 参数在 Kotlin 里是只读的
+            if (result != null && !fitLocked) {
+                initialShiftHz = result.hedrShiftHz
+            }
         }
     }
 
     /** 当前统计快照。 */
     fun stats(): Stats {
-        val slant = if (fitLocked && lineSamples.isFinite()) {
-            lineSamples / nominalLineSamples
-        } else {
-            1.0
+        // 预览刷新协程每 120ms 调一次，必须与 feed/feedAudio/finalizeFrames 互斥，
+        // 否则可能读到环写入到一半的中间态（脏统计甚至越界）
+        return locked {
+            val slant = if (fitLocked && lineSamples.isFinite()) {
+                lineSamples / nominalLineSamples
+            } else {
+                1.0
+            }
+            Stats(
+                decodedLines = decodedRadioLines * mode.imageRowsPerRadioLine,
+                syncPulses = pulseK.toInt(),
+                hedrShiftHz = currentShiftHz(),
+                slantRatio = slant,
+                syncHitRate = hitRate(),
+                lostSync = lostSync,
+                locked = fitLocked,
+                bufferedSamples = bufferedSamples(),
+                historySamples = historySamples,
+            )
         }
-        return Stats(
-            decodedLines = decodedRadioLines * mode.imageRowsPerRadioLine,
-            syncPulses = pulseK.toInt(),
-            hedrShiftHz = currentShiftHz(),
-            slantRatio = slant,
-            syncHitRate = hitRate(),
-            lostSync = lostSync,
-            locked = fitLocked,
-            bufferedSamples = bufferedSamples(),
-            historySamples = historySamples,
-        )
     }
 
     /**
@@ -416,21 +445,24 @@ class SstvStreamDecoder(
      * 历史段中（供 [finalize] 使用）。
      */
     fun consumedSamples(): Long {
-        // 回收点 = 下一行行首 − 一个行周期的余量
-        //
-        // 为什么不是「已解完那一行的行尾」：
-        //  - 下一行的**同步脉冲**必须先被检测到（它位于下一行行首附近），
-        //    否则流式解码会永远等不到该行的行锚点；
-        //  - 逐行精调还会回读该行同步脉冲的中心，正常情况下落在行首之后，
-        //    但 Scottie 族的同步在行中、脉冲中心最晚可比行首晚近一个行周期。
-        //
-        // 保守地留整整一个行周期：丢样本的代价（整行错乱）远高于多留一段内存，
-        // 而一个行周期相对整段缓冲是小量（Robot 36 约 0.15 s）。
-        if (decodedRadioLines == 0) return 0L
-        val samples = if (fitLocked) lineSamples else nominalLineSamples
-        val start = radioStart(firstRadio + nextRadio, samples)
-        if (!start.isFinite()) return 0L
-        return (start - samples).toLong().coerceIn(0L, tailFloor)
+        // 只读多份内部状态，同样可能与 feed 并发，纳入同一把锁（P2-1）
+        return locked {
+            // 回收点 = 下一行行首 − 一个行周期的余量
+            //
+            // 为什么不是「已解完那一行的行尾」：
+            //  - 下一行的**同步脉冲**必须先被检测到（它位于下一行行首附近），
+            //    否则流式解码会永远等不到该行的行锚点；
+            //  - 逐行精调还会回读该行同步脉冲的中心，正常情况下落在行首之后，
+            //    但 Scottie 族的同步在行中、脉冲中心最晚可比行首晚近一个行周期。
+            //
+            // 保守地留整整一个行周期：丢样本的代价（整行错乱）远高于多留一段内存，
+            // 而一个行周期相对整段缓冲是小量（Robot 36 约 0.15 s）。
+            if (decodedRadioLines == 0) return@locked 0L
+            val samples = if (fitLocked) lineSamples else nominalLineSamples
+            val start = radioStart(firstRadio + nextRadio, samples)
+            if (!start.isFinite()) return@locked 0L
+            (start - samples).toLong().coerceIn(0L, tailFloor)
+        }
     }
 
     /**
@@ -447,6 +479,15 @@ class SstvStreamDecoder(
      * @return 各帧的最终图像（最老在前）；没有可用数据时返回空列表
      */
     fun finalizeFrames(): List<SstvDecoder.Result> {
+        // 停止收尾可能在 join 超时后与仍存活的采集协程并发执行（P2-1），
+        // 与 feed/feedAudio 互斥后再做全局拟合与重解
+        return locked {
+            finalizeFramesLocked()
+        }
+    }
+
+    /** [finalizeFrames] 的锁内实现（不持锁调用！）。 */
+    private fun finalizeFramesLocked(): List<SstvDecoder.Result> {
         val out = ArrayList<SstvDecoder.Result>(segments.size + 1)
         if (segments.isEmpty()) {
             // 还没跨过帧边界：当前帧仍在高频段里，只有它一整段
@@ -482,10 +523,10 @@ class SstvStreamDecoder(
     fun finalize(): SstvDecoder.Result? = finalizeFrames().lastOrNull()
 
     /** 是否还有可 [finalize] 的历史数据。 */
-    fun hasHistory(): Boolean = segments.isNotEmpty() || appendedEnd > tailStart
+    fun hasHistory(): Boolean = locked { segments.isNotEmpty() || appendedEnd > tailStart }
 
     /** 清空全部状态（重新开始一次持续接收）。幂等。 */
-    fun reset() {
+    fun reset() = locked {
         clearTail()
         segments.clear()
         historySamples = 0L
@@ -531,18 +572,12 @@ class SstvStreamDecoder(
      * 把内存压到最小 —— 这是调研风险项 R5「持续接收产生海量图库/内存」的缓解手段。
      */
     fun dropHistory() {
-        segments.clear()
-        historySamples = 0L
+        // segments 与 historySamples 会被 feed 并发改写，纳入同一把锁（P2-1）
+        locked {
+            segments.clear()
+            historySamples = 0L
+        }
         // 当前帧的起点随之丢失：实时路径不受影响，但 finalize 不再有完整帧
-    }
-
-    /**
-     * 运行期更新失谐量估计（例如中途捕到 VIS 头后调用）。
-     *
-     * 只影响「脉冲不足时」的退化值；脉冲足够多后仍以滚动实测均值为准。
-     */
-    fun updateHedrShift(hedrShiftHz: Double) {
-        initialShiftHz = hedrShiftHz
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -654,7 +689,7 @@ class SstvStreamDecoder(
      * 在每次 [feed] 末尾维护历史段：切帧、抽样、帧数上限。
      *
      * 帧边界的判定：**连续太久没有同步脉冲**（超过一个完整帧时长 + 1 秒）就认为上一帧
-     * 已经发完。这只影响「历史段如何切分」（截图、finalize、融合的输入），不影响实时解码。
+     * 已经发完。这只影响「历史段如何切分」（截图、finalize 的输入），不影响实时解码。
      */
     private fun maintainHistory() {
         if (!fitLocked || appendedEnd <= 0) return
@@ -665,7 +700,7 @@ class SstvStreamDecoder(
         // ② 帧尾切分：最后一个脉冲之后超过 frameGapSamples 仍无新脉冲 → 上一段冻结
         //
         //    ⚠ 必须用「最近实际接受的脉冲」：若用拟合外推，丢锁后会一直外推、
-        //    永远判不出帧尾，历史段就永远不会切分（融合也就永远只有一段素材）。
+        //    永远判不出帧尾，历史段就永远不会切分（finalize 也就永远只有一段素材）。
         val last = segments.last()
         val lastCenter = lastAcceptedCenter()
         if (!last.frozen && lastCenter.isFinite()) {
@@ -689,7 +724,7 @@ class SstvStreamDecoder(
         // ④ 帧数上限：整帧丢弃最老的。
         //    但**最后一段不能丢** —— 它是「当前正在收的这一段」，所有后续样本都按它
         //    记账；若把段列表清空，下一次 feed 会重新建立一个起点落在当前尾部的段，
-        //    早期数据就悄悄消失在历史之外（finalize 与融合都少一段素材）
+        //    早期数据就悄悄消失在历史之外（finalize 就少一段素材）
         while (segments.size > maxSegments && segments.size > 1) {
             segments.removeAt(0)
         }
@@ -700,9 +735,9 @@ class SstvStreamDecoder(
         if (lineSamples.isFinite() && lineSamples > 0) lineSamples else nominalLineSamples
 
     /**
-     * 把 [segment] 的存储内容截取到 `[startSample, end)` 窗口内（段起点随之移动）。
+     * 把 [segment] 的存储内容截取到 `[windowStart, windowEnd)` 窗口内（段起点随之移动）。
      *
-     * 窗口宽度在段变长后可能缩到只剩 1 个样本；每轮越界后窗口翻倍，摊还 O(n)。
+     * 每块 feed 调用一次、一步截取：窗口起点之前的样本已不可能被回读，直接削掉。
      */
     private fun Segment.clip(windowStart: Long, windowEnd: Long) {
         if (size == 0) return

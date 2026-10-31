@@ -1,6 +1,6 @@
 package com.example.hamkit.data.weather
 
-import com.example.hamkit.data.crypto.SecretManager
+import com.example.hamkit.BuildConfig
 import com.example.hamkit.data.network.HttpClientProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -10,6 +10,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 import org.json.JSONException
 import org.json.JSONObject
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 /**
@@ -17,16 +18,12 @@ import java.util.concurrent.TimeUnit
  *
  * API 文档：https://lbs.amap.com/api/webservice/guide/api/weatherinfo
  *
- * Key 安全策略：
- * - 明文 Key 仅存在于 local.properties（不进 git）
- * - 开发阶段通过 `gradle encryptSecrets` 加密为 assets/secrets.dat（提交到 git）
- * - 运行时由 [SecretManager] 从 secrets.dat 解密，三碎片组装主密钥 + AES-GCM
- * - CI 构建无需 GitHub Secrets，secrets.dat 已在仓库中
- *
- * 错误处理：
- * - API Key 缺失时抛出 [ApiKeyMissingException]，避免发出注定失败的网络请求
- * - 网络异常抛出 [WeatherNetworkException]，与 API 业务错误区分
- * - 高德 API 返回 status!=1 时抛出 [WeatherApiException]，携带 info 描述
+ * Key 处理：
+ * - 本项目按需求同时使用高德 Android SDK 与 Web 服务（天气 + 逆地理编码）。
+ * - Web 服务 Key 通过 `AMAP_WEB_KEY` 环境变量或 `local.properties` 的
+ *   `amap.api.key` 在构建时写入 `BuildConfig`；它随 APK 分发，**不是秘密**，
+ *   必须依靠高德侧的配额/用量监控，不能把它当加密资产。
+ * - 缺 Key 时抛 [ApiKeyMissingException]，避免发出必然失败的请求。
  */
 class WeatherApiService {
 
@@ -42,12 +39,9 @@ class WeatherApiService {
      * 2. 用 adcode 查实时天气（extensions=base）
      * 3. 用 adcode 查 4 天预报（extensions=all）
      *
-     * @param latitude 纬度
-     * @param longitude 经度
-     * @return [WeatherResult]
-     * @throws ApiKeyMissingException API Key 未配置（BuildConfig 中为空）
-     * @throws WeatherNetworkException 网络请求失败（连接超时、DNS、断网等）
-     * @throws WeatherApiException 高德 API 返回业务错误（Key 无效、配额超限等）
+     * @throws ApiKeyMissingException Web 服务 Key 未配置
+     * @throws WeatherNetworkException 网络请求失败
+     * @throws WeatherApiException 高德 API 返回业务错误
      */
     suspend fun fetchWeather(latitude: Double, longitude: Double): WeatherResult {
         if (!latitude.isFinite() || !longitude.isFinite() ||
@@ -57,8 +51,6 @@ class WeatherApiService {
         }
         val key = apiKey()
         if (key.isBlank()) {
-            // API Key 为空：通常是构建时未注入 secret（如 GHA 缺少 AMAP_API_KEY），
-            // 不必发出注定失败的网络请求，直接抛出明确异常供上层定位
             throw ApiKeyMissingException()
         }
 
@@ -84,19 +76,10 @@ class WeatherApiService {
 
     /**
      * 逆地理编码：经纬度 → adcode + 城市名。
-     *
-     * 高德 regeo API 返回格式：
-     * ```json
-     * {"status":"1","regeocode":{"addressComponent":{"adcode":"110000","city":"北京市"}}}
-     * ```
-     *
-     * @return Pair(adcode, cityName)
-     * @throws WeatherNetworkException 网络请求失败
-     * @throws WeatherApiException 高德 API 返回 status!=1
      */
     private suspend fun fetchAdcode(lat: Double, lng: Double, key: String): Pair<String, String> {
         // 高德 API location 参数格式：经度,纬度（lng,lat）
-        val location = String.format(java.util.Locale.US, "%.6f,%.6f", lng, lat)
+        val location = String.format(Locale.US, "%.6f,%.6f", lng, lat)
         val url = buildUrl(REGEO_BASE_URL, mapOf("location" to location, "key" to key))
         val response = executeRequest(url)
         val json = parseJson(response)
@@ -124,14 +107,6 @@ class WeatherApiService {
 
     /**
      * 获取实时天气（extensions=base）。
-     *
-     * 返回格式：
-     * ```json
-     * {"status":"1","lives":[{"temperature":"22","weather":"阴","winddirection":"东北","windpower":"≤3","humidity":"93","reporttime":"2026-07-07 22:03:09"}]}
-     * ```
-     *
-     * @throws WeatherNetworkException 网络请求失败
-     * @throws WeatherApiException 高德 API 返回 status!=1 或数据为空
      */
     private suspend fun fetchNowWeather(adcode: String, key: String): WeatherNow {
         val url = buildUrl(WEATHER_BASE_URL, mapOf("city" to adcode, "key" to key, "extensions" to "base"))
@@ -157,14 +132,6 @@ class WeatherApiService {
 
     /**
      * 获取 4 天预报（extensions=all）。
-     *
-     * 返回格式：
-     * ```json
-     * {"status":"1","forecasts":[{"city":"北京市","adcode":"110000","casts":[{"date":"2026-07-07","week":"2","dayweather":"雷阵雨","nightweather":"多云","daytemp":"31","nighttemp":"22",...}]}]}
-     * ```
-     *
-     * @throws WeatherNetworkException 网络请求失败
-     * @throws WeatherApiException 高德 API 返回 status!=1 或数据为空
      */
     private suspend fun fetchDailyForecast(adcode: String, key: String): List<WeatherDay> {
         val url = buildUrl(WEATHER_BASE_URL, mapOf("city" to adcode, "key" to key, "extensions" to "all"))
@@ -232,16 +199,13 @@ class WeatherApiService {
 
     /**
      * 执行 HTTP 请求，返回响应体字符串。
-     *
-     * @throws WeatherNetworkException 网络层异常（连接超时、DNS 解析失败、断网等）
      */
     private fun executeRequest(url: String): String {
         return try {
             val request = Request.Builder().url(url).build()
             client.newCall(request).execute().use { response ->
                 if (response.isSuccessful) {
-                    response.body?.string()
-                        ?: throw WeatherNetworkException("响应体为空")
+                    response.body.string()
                 } else {
                     throw WeatherNetworkException("HTTP ${response.code}")
                 }
@@ -253,11 +217,8 @@ class WeatherApiService {
         }
     }
 
-    /**
-     * 获取已解密的 API Key。
-     * 与静态地图服务共用同一个高德 Web 服务 Key。
-     */
-    private fun apiKey(): String = SecretManager.getSecret("amap.api.key")
+    /** 构建时注入的高德 Web 服务 Key（可被反编译提取，不是秘密）。 */
+    private fun apiKey(): String = BuildConfig.AMAP_WEB_KEY
 
     companion object {
         // 高德 Web 服务 API 基础 URL
@@ -267,10 +228,10 @@ class WeatherApiService {
 }
 
 /**
- * API Key 未配置：构建时未注入 AMAP_API_KEY secret（local.properties 缺失或为空）。
- * 此时所有高德 API 请求都会返回 INVALID_USER_KEY，无需发出网络请求。
+ * API Key 未配置：构建时未注入 AMAP_WEB_KEY / local.properties amap.api.key。
  */
-class ApiKeyMissingException : Exception("API Key 未配置，请运行 gradle encryptSecrets 生成 secrets.dat")
+class ApiKeyMissingException :
+    Exception("高德 Web 服务 Key 未配置，请设置 AMAP_WEB_KEY 或 local.properties 的 amap.api.key")
 
 /**
  * 网络层异常：连接超时、DNS 解析失败、断网、HTTP 非 2xx 等。
@@ -279,6 +240,5 @@ class WeatherNetworkException(message: String) : Exception(message)
 
 /**
  * 高德 API 业务错误：status != "1"，如 Key 无效、配额超限、参数错误等。
- * message 包含高德返回的 info 与 infocode，便于定位。
  */
 class WeatherApiException(message: String) : Exception(message)

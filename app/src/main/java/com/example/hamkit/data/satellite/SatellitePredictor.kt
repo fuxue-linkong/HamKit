@@ -43,18 +43,22 @@ class SatellitePredictor {
      * @param longitude 地面站经度（度）
      * @param altitude 地面站海拔（米）
      * @param hoursAhead 预测未来小时数
+     * @param now 预测基准时刻，默认当前时间；测试可注入固定时刻
+     * @param radiosByCatalogNumber 转发器库（NORAD → 转发器），用于聚合工作模式；
+     *   为空时仅使用硬编码目录模式
      */
     suspend fun predictUpcomingPasses(
         sourcedTles: List<SourcedTLE>,
         latitude: Double,
         longitude: Double,
         altitude: Double = 0.0,
-        hoursAhead: Int = 48
+        hoursAhead: Int = 48,
+        now: Instant = Instant.now(),
+        radiosByCatalogNumber: Map<Int, List<RadioInfo>> = emptyMap(),
     ): List<SatelliteInfo> = withContext(Dispatchers.Default) {
         if (sourcedTles.isEmpty()) return@withContext emptyList()
 
-        val utcNow = Instant.now()
-        val nowMs = utcNow.toEpochMilli()
+        val nowMs = now.toEpochMilli()
         val searchEndMs = nowMs + hoursAhead * 60L * 60L * 1000L
 
         // 全量并发：每颗卫星的 SGP4/SDP4 计算独立，一次性派发让 Default 线程池自行调度。
@@ -63,7 +67,15 @@ class SatellitePredictor {
             sourcedTles
                 .map { sourcedTle ->
                     async(Dispatchers.Default) {
-                        predictSinglePass(sourcedTle, latitude, longitude, altitude, nowMs, searchEndMs)
+                        predictSinglePass(
+                            sourcedTle = sourcedTle,
+                            latitude = latitude,
+                            longitude = longitude,
+                            altitude = altitude,
+                            nowMs = nowMs,
+                            searchEndMs = searchEndMs,
+                            radiosByCatalogNumber = radiosByCatalogNumber,
+                        )
                     }
                 }
                 .awaitAll()
@@ -84,6 +96,14 @@ class SatellitePredictor {
          * 对同步轨道卫星这是合理的展示约定（其星下点长期固定，24h 内始终可见）。
          */
         private const val GEO_VISIBLE_WINDOW_MS = 24L * 60L * 60L * 1000L
+
+        /**
+         * 在境卫星回溯真实 AOS 的上限（6 小时）。
+         *
+         * 非 GEO 的常见在境过境远短于 6 小时；限制上限避免高轨异常 TLE 触发
+         * 过长的回溯扫描。超过上限仍找不到 AOS 时回退为预测基准时刻。
+         */
+        private const val MAX_IN_PASS_LOOKBACK_MS = 6L * 60L * 60L * 1000L
     }
 
     private fun predictSinglePass(
@@ -92,11 +112,17 @@ class SatellitePredictor {
         longitude: Double,
         altitude: Double,
         nowMs: Long,
-        searchEndMs: Long
+        searchEndMs: Long,
+        radiosByCatalogNumber: Map<Int, List<RadioInfo>>,
     ): SatelliteInfo? {
         return try {
             val tle = sourcedTle.tle
-            val modes = SatelliteCatalog.MODES_BY_CATALOG_NUMBER[tle.catnum].orEmpty()
+            // 工作模式 = 活跃转发器模式 ∪ 硬编码目录模式。仅靠硬编码目录会让
+            // 目录外卫星（如只有 SatNOGS 转发器的 OUTPOST MISSION2）模式为空。
+            val modes = SatelliteCatalog.effectiveModes(
+                catalogNumber = tle.catnum,
+                radios = radiosByCatalogNumber[tle.catnum].orEmpty(),
+            )
 
             val meanMotion = tle.meanmo
 
@@ -138,15 +164,20 @@ class SatellitePredictor {
                 )
             }
 
-            val pass = PassFinder.nextPass(propagator, nowMs2, searchEndMs) ?: return null
-            val aosMs = pass.aosMs
-            val losMs = pass.losMs
-            if (aosMs >= searchEndMs) return null
-
             // 动态过境时长校验：基于卫星轨道周期，而非固定 3 小时一刀切。
             // SGP4 传播器在 TLE 过期 / 近再入时可能产生假性恒定可见的仰角，
             // 导致 AOS-LOS 跨整个搜索窗口。以 1.5 × 轨道周期为上限滤除。
             val maxDurationMs = PassFinder.maxPassDurationMs(meanMotion)
+            // 在境时向前回溯真实 AOS，避免所有在境卫星共享同一个预测时刻。
+            val pass = PassFinder.nextPass(
+                propagator = propagator,
+                fromMs = nowMs2,
+                toMs = searchEndMs,
+                lookbackMs = maxDurationMs.coerceAtMost(MAX_IN_PASS_LOOKBACK_MS),
+            ) ?: return null
+            val aosMs = pass.aosMs
+            val losMs = pass.losMs
+            if (aosMs >= searchEndMs) return null
             if (losMs - aosMs > maxDurationMs) return null
 
             // 白天过境标记：取 AOS 时刻地面站太阳仰角 > -0.833°。

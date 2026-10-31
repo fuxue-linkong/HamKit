@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HamKit Privacy Policy</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      margin: 0 auto;
+      padding: 20px 20px 48px;
+      max-width: 760px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", sans-serif;
+      font-size: 15px;
+      line-height: 1.7;
+      color: #1f2328;
+      background: #ffffff;
+    }
+    h1 { font-size: 24px; line-height: 1.3; margin: 0 0 8px; }
+    h2 { font-size: 18px; margin: 26px 0 8px; }
+    h3 { font-size: 16px; margin: 18px 0 6px; }
+    p { margin: 8px 0; }
+    ul { margin: 8px 0 8px 22px; padding: 0; }
+    li { margin: 4px 0; }
+    .meta { color: #656d76; font-size: 13px; margin-bottom: 20px; }
+    .note { padding: 12px 14px; border-left: 3px solid #0969da; background: #f6f8fa; margin: 16px 0; }
+    .warn { padding: 12px 14px; border-left: 3px solid #cf222e; background: #fff5f5; margin: 16px 0; }
+    a { color: #0969da; }
+    @media (prefers-color-scheme: dark) {
+      body { color: #e6edf3; background: #0d1117; }
+      .meta { color: #8b949e; }
+      .note { background: #161b22; border-left-color: #58a6ff; }
+      .warn { background: #2d1114; border-left-color: #f85149; }
+      a { color: #58a6ff; }
+    }
+  </style>
+</head>
+<body>
+  <h1>HamKit Privacy Policy</h1>
+  <p class="meta">Version 1.0 · Updated: 2026-10-19 · Applies to the HamKit Android app (com.example.hamkit)</p>
+
+  <div class="note">
+    <strong>Summary:</strong> HamKit is a free amateur-radio helper. We process precise location, microphone/audio, callsign and APRS data to provide zone/grid positioning, maps, satellite passes, APRS, FT8 and SSTV. Most data stays on your device. We do not sell personal information or show ads.
+  </div>
+
+  <h2>1. Who we are</h2>
+  <p>HamKit is maintained by an individual developer. Contact: <a href="mailto:liurun637@gmail.com">liurun637@gmail.com</a>.</p>
+
+  <h2>2. What we process and why</h2>
+
+  <h3>2.1 Precise location (sensitive personal information)</h3>
+  <ul>
+    <li><strong>Data:</strong> latitude/longitude, altitude, speed, bearing, and reverse-geocoded address/region.</li>
+    <li><strong>Purpose:</strong> CQ/ITU zones, Maidenhead grid, map display, local weather, satellite pass/Doppler calculations, and APRS position reports when you enable them.</li>
+    <li><strong>How:</strong> positioning is local; weather and reverse geocoding send coordinates to the Amap open platform; maps are displayed by the Amap Android SDK; APRS reports send your callsign and position to APRS-IS.</li>
+    <li><strong>Legal basis:</strong> your separate consent. You can revoke location permission in system settings or decline the location consent at first launch.</li>
+  </ul>
+
+  <h3>2.2 Microphone and audio</h3>
+  <ul>
+    <li><strong>Data:</strong> microphone audio; on Android 10+, audio from other apps via MediaProjection playback capture; saved WAV recordings and decoded SSTV/fax images.</li>
+    <li><strong>Purpose:</strong> FT8 decoding, SSTV/WEFAX reception, waterfall display, replay and offline decoding.</li>
+    <li><strong>How:</strong> processed on-device; only leaves the device if you explicitly share/export it. Playback capture requires system consent each time.</li>
+  </ul>
+
+  <h3>2.3 Callsign, APRS and QSO logs</h3>
+  <ul>
+    <li><strong>Data:</strong> callsign, SSID, APRS passcode, APRS positions/messages, QSO log fields.</li>
+    <li><strong>Purpose:</strong> connect to APRS-IS, send/receive packets, log contacts, export ADIF/XML.</li>
+    <li><strong>How:</strong> the passcode is stored on-device and sent to APRS-IS as a login credential when connecting, but it is not uploaded to our own servers. Only when you enable APRS reporting/messaging are your callsign, position and messages sent to APRS-IS, a public amateur-radio network that may be mirrored by third-party sites.</li>
+  </ul>
+
+  <h3>2.4 Device and network information</h3>
+  <p>IP address, User-Agent and request time may be processed by update servers, satellite data sources and the Amap SDK (which may collect device/network/location data to provide maps and weather). We use this to deliver requests, check for updates and prevent abuse.</p>
+
+  <h2>3. Third parties</h2>
+  <ul>
+    <li><strong>Amap (Gaode):</strong> map display, weather and reverse geocoding; receives coordinates and device/network data. See <a href="https://lbs.amap.com/pages/privacy/">Amap privacy policy</a>.</li>
+    <li><strong>APRS-IS:</strong> when you connect and enable reporting, callsign/position/messages enter a public network. Read-only and reporting-off are the defaults.</li>
+    <li><strong>CelesTrak / SatNOGS / AMSAT:</strong> satellite TLE, transponder and status data; requests carry IP/User-Agent but not your location.</li>
+    <li><strong>GitHub / hamkit.click:</strong> update checks and APK downloads; receive IP/User-Agent.</li>
+    <li><strong>Google Play Services Location (if available):</strong> system positioning, governed by Google's privacy policy.</li>
+    <li><strong>AI provider (configured by you):</strong> only when you save an API key and use the AI assistant, your prompts (which may include coordinates, callsigns or satellite records you type) are sent to the provider you chose (e.g. DeepSeek, OpenAI, Anthropic, Google, or your own intranet endpoint). The key is encrypted with Android Keystore AES-GCM on this device, never logged or backed up; chat history is encrypted at rest as well. Requests go directly from the app to the provider, not through our servers, and we cannot delete data held by the provider.</li>
+  </ul>
+  <p>We do not sell your personal information.</p>
+
+  <h2>4. Retention and storage</h2>
+  <ul>
+    <li>Local data (settings, logs, images, recordings, passcode) stays on your device until you delete it in the app, clear app data or uninstall.</li>
+    <li>APRS-IS public data is retained by that network and its mirrors; we cannot delete or control it.</li>
+    <li>AI chat history is encrypted on this device and can be deleted under "AI settings → Clear all conversations".</li>
+    <li>Third-party services retain request data under their own policies.</li>
+  </ul>
+
+  <h2>5. Cross-border transfers</h2>
+  <p>APRS-IS is an international amateur-radio network whose servers may be outside China; CelesTrak, SatNOGS, AMSAT and GitHub are also outside China. Using those features may transfer IP, callsign, position or messages abroad. Amap services (including weather/reverse geocoding) are in China. AI requests cross borders only if the provider you configure is outside China; an intranet endpoint stays local. If you do not want cross-border transfers, disable APRS reporting, avoid features that depend on overseas data sources and choose a domestic AI provider.</p>
+
+  <h2>6. Permissions</h2>
+  <ul>
+    <li><strong>Location:</strong> required for core positioning/map/weather/APRS; optional at the system level.</li>
+    <li><strong>Microphone:</strong> required for FT8/SSTV/WEFAX reception; optional.</li>
+    <li><strong>Notifications:</strong> for pass reminders; optional.</li>
+    <li><strong>MediaProjection:</strong> optional playback capture; system consent each time.</li>
+    <li><strong>Install unknown apps:</strong> only for in-app updates; optional.</li>
+  </ul>
+
+  <h2>7. Your rights</h2>
+  <p>You may request access, a copy, correction or deletion of your personal information, withdraw consent, or clear local data. Because there is no account system, most data can be deleted in the app or by clearing app data/uninstalling. Contact <a href="mailto:liurun637@gmail.com">liurun637@gmail.com</a> if you need help. Withdrawal does not affect processing already carried out based on consent.</p>
+
+  <h2>8. Security</h2>
+  <p>We use access controls, disable cloud backup and minimize collection. No system is absolutely secure; protect your device, lock screen and APRS passcode.</p>
+
+  <h2>9. Children</h2>
+  <p>The app is not directed to children. If you are under 14, please read this policy with your guardian and use the app only with guardian consent. Radio transmission must also comply with local amateur-radio rules.</p>
+
+  <div class="warn">
+    <strong>Important:</strong> APRS positions and messages are public. Do not expose your home or workplace when reporting is enabled. Satellite, weather and map data are for reference only and must not be used for navigation, rescue or other safety-critical decisions.
+  </div>
+
+  <h2>10. Changes</h2>
+  <p>We may update this policy when features or laws change. Material changes will trigger a new consent request in the app. The version and date are shown above.</p>
+
+  <h2>11. Contact</h2>
+  <p>Privacy questions, complaints or rights requests: <a href="mailto:liurun637@gmail.com">liurun637@gmail.com</a>.</p>
+</body>
+</html>

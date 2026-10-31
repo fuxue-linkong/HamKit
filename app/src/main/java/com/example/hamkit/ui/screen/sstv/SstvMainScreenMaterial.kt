@@ -56,7 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.data.sstv.SstvMode
-import com.example.hamkit.ui.appViewModel
+import com.example.hamkit.ui.applicationScopedViewModel
 import com.example.hamkit.ui.component.material.SegmentedColumn
 import com.example.hamkit.ui.component.material.SegmentedListItem
 import com.example.hamkit.ui.component.material.SegmentedRadioItem
@@ -82,7 +82,7 @@ fun SstvMainScreenMaterial(
     onNavigate: (Route) -> Unit = {},
     onNavigateBack: () -> Unit = {},
 ) {
-    val viewModel = appViewModel<SstvViewModel>()
+    val viewModel = applicationScopedViewModel<SstvViewModel>()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     // 接收明细默认收起：常看的参数已放在预览卡的状态行里
@@ -92,11 +92,20 @@ fun SstvMainScreenMaterial(
         onDispose { viewModel.clearPreset() }
     }
 
+    // 图库的大图查看器与接收页共用应用级 ViewModel。进入接收页时先收起它，
+    // 这样从接收页返回图库（图 1）时看到的是列表，而不是上次留下的大图（图 3）。
+    LaunchedEffect(Unit) { viewModel.closeViewer() }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted) viewModel.startReceiving() else viewModel.onPermissionDenied()
     }
+
+    // 修复 P3-8：通知权限运行时请求（Android 13+ POST_NOTIFICATIONS）
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { }
 
     // 由卫星详情页或过境提醒进入时预置模式。必须与 startReceiving 同处一个 LaunchedEffect：
     // startReceiving 读的正是 applyPreset 刚写下的 presetOverride。
@@ -104,15 +113,15 @@ fun SstvMainScreenMaterial(
         val mode = presetModeName?.let { name -> SstvMode.entries.find { it.name == name } }
         if (mode != null) viewModel.applyPreset(mode)
 
-        if (!autoStart) return@LaunchedEffect
-        val granted = ContextCompat.checkSelfPermission(
-            context, Manifest.permission.RECORD_AUDIO,
-        ) == PackageManager.PERMISSION_GRANTED
-        if (granted) {
-            viewModel.startReceiving()
-        } else {
-            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-        }
+        autoStartReceivingWithPermissions(
+            autoStart = autoStart,
+            context = context,
+            viewModel = viewModel,
+            requestAudioPermission = { permissionLauncher.launch(Manifest.permission.RECORD_AUDIO) },
+            requestNotificationPermission = {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            },
+        )
     }
 
     // 音频文件导入：OpenDocument 无需存储权限；WAV 的 mime 在不同提供方之间不统一，
@@ -382,15 +391,6 @@ fun SstvMainScreenMaterial(
                                 },
                                 {
                                     SegmentedSwitchItem(
-                                        title = "跨帧融合",
-                                        summary = "同一张图被重复发送时，筛选并配准后合并多次结果" +
-                                            "（实测有增益，但不是倍数级）",
-                                        checked = uiState.fusionEnabled,
-                                        onCheckedChange = { viewModel.setFusionEnabled(it) },
-                                    )
-                                },
-                                {
-                                    SegmentedSwitchItem(
                                         title = "连续接收",
                                         summary = "收满一帧后保留模式与失谐量，自动接续下一帧（ISS 连发多张时用）",
                                         checked = uiState.continuous,
@@ -429,8 +429,8 @@ fun SstvMainScreenMaterial(
                             )
                             Spacer(Modifier.height(4.dp))
                             Text(
-                                text = "1200 Hz 冒青、1500 Hz 偏绿、2300 Hz 偏红。调谐时看那条同步线是否" +
-                                    "稳稳落在青色区；散成一片说明信噪比差。",
+                                text = "1200 Hz 偏红橙、1500 Hz 偏黄绿、2300 Hz 偏青蓝（频率越低越暖、越高越冷）。" +
+                                    "调谐时看那条同步线是否稳稳落在青色区；散成一片说明信噪比差。",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -511,21 +511,6 @@ fun SstvMainScreenMaterial(
                                 }
                                 if (uiState.rollingRows > 0) {
                                     SstvInfoRowMaterial("持续接收", "已解 ${uiState.rollingRows} 行")
-                                }
-                                if (uiState.fusionFrames > 0) {
-                                    SstvInfoRowMaterial("融合素材", "${uiState.fusionFrames} 段图像")
-                                }
-                                if (uiState.fusionUsedFrames > 0) {
-                                    SstvInfoRowMaterial(
-                                        "融合结果",
-                                        "${uiState.fusionUsedFrames} 帧合并，实测 " +
-                                            "+${"%.1f".format(uiState.fusionGainDb)} dB" +
-                                            if (uiState.fusionRejected > 0) {
-                                                "（筛掉 ${uiState.fusionRejected} 帧）"
-                                            } else {
-                                                ""
-                                            },
-                                    )
                                 }
                                 if (uiState.continuous) {
                                     SstvInfoRowMaterial(

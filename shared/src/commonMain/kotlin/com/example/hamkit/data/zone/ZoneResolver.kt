@@ -34,27 +34,50 @@ object ZoneResolver {
     }
 
     /**
-     * 区域列表按优先级排列（后覆盖前）。包围盒越小的地区排在后面，
-     * 以便在重叠时让小区域优先命中。
+     * 区域列表按优先级排列（**后覆盖前**）：resolve 用 asReversed() 倒序遍历，
+     * 列表尾部（最后添加）的条目最先检查、优先级最高。
+     *
+     * 因此排列规则是「越大越泛的区域越靠前、越小越精确的区域越靠后」——
+     * 曾把跨大洋的热带泛区放在表尾，导致它们压过加勒比/南美/西非的精确
+     * 分区（哈瓦那判成太平洋 CQ35、利马判成大西洋 CQ13）；P1-3 修复后
+     * 热带泛区已移到列表最前（最先添加、最后检查）。
      */
     private val regions: List<ZoneRegion> = buildList {
-        // 北美
+        // ── 最泛：跨大洋热带泛区（P1-3 修复：放在列表最前 = asReversed() 下最后检查，
+        //    仅当所有更精确的陆地区域都未命中时才兜底，避免压过加勒比/南美/西非精确区） ──
+        add(ZoneRegion(-25.0, 25.0, -180.0, -120.0, cqZone = 31, ituZone = 61))
+        add(ZoneRegion(-25.0, 25.0, -120.0, -80.0, cqZone = 35, ituZone = 11))
+        add(ZoneRegion(-25.0, 25.0, -80.0, -30.0, cqZone = 13, ituZone = 12))
+        add(ZoneRegion(-25.0, 25.0, -30.0, 20.0, cqZone = 36, ituZone = 46))
+        add(ZoneRegion(-25.0, 25.0, 142.0, 180.0, cqZone = 27, ituZone = 51))
+
+        // 北美（泛框在前，细分在后）。
+        // 美国本土按 CQ 实际分界（约西经 85°）拆成 CQ4/CQ5 两条，避免全境
+        // 误判成单一分区；ITU 沿用相邻值。
         add(ZoneRegion(24.0, 72.0, -180.0, -50.0, cqZone = 5, ituZone = 8))
         add(ZoneRegion(50.0, 72.0, -141.0, -52.0, cqZone = 2, ituZone = 75)) // 加拿大大部分地区
-        add(ZoneRegion(18.0, 50.0, -125.0, -66.0, cqZone = 4, ituZone = 8))  // 美国本土
+        add(ZoneRegion(18.0, 50.0, -125.0, -85.0, cqZone = 4, ituZone = 7))  // 美国本土中西部
+        add(ZoneRegion(18.0, 50.0, -85.0, -66.0, cqZone = 5, ituZone = 8))   // 美国本土东部
         add(ZoneRegion(18.0, 30.0, -160.0, -154.0, cqZone = 31, ituZone = 61)) // 夏威夷
         add(ZoneRegion(51.0, 72.0, -179.0, -130.0, cqZone = 1, ituZone = 1))  // 阿拉斯加
 
-        // 中美洲与加勒比
-        add(ZoneRegion(5.0, 32.0, -118.0, -59.0, cqZone = 7, ituZone = 11))
-        add(ZoneRegion(18.0, 24.0, -80.0, -71.0, cqZone = 8, ituZone = 11))   // 古巴/牙买加
-        add(ZoneRegion(5.0, 19.0, -95.0, -77.0, cqZone = 7, ituZone = 10))    // 墨西哥/中美洲
+        // 中美洲与加勒比。
+        // P1-3 修复：大框北界收到 19°（原 32° 伸入美国本土，倒挂压过 CQ4 框，德州/新墨西哥
+        // 被误判 CQ7/ITU11）；墨西哥框北界收到 29°、经度下限 -88（原 30°/-86 会吞掉
+        // 德州圣安东尼奥一带），哥伦比亚框北界收到 8°（原 13° 吞掉巴拿马 CQ7）。
+        add(ZoneRegion(5.0, 19.0, -118.0, -59.0, cqZone = 7, ituZone = 11))
+        add(ZoneRegion(18.0, 24.0, -84.0, -71.0, cqZone = 8, ituZone = 11))   // 古巴/牙买加
+        add(ZoneRegion(14.0, 19.0, -95.0, -77.0, cqZone = 10, ituZone = 10))  // 墨西哥南部/中美洲北侧
+        add(ZoneRegion(14.0, 29.0, -115.0, -88.0, cqZone = 10, ituZone = 10)) // 墨西哥本土
 
-        // 南美洲
-        add(ZoneRegion(-56.0, 13.0, -82.0, -34.0, cqZone = 11, ituZone = 12))
+        // 南美洲（大框北界收到 8°：原 13° 会以更后添加顺序压过中美洲框，巴拿马被误判 CQ11）
+        add(ZoneRegion(-56.0, 8.0, -82.0, -34.0, cqZone = 11, ituZone = 12))
         add(ZoneRegion(-24.0, 6.0, -80.0, -35.0, cqZone = 11, ituZone = 13))  // 巴西
         add(ZoneRegion(-56.0, -20.0, -75.0, -53.0, cqZone = 12, ituZone = 14)) // 阿根廷/智利等
-        add(ZoneRegion(-5.0, 13.0, -80.0, -60.0, cqZone = 9, ituZone = 11))   // 哥伦比亚/委内瑞拉
+        add(ZoneRegion(-5.0, 7.5, -80.0, -75.0, cqZone = 9, ituZone = 11))   // 哥伦比亚西部（北界 7.5°，避免吞巴拿马东部）
+        add(ZoneRegion(-5.0, 12.0, -75.0, -60.0, cqZone = 9, ituZone = 11))  // 哥伦比亚主体/委内瑞拉（含加拉加斯）
+        add(ZoneRegion(-5.0, 2.0, -82.0, -75.0, cqZone = 11, ituZone = 12))   // 厄瓜多尔
+        add(ZoneRegion(-18.0, -5.0, -82.0, -70.0, cqZone = 10, ituZone = 12)) // 秘鲁/玻利维亚（西海岸）
 
         // 欧洲
         add(ZoneRegion(36.0, 71.0, -11.0, 40.0, cqZone = 14, ituZone = 27))
@@ -84,9 +107,11 @@ object ZoneResolver {
         // 非洲
         add(ZoneRegion(-35.0, 38.0, -17.0, 52.0, cqZone = 33, ituZone = 44))
         add(ZoneRegion(0.0, 38.0, -18.0, 12.0, cqZone = 33, ituZone = 46))     // 西北非
+        add(ZoneRegion(4.0, 14.0, -4.0, 15.0, cqZone = 35, ituZone = 35))      // 几内亚湾沿岸（尼日利亚/加纳等）
         add(ZoneRegion(0.0, 18.0, 12.0, 32.0, cqZone = 37, ituZone = 47))      // 东非
         add(ZoneRegion(-35.0, 0.0, 12.0, 52.0, cqZone = 38, ituZone = 53))     // 南非/东南非
-        add(ZoneRegion(-35.0, 6.0, -18.0, 12.0, cqZone = 36, ituZone = 46))    // 中西非
+        // 中西非框北界收到 5°（原 6° 会以更靠后的添加顺序压过几内亚湾 CQ35 框）
+        add(ZoneRegion(-35.0, 5.0, -18.0, 12.0, cqZone = 36, ituZone = 46))    // 中西非
 
         // 南亚
         add(ZoneRegion(6.0, 37.0, 68.0, 97.0, cqZone = 22, ituZone = 41))
@@ -106,13 +131,6 @@ object ZoneResolver {
         add(ZoneRegion(-44.0, -10.0, 112.0, 155.0, cqZone = 30, ituZone = 55)) // 澳大利亚
         add(ZoneRegion(-48.0, -34.0, 166.0, 179.0, cqZone = 32, ituZone = 60)) // 新西兰
         add(ZoneRegion(-10.0, -1.0, 140.0, 155.0, cqZone = 28, ituZone = 51))  // 巴布亚新几内亚
-
-        // 太平洋
-        add(ZoneRegion(-25.0, 25.0, 142.0, 180.0, cqZone = 27, ituZone = 51))
-        add(ZoneRegion(-25.0, 25.0, -180.0, -120.0, cqZone = 31, ituZone = 61))
-        add(ZoneRegion(-25.0, 25.0, -120.0, -80.0, cqZone = 35, ituZone = 11))
-        add(ZoneRegion(-25.0, 25.0, -80.0, -30.0, cqZone = 13, ituZone = 12))
-        add(ZoneRegion(-25.0, 25.0, -30.0, 20.0, cqZone = 36, ituZone = 46))
     }
 
     fun resolve(latitude: Double, longitude: Double): ZoneInfo {

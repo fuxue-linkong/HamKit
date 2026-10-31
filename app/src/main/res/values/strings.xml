@@ -21,6 +21,10 @@
     <string name="permission_status_ready_title">Permissions Ready</string>
     <string name="permission_status_missing_title">Permissions Required</string>
     <string name="home">Home</string>
+    <!-- AI assistant -->
+    <string name="ai">AI</string>
+    <string name="settings_ai_assistant">AI assistant</string>
+    <string name="settings_ai_assistant_summary">Ask about amateur radio, and let it call app features such as zone lookup and satellite passes.</string>
     <string name="confirm">Confirm</string>
     <string name="cancel">Cancel</string>
     <string name="settings">Settings</string>
@@ -132,8 +136,29 @@
     <string name="about_project_home" translatable="false">项目主页</string>
     <string name="about_report_issue" translatable="false">问题反馈</string>
     <string name="about_license" translatable="false">开源许可</string>
+    <string name="about_privacy" translatable="false">隐私政策</string>
     <string name="about_disclaimer_title" translatable="false">免责声明</string>
     <string name="about_description_title" translatable="false">应用简介</string>
+    <string name="about_developers_title" translatable="false">开发者</string>
+    <string name="about_donors_title" translatable="false">捐赠者</string>
+
+    <!-- 首次启动隐私同意（与 assets/privacy_policy_*.html 配套） -->
+    <string name="privacy_policy_title" translatable="false">隐私政策</string>
+    <string name="privacy_consent_title" translatable="false">隐私政策与个人信息保护</string>
+    <string name="privacy_consent_intro" translatable="false">HamKit 需要处理位置、麦克风和音频等信息才能提供分区定位、地图、卫星、APRS、FT8 与 SSTV 等功能。请先阅读并同意下面的说明；不同意将退出应用，我们不会在同意前收集任何个人信息。</string>
+    <string name="privacy_consent_location_title" translatable="false">精确位置（敏感个人信息）</string>
+    <string name="privacy_consent_location_desc" translatable="false">用于计算 CQ/ITU 分区与 Maidenhead 网格、显示地图、查询天气，以及在 APRS 中上报位置。精确位置属于敏感个人信息，需要你单独同意。你也可以在系统设置中随时关闭定位权限。</string>
+    <string name="privacy_consent_aprs_title" translatable="false">APRS 位置公开（可选）</string>
+    <string name="privacy_consent_aprs_desc" translatable="false">开启 APRS 上报后，你的呼号、精确位置和消息会发布到 APRS-IS 及关联网站，可能被任何人看到。该功能默认关闭；不勾选不影响接收和其他功能。</string>
+    <string name="privacy_consent_policy_checkbox" translatable="false">我已阅读并同意《隐私政策》</string>
+    <string name="privacy_consent_location_checkbox" translatable="false">我同意处理我的精确位置信息（敏感个人信息）</string>
+    <string name="privacy_consent_aprs_checkbox" translatable="false">我同意在开启 APRS 上报时公开我的位置（可选）</string>
+    <string name="privacy_consent_ai_title">AI assistant (optional)</string>
+    <string name="privacy_consent_ai_desc">Requires your own API key. Prompts and attachments are sent to the provider you configure; the key and chat history are encrypted on this device.</string>
+    <string name="privacy_consent_agree" translatable="false">同意并继续</string>
+    <string name="privacy_consent_decline" translatable="false">不同意，退出</string>
+    <string name="privacy_consent_view_policy" translatable="false">查看完整隐私政策</string>
+    <string name="privacy_consent_footer" translatable="false">你可以随时在系统设置中关闭定位/麦克风权限，也可以在“关于 → 隐私政策”中查看本政策。若需撤回同意、删除数据或有疑问，请联系 liurun637@gmail.com。</string>
     <string name="nearby_satellites" translatable="false">附近卫星</string>
     <string name="satellite_count" translatable="false">共 %d 颗</string>
     <string name="satellite_count_filtered" translatable="false">%1$d / %2$d 颗</string>
@@ -416,7 +441,88 @@
     <string name="aprs_readonly_banner" translatable="false">当前为只读模式：未填写 Passcode，仅接收不发送。</string>
     <string name="aprs_readonly_send_blocked" translatable="false">只读模式：未填写 Passcode，无法发送</string>
     <string name="aprs_license_title" translatable="false">持照与责任声明</string>
-    <string name="aprs_license_message" translatable="false">APRS-IS 是业余无线电网络，仅限持有有效业余无线电执照的爱好者使用。\n\n你呼号下的所有流量（包含位置上报与消息）由你本人负责。请确认你已持有有效执照，且 Passcode 由你本人合法持有；HamKit 不会为你计算或发放 Passcode。\n\n未填写 Passcode 时将以只读模式连接（pass -1），只能接收报文。</string>
+    <string name="aprs_license_message" translatable="false">APRS-IS 是业余无线电网络，仅限持有有效业余无线电执照的爱好者使用。\n\n你呼号下的所有流量（包含位置上报与消息）由你本人负责。开启位置上报后，你的呼号、精确位置和消息会发布到 APRS-IS 及关联网站，可能被任何人看到。\n\n请确认你已持有有效执照，且 Passcode 由你本人合法持有；HamKit 不会为你计算或发放 Passcode。\n\n未填写 Passcode 时将以只读模式连接（pass -1），只能接收报文。</string>
     <string name="aprs_license_confirm" translatable="false">我已持有有效执照并同意</string>
     <string name="aprs_license_cancel" translatable="false">暂不连接</string>
+    <string name="ai_title">AI assistant</string>
+    <string name="ai_new_chat">New chat</string>
+    <string name="ai_history">History</string>
+    <string name="ai_settings">Settings</string>
+    <string name="ai_input_hint">Describe what you want, or attach a document / recording…</string>
+    <string name="ai_attach_hint">Documents / recordings (audio is decoded by SSTV)</string>
+    <string name="ai_send">Send</string>
+    <string name="ai_stop">Stop</string>
+    <string name="ai_no_text">(no text output)</string>
+    <string name="ai_tool_running">Running</string>
+    <string name="ai_tool_done">Done</string>
+    <string name="ai_tool_failed">Failed</string>
+    <string name="ai_att_parsing">Parsing…</string>
+    <string name="ai_history_title">Chat history</string>
+    <string name="ai_history_empty">No conversations yet</string>
+    <string name="ai_export">Export</string>
+    <string name="ai_delete">Delete</string>
+    <string name="ai_close">Close</string>
+    <string name="ai_allow">Allow</string>
+    <string name="ai_cancel">Cancel</string>
+    <string name="ai_need_key_title">API key required</string>
+    <string name="ai_go_config">Configure</string>
+    <string name="ai_empty_desc">Ask about amateur radio — I can also use HamKit features like zone lookup, satellite passes and SSTV reception.</string>
+    <string name="ai_settings_system_prompt">System prompt</string>
+    <string name="ai_settings_tools">Tool permissions</string>
+    <string name="ai_settings_confirm">Confirm before side effects</string>
+    <string name="ai_settings_fetch_models">Fetch model list</string>
+    <string name="ai_sample_1">How are CQ zones divided?</string>
+    <string name="ai_sample_2">What do 73 and RR73 mean in FT8?</string>
+    <string name="ai_sample_3">Which mode does ISS SSTV usually use?</string>
+    <string name="ai_sample_4">When does ISS pass over me?</string>
+    <string name="ai_settings_save">Save settings</string>
+    <string name="ai_settings_test">Test connection</string>
+    <string name="ai_settings_clear_history">Clear all conversations</string>
+    <string name="ai_settings_clear">Clear</string>
+    <string name="ai_settings_save_key">Save key</string>
+    <string name="ai_err_no_key">No API key configured. Open AI settings to add one.</string>
+    <string name="ai_err_parsing">Attachments are still being parsed, please wait.</string>
+    <string name="ai_err_not_ready">AI page is not ready yet, please retry.</string>
+    <string name="ai_err_key_read">Failed to read API key, please save it again.</string>
+    <string name="ai_err_auth">API key invalid or unauthorized (HTTP %1$s).</string>
+    <string name="ai_err_rate">Too many requests, please retry later.</string>
+    <string name="ai_err_invalid">Request rejected by provider: %1$s</string>
+    <string name="ai_err_server">Provider unavailable: %1$s</string>
+    <string name="ai_err_network">Network unavailable: %1$s</string>
+    <string name="ai_err_timeout">Request timed out, check your network and retry.</string>
+    <string name="ai_err_parse">Failed to parse response: %1$s</string>
+    <string name="ai_err_empty">Provider returned no text (stop reason: %1$s). Check the model, protocol and base URL.</string>
+    <string name="ai_settings_prompt_hint">Leave empty to use the default prompt (app capabilities, tools, attachments).</string>
+    <string name="ai_settings_tools_hint">Disabled tools are hidden from the model and never called.</string>
+    <string name="ai_settings_confirm_hint">Ask before writing to the device, e.g. creating reminders.</string>
+    <string name="ai_settings_key_hint">The key is encrypted with Android Keystore AES-GCM, never logged or backed up.</string>
+    <string name="ai_settings_network_hint">Only applies to private hosts (10.x / 172.16-31.x / 192.168.x / .local). HTTP is unencrypted.</string>
+    <string name="ai_settings_history_hint">Chat history is encrypted with AES-256-GCM on this device.</string>
+    <string name="ai_settings_clear_history_hint">Delete encrypted history on this device. This cannot be undone.</string>
+    <string name="ai_settings_not_saved">Not saved</string>
+    <string name="ai_settings_fetching">Fetching…</string>
+    <string name="ai_settings_saved_masked">Saved: %1$s</string>
+    <string name="ai_settings_probe_ok">Connected, first byte %1$d ms</string>
+    <string name="ai_settings_probe_fail">Connection failed: %1$s</string>
+    <string name="ai_settings_tool_ok">Tool calling: available</string>
+    <string name="ai_settings_tool_unsupported">Tool calling: not supported by this model</string>
+    <string name="ai_generating">Generating…</string>
+    <string name="ai_executing">Running…</string>
+    <string name="ai_history_desc">Chat history</string>
+    <string name="ai_new_chat_desc">New chat</string>
+    <string name="ai_settings_desc">AI settings</string>
+    <string name="ai_send_desc">Send</string>
+    <string name="ai_stop_desc">Stop generating</string>
+    <string name="ai_attach_desc">Attach file</string>
+    <string name="ai_open_gallery">Open gallery</string>
+    <string name="ai_reminder_created">Pass reminder created</string>
+    <string name="ai_remove_attachment">Remove attachment</string>
+    <string name="ai_history_empty_desc">No chats yet — start a new one.</string>
+    <string name="ai_history_messages">%1$d messages</string>
+    <string name="ai_history_yesterday">Yesterday</string>
+    <string name="ai_history_delete_title">Delete chat</string>
+    <string name="ai_history_delete_desc">This cannot be undone.</string>
+    <string name="ai_history_open">Open history</string>
+    <string name="ai_tools_collapsed">%1$d tool calls collapsed</string>
+    <string name="ai_tools_expanded">%1$d tool calls</string>
 </resources>

@@ -312,7 +312,7 @@ class MainViewModel : ViewModel() {
             try {
                 val weatherResult = weatherApiService.fetchWeather(
                     latitude = result.latitude,
-                    longitude = result.longitude
+                    longitude = result.longitude,
                 )
                 weatherStore.save(weatherResult)
                 _weather.value = weatherResult
@@ -320,8 +320,7 @@ class MainViewModel : ViewModel() {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: ApiKeyMissingException) {
-                // API Key 未配置：构建时未注入 secret，无需重试
-                _weatherError.value = "API Key 未配置，请运行 gradle encryptSecrets 生成 secrets.dat"
+                _weatherError.value = "高德 Web 服务 Key 未配置，请设置 AMAP_WEB_KEY 或 local.properties 的 amap.api.key"
             } catch (e: WeatherNetworkException) {
                 // 网络层失败：连接超时、断网、DNS 等
                 _weatherError.value = "网络连接失败：${e.message}，请检查网络后重试"
@@ -685,8 +684,17 @@ class MainViewModel : ViewModel() {
      */
     suspend fun initializeIfNeeded() {
         if (initialized) return
+        try {
+            doInitialize()
+        } catch (e: CancellationException) {
+            // 协程被取消：初始化未完成，保持 initialized = false，下次可重新执行
+            throw e
+        }
+        // P2-14：全部初始化完成后才置位，避免中途取消后被永久跳过
         initialized = true
+    }
 
+    private suspend fun doInitialize() {
         // 启动时对齐一次提醒闹钟。
         // 迁移或后台 Worker 可能已经改动了提醒开关/提醒项，而本次启动若命中
         // 15 分钟的过境预测缓存，就不会走到 refreshRemindersFromPrediction，
@@ -1194,15 +1202,20 @@ class MainViewModel : ViewModel() {
             // 会长时间占用 CPU；列表展示仍用全量 TLE（卫星太少问题），
             // 无转发器数据的卫星仅显示信息、不预测过境。
             val predictable = filterPredictableTles(tles)
+            // 预测基准时刻与缓存写入时刻保持一致，避免在境卫星回溯出的 AOS
+            // 与缓存时间出现毫秒级边界差异。
+            val predictedAt = Instant.now()
             val satellites = withContext(Dispatchers.Default) {
                 satellitePredictor.predictUpcomingPasses(
                     sourcedTles = predictable,
                     latitude = latitude,
-                    longitude = longitude
+                    longitude = longitude,
+                    now = predictedAt,
+                    // 转发器库用于聚合工作模式，避免 only-catalog 的 modes 缺失
+                    radiosByCatalogNumber = _radioMap.value,
                 )
             }
             // 更新预测缓存
-            val predictedAt = Instant.now()
             cachedPredictionSatellites = satellites
             cachedPredictionLat = latitude
             cachedPredictionLon = longitude
@@ -1266,8 +1279,9 @@ class MainViewModel : ViewModel() {
 
         val settings = _reminderSettings.value
         // 仅对未来过境创建提醒：AOS 必须在未来。
-        // 旧逻辑用 !isCurrentlyVisible 过滤，但预测器对在境卫星返回的是下次过境，
-        // 旧过滤会把下次过境一起丢弃。改以 AOS 时间为准。
+        // 预测器对在境卫星返回的是“本次过境”（AOS 已过去、LOS 尚未到来），
+        // 因此本次跳过；待本次结束后的下一次预测再创建下一次过境提醒。
+        // 注意：不要用 !isCurrentlyVisible 过滤，否则会把下一次过境一起丢弃。
         val nowMillis = java.lang.System.currentTimeMillis()
         val futureReminders = satellites.filter {
             it.catalogNumber in reminderFlags && it.aosTime.toEpochMilli() > nowMillis

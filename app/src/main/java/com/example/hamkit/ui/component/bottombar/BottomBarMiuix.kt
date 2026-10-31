@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Cottage
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.runtime.Composable
@@ -119,5 +120,9 @@ enum class BottomBarDestination(
     val icon: ImageVector,
 ) {
     Home(R.string.home, Icons.Rounded.Cottage),
+
+    /** AI 助手：问答 + 调用 App 内功能（工具能力随 P1 上线）。 */
+    Ai(R.string.ai, Icons.Rounded.AutoAwesome),
+
     Setting(R.string.settings, Icons.Rounded.Settings)
 }

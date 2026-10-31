@@ -6,8 +6,7 @@ import android.os.Build
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.work.Configuration
-import com.amap.api.maps.MapsInitializer
-import com.example.hamkit.data.crypto.SecretManager
+import com.example.hamkit.data.privacy.AmapPrivacyInitializer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -27,13 +26,12 @@ lateinit var radioApp: HamKitApplication
  * 应用入口。
  *
  * 启动关键路径（主线程同步执行）：
- * 1. 敏感信息解密：从 assets/secrets.dat 解密 API Key（三碎片密钥组装 + AES-GCM）
- * 2. 高德地图 SDK 隐私合规初始化
- * 3. 地图 SDK Key 运行时注入（不依赖 manifestPlaceholders，CI 无需 Secrets）
+ * 1. 高德 SDK 初始化：**仅当历史隐私同意仍有效时**调用；首次启动会跳过，
+ *    由 PrivacyConsentScreen 取得同意后再初始化
  *
  * 后台初始化（IO 线程异步执行，不阻塞首帧）：
- * 4. Android 14+ 启用 OnBackInvokedCallback（依赖 hiddenapibypass）
- * 5. OkHttpClient 单例（带 10MB 缓存 + User-Agent 拦截器）
+ * 3. Android 14+ 启用 OnBackInvokedCallback（依赖 hiddenapibypass）
+ * 4. OkHttpClient 单例（带 10MB 缓存 + User-Agent 拦截器）
  *
  * 拆分原则：只把不阻塞 UI 显示、且无严格时序依赖的初始化放到后台线程，
  * 避免与 Compose 首帧、高德 SDK native 库加载等抢占主线程资源。
@@ -90,33 +88,10 @@ class HamKitApplication : Application(), ViewModelStoreOwner, Configuration.Prov
         radioApp = this
 
         // ── 启动关键路径（主线程同步）──────────────────────────────────
-        // 1. 解密敏感信息（天气 API Key、地图 SDK Key）
-        SecretManager.init(this)
-
-        // 2. 高德 SDK 隐私合规：在 SDK 任何接口调用前必须先调用这两个接口
-        // 用 try/catch 保护，避免 SDK 内部异常导致整个应用启动失败
-        try {
-            MapsInitializer.updatePrivacyShow(this, true, true)
-            MapsInitializer.updatePrivacyAgree(this, true)
-        } catch (_: Throwable) {
-            // 高德 SDK 初始化失败不应阻塞应用启动
-        }
-
-        // 3. 地图 SDK Key 运行时注入
-        // 本地构建时 manifestPlaceholders 已从 local.properties 填充 Key，
-        // CI 构建时 manifest 为空，此处通过解密后的 Key 覆盖设置。
-        val sdkKey = SecretManager.getSecret("amap.sdk.key")
-        if (sdkKey.isNotEmpty()) {
-            try {
-                MapsInitializer::class.java
-                    .getMethod("setApiKey", String::class.java)
-                    .invoke(null, sdkKey)
-            } catch (_: NoSuchMethodException) {
-                // 当前 SDK 版本不支持 setApiKey，依赖 manifest meta-data（本地构建已有）
-            } catch (_: Exception) {
-                // 设置失败不影响其他功能，地图可能无法正常显示
-            }
-        }
+        // 高德 SDK 隐私合规：只有已同意隐私政策的历史用户才在这里初始化。
+        // 首次启动会在 PrivacyConsentScreen 中取得同意后再调用；未同意时这里直接返回，
+        // 不会触发高德 SDK 的任何接口。
+        AmapPrivacyInitializer.initialize(this)
 
         // ── 后台初始化（IO 线程异步，不阻塞首帧）──────────────────────
         // 4. Android 14+ 启用 OnBackInvokedCallback（依赖 hiddenapibypass）

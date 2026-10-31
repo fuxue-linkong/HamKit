@@ -58,6 +58,14 @@ object PassFinder {
     /** 二分法精化 AOS/LOS 的时间精度（毫秒）。 */
     const val BISECTION_PRECISION_MS: Long = 10_000L
 
+    /**
+     * 在境卫星回溯真实 AOS 的上限（6 小时）。
+     *
+     * 非 GEO 的常见在境过境远短于 6 小时；限制上限避免高轨异常 TLE 触发
+     * 过长的回溯扫描。超过上限仍找不到 AOS 时回退为预测基准时刻。
+     */
+    const val MAX_IN_PASS_LOOKBACK_MS: Long = 6L * 60L * 60L * 1000L
+
     /** 地球半径（km），与 Look4Sat / PREDICT 对齐。 */
     private const val EARTH_RADIUS_KM = 6378.137
 
@@ -105,46 +113,36 @@ object PassFinder {
     /**
      * 在 [[fromMs], [toMs]] 内寻找下一次过境（仰角由 ≤0 穿越到 >0）。
      *
-     * 若查询起点卫星已在地平线以上，则返回**本次过境的剩余窗口**
-     * （AOS 回退到 [fromMs]），保证「在境卫星」不会从列表里消失。
+     * 若查询起点卫星已在地平线以上，则返回**本次在境过境的完整窗口**：
+     * 先向前回溯真实 AOS（避免所有在境卫星共享同一个预测时刻），
+     * 再向后找 LOS，并在完整 [AOS, LOS] 内重新找最大仰角（此时 TCA 可能已过去）。
      *
+     * @param lookbackMs 在境时向前回溯 AOS 的最大时长；回溯失败时回退到 [fromMs]
      * @return 过境窗口；窗口内没有完整过境、或已出境但找不到 LOS 时返回 null
      */
     fun nextPass(
         propagator: SatellitePropagator,
         fromMs: Long,
         toMs: Long,
+        lookbackMs: Long = MAX_IN_PASS_LOOKBACK_MS,
     ): SatellitePassWindow? {
         val stepMs = SAMPLE_STEP_MINUTES * 60_000L
         var prevEl = elevationDegAt(propagator, fromMs)
 
-        // 已在境内：把当前过境的剩余部分作为结果
+        // 已在境内：回溯真实 AOS，记录本次剩余 LOS
         if (prevEl > 0.0) {
-            var losMs = -1L
-            var t = fromMs + stepMs
-            var maxEl = prevEl
-            var maxElMs = fromMs
-            while (t <= toMs) {
-                val el = elevationDegAt(propagator, t)
-                if (el > maxEl) {
-                    maxEl = el
-                    maxElMs = t
-                }
-                if (el <= 0.0) {
-                    losMs = refineZeroCrossing(propagator, t - stepMs, t, crossingUp = false)
-                    break
-                }
-                t += stepMs
-            }
-            // 整个窗口内都在境内（异常）→ 放弃，交由上层按 GEO 特判处理
-            if (losMs < 0L) return null
-            val (elevation, azimuth) = maxElevationAzimuth(propagator, maxElMs, fromMs, losMs)
+            val effectiveAosMs = findAosBefore(propagator, fromMs, lookbackMs) ?: fromMs
+            val losMs = findLosAfter(propagator, fromMs, toMs, stepMs)?.first
+                ?: return null // 整个窗口内都在境内（异常）→ 放弃，交由上层按 GEO 特判处理
+            if (losMs - effectiveAosMs > lookbackMs) return null
+            // 当前在境时 TCA 可能已经过去，必须在完整 [AOS, LOS] 窗口内重新找峰值。
+            val (maxEl, maxElMs) = scanMaxElevation(propagator, effectiveAosMs, losMs)
             return SatellitePassWindow(
-                aosMs = fromMs,
+                aosMs = effectiveAosMs,
                 losMs = losMs,
-                maxElevationDeg = elevation,
+                maxElevationDeg = maxEl,
                 maxElevationMs = maxElMs,
-                aosAzimuthDeg = azimuthAt(propagator, fromMs),
+                aosAzimuthDeg = azimuthAt(propagator, effectiveAosMs),
                 losAzimuthDeg = azimuthAt(propagator, losMs),
                 isCurrentlyVisible = true,
             )
@@ -176,6 +174,61 @@ object PassFinder {
             t += stepMs
         }
         return null
+    }
+
+    /**
+     * 从 [fromMs]（该时刻仰角 > 0）向前回溯，找到本次过境的真实 AOS。
+     *
+     * 以 [SAMPLE_STEP_MINUTES] 步长回溯，找到仰角 ≤0 的采样点后用二分法精化。
+     * 超过 [maxLookbackMs] 仍未找到（长时间在境或异常 TLE）时返回 null，
+     * 由调用方回退为 [fromMs]。
+     */
+    private fun findAosBefore(
+        propagator: SatellitePropagator,
+        fromMs: Long,
+        maxLookbackMs: Long,
+    ): Long? {
+        val stepMs = SAMPLE_STEP_MINUTES * 60_000L
+        var hiMs = fromMs
+        var t = fromMs - stepMs
+        var elapsed = stepMs
+        while (elapsed <= maxLookbackMs) {
+            val el = elevationDegAt(propagator, t)
+            if (el <= 0.0) {
+                // t 处 ≤0、hiMs 处 >0：二分精化上升过零点
+                return refineZeroCrossing(propagator, t, hiMs, crossingUp = true)
+            }
+            hiMs = t
+            t -= stepMs
+            elapsed += stepMs
+        }
+        return null
+    }
+
+    /**
+     * 在完整过境窗口 [aosMs, losMs] 内以 1 分钟步长扫描最大仰角及其时刻。
+     *
+     * 与 [maxElevationAzimuth] 不同，这里不假设峰值在某个采样点附近，
+     * 适用于「当前在境、TCA 可能已过去」的场景。
+     */
+    private fun scanMaxElevation(
+        propagator: SatellitePropagator,
+        aosMs: Long,
+        losMs: Long,
+    ): Pair<Double, Long> {
+        val stepMs = 60_000L
+        var bestEl = Double.NEGATIVE_INFINITY
+        var bestMs = aosMs
+        var t = aosMs
+        while (t <= losMs) {
+            val el = elevationDegAt(propagator, t)
+            if (el > bestEl) {
+                bestEl = el
+                bestMs = t
+            }
+            t += stepMs
+        }
+        return bestEl to bestMs
     }
 
     /**
@@ -233,7 +286,9 @@ object PassFinder {
     /**
      * 在 [aosMs, losMs] 内以 1 分钟步长精化最大仰角及其方位角。
      *
-     * 粗扫给出的 [maxElMs] 只到 5 分钟精度，这里在 ±5 分钟邻域内细化。
+     * 粗扫给出的 [maxElMs] 只到 5 分钟精度：峰值可能落在命中点两侧各接近一个
+     * 完整步长（非对称过境），因此向两侧各扩 2 个步长（±10 分钟）再以 1 分钟
+     * 细步长扫描，保证覆盖相邻的完整采样间隔。
      */
     private fun maxElevationAzimuth(
         propagator: SatellitePropagator,
@@ -242,8 +297,8 @@ object PassFinder {
         losMs: Long,
     ): Pair<Double, Int> {
         val fineStepMs = 60_000L
-        val searchStart = maxOf(maxElMs - 5 * 60_000L, aosMs)
-        val searchEnd = minOf(maxElMs + 5 * 60_000L, losMs)
+        val searchStart = maxOf(maxElMs - 2L * SAMPLE_STEP_MINUTES * 60_000L, aosMs)
+        val searchEnd = minOf(maxElMs + 2L * SAMPLE_STEP_MINUTES * 60_000L, losMs)
         var bestEl = elevationDegAt(propagator, maxElMs)
         var bestMs = maxElMs
         var t = searchStart

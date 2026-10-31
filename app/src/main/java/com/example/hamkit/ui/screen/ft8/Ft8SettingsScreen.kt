@@ -32,7 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.ui.LocalUiMode
 import com.example.hamkit.ui.UiMode
-import com.example.hamkit.ui.appViewModel
+import com.example.hamkit.ui.applicationScopedViewModel
 import com.example.hamkit.ui.viewmodel.Ft8ViewModel
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.IconButton
@@ -67,7 +67,7 @@ fun Ft8SettingsScreen(
 fun Ft8SettingsScreenMiuix(
     onNavigateBack: () -> Unit = {}
 ) {
-    val viewModel = appViewModel<Ft8ViewModel>()
+    val viewModel = applicationScopedViewModel<Ft8ViewModel>()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val config = uiState.config
 
@@ -178,12 +178,12 @@ fun Ft8SettingsScreenMiuix(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                "允许发射",
+                                "允许发射（预留）",
                                 style = MiuixTheme.textStyles.body1,
                                 color = colorScheme.onSurface
                             )
                             Text(
-                                "启用后可在 FT8 模式下发送消息",
+                                "目前 FT8 尚无发送功能；此开关仅作预留，暂不影响任何行为",
                                 style = MiuixTheme.textStyles.footnote1,
                                 color = colorScheme.onSurfaceSecondary
                             )

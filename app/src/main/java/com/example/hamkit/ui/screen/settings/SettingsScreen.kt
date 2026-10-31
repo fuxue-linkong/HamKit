@@ -118,6 +118,8 @@ fun SettingPager(
             settingsViewModel.setUiMode(if (index == 0) UiMode.Miuix.value else UiMode.Material.value)
         },
         onOpenAbout = { navigator.push(Route.About) },
+        onOpenPrivacy = { navigator.push(Route.PrivacyPolicy) },
+        onOpenAiSettings = { navigator.push(Route.AiSettings) },
         onUpdateReminderSettings = mainViewModel::updateReminderSettings,
         onOpenReminderList = { navigator.push(Route.ReminderList) },
         onCheckUpdateNow = settingsViewModel::checkUpdateNow,

@@ -30,7 +30,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.data.sstv.SstvMode
 import com.example.hamkit.ui.LocalUiMode
 import com.example.hamkit.ui.UiMode
-import com.example.hamkit.ui.appViewModel
+import com.example.hamkit.ui.applicationScopedViewModel
 import com.example.hamkit.ui.navigation3.Route
 import com.example.hamkit.ui.viewmodel.SstvViewModel
 import top.yukonga.miuix.kmp.basic.BasicComponent
@@ -84,7 +84,7 @@ fun SstvSettingsScreenMiuix(
     onNavigate: (Route) -> Unit = {},
     onNavigateBack: () -> Unit = {},
 ) {
-    val viewModel = appViewModel<SstvViewModel>()
+    val viewModel = applicationScopedViewModel<SstvViewModel>()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val scrollBehavior = MiuixScrollBehavior()
     // 图库数量由 ViewModel 在协程中统计（文件 IO 不落在主线程，也不随 status 反复触发）

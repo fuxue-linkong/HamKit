@@ -31,7 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.hamkit.ui.appViewModel
+import com.example.hamkit.ui.applicationScopedViewModel
 import com.example.hamkit.ui.viewmodel.AprsViewModel
 
 /**
@@ -47,7 +47,7 @@ import com.example.hamkit.ui.viewmodel.AprsViewModel
 fun AprsSymbolPickerScreenMaterial(
     onNavigateBack: () -> Unit = {}
 ) {
-    val viewModel = appViewModel<AprsViewModel>()
+    val viewModel = applicationScopedViewModel<AprsViewModel>()
     val config by viewModel.settings.collectAsStateWithLifecycle()
 
     Scaffold(

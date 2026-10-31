@@ -34,7 +34,10 @@ class ZoneResolverTest {
     @Test
     fun `new york resolves to north america zones`() {
         val info = ZoneResolver.resolve(40.7128, -74.0060)
-        assertEquals(4, info.cqZone)
+        // P1-3 修复后美国本土按西经 85° 拆成 CQ4（中西部）/CQ5（东部）：
+        // 纽约（-74°）属东部 → CQ Zone 5（CQ WAZ 权威表）。旧断言 CQ4
+        // 建立在「全美一条 CQ4」的错误表上，随修复一并更正。
+        assertEquals(5, info.cqZone)
         assertEquals(8, info.ituZone)
         assertEquals("FN20xr", info.maidenhead)
     }

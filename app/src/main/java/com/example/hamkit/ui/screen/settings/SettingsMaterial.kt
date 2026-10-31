@@ -17,6 +17,8 @@ import androidx.compose.material.icons.filled.ContactPage
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Update
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.rounded.Dashboard
@@ -286,6 +288,32 @@ fun SettingPagerMaterial(
                                 Icon(
                                     Icons.Filled.BugReport,
                                     stringResource(id = R.string.send_log)
+                                )
+                            },
+                        )
+                    },
+                    {
+                        SegmentedListItem(
+                            onClick = actions.onOpenAiSettings,
+                            headlineContent = {
+                                Text(stringResource(id = R.string.settings_ai_assistant))
+                            },
+                            leadingContent = {
+                                Icon(
+                                    Icons.Filled.AutoAwesome,
+                                    stringResource(id = R.string.settings_ai_assistant)
+                                )
+                            },
+                        )
+                    },
+                    {
+                        SegmentedListItem(
+                            onClick = actions.onOpenPrivacy,
+                            headlineContent = { Text(stringResource(id = R.string.about_privacy)) },
+                            leadingContent = {
+                                Icon(
+                                    Icons.Filled.Security,
+                                    stringResource(id = R.string.about_privacy)
                                 )
                             },
                         )

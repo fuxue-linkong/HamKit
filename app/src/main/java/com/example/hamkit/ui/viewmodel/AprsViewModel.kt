@@ -15,11 +15,13 @@ import com.example.hamkit.data.aprs.AprsService
 import com.example.hamkit.data.aprs.AprsSettingsStore
 import com.example.hamkit.data.aprs.AprsStation
 import com.example.hamkit.data.location.LocationHelper
+import com.example.hamkit.data.privacy.PrivacyConsentStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -94,6 +96,8 @@ class AprsViewModel(application: Application) : AndroidViewModel(application) {
     /** 用户在声明对话框中点击「已持有执照并同意」：持久化确认状态后再连接 */
     fun confirmLicenseAndConnect() {
         _pendingLicenseConfirm.value = false
+        // 声明框明确说明 APRS 位置/消息会公开；在这里单独记录“位置公开”同意。
+        PrivacyConsentStore.setAprsPublicAccepted(getApplication(), true)
         updateSettings { it.copy(licenseConfirmed = true) }
         connect()
     }
@@ -105,6 +109,24 @@ class AprsViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         observeData()
+        initMsgCounter()
+    }
+
+    /**
+     * P2-6：msgCounter 原先仅内存态，App 重启后从 1 重新计数，
+     * 会与库中历史消息编号冲突（旧消息被误标记已送达）。
+     * 启动时扫描历史 outgoing 消息，取最大数字编号续起。
+     */
+    private fun initMsgCounter() {
+        viewModelScope.launch {
+            val maxNum = messageStore.getAllMessages().first()
+                .filter { it.isOutgoing && it.msgNumber != null }
+                .mapNotNull { it.msgNumber!!.toIntOrNull() }
+                .maxOrNull() ?: 0
+            // 从历史最大编号 + 1 续起
+            msgCounter.set(maxNum + 1)
+            Log.i(TAG, "msgCounter initialized from history: next=$maxNum+1")
+        }
     }
 
     private fun observeData() {
@@ -165,6 +187,9 @@ class AprsViewModel(application: Application) : AndroidViewModel(application) {
 
                 override fun onDisconnected(reason: String) {
                     _connectionState.value = ConnectionState.DISCONNECTED
+                    // P2-8：重连最终放弃（AprsConnection 循环退出）后回调停在此处，
+                    // 前台服务必须一并停止，否则通知栏残留常驻通知。
+                    AprsService.stop(getApplication())
                 }
 
                 override fun onPacketReceived(packet: String) {
@@ -200,6 +225,10 @@ class AprsViewModel(application: Application) : AndroidViewModel(application) {
         // 只读模式（未填写 passcode）不可注入报文，否则只会得到服务器的拒绝
         if (config.isReadOnly) {
             _lastError.value = READ_ONLY_SEND_BLOCKED
+            return
+        }
+        if (!PrivacyConsentStore.isAprsPublicAccepted(getApplication())) {
+            _lastError.value = "未同意公开 APRS 位置；请先连接 APRS 并确认公开声明"
             return
         }
 
@@ -249,6 +278,10 @@ class AprsViewModel(application: Application) : AndroidViewModel(application) {
             _lastError.value = READ_ONLY_SEND_BLOCKED
             return
         }
+        if (!PrivacyConsentStore.isAprsPublicAccepted(getApplication())) {
+            _lastError.value = "未同意公开 APRS 消息；请先连接 APRS 并确认公开声明"
+            return
+        }
 
         val msgNum = msgCounter.getAndIncrement().toString()
         val fullCallsign = config.fullCallsign
@@ -274,8 +307,18 @@ class AprsViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** 发送单条 outgoing 消息并更新状态 */
-    private suspend fun sendOutgoingMessage(
+    // P2-4：近期收到的 (source, msgNumber) 去重集合，LinkedHashSet 保序、超上限淘汰最旧
+    private val recentMsgKeys = LinkedHashSet<Pair<String, String>>()
+
+    /** 记录一条已入库消息的去重键，超过内存上限时淘汰最早的一条 */
+    private fun rememberMsgKey(key: Pair<String, String>) {
+        recentMsgKeys.add(key)
+        while (recentMsgKeys.size > MSG_DEDUP_MAX) {
+            recentMsgKeys.remove(recentMsgKeys.first())
+        }
+    }
+
+    /** 发送单条 outgoing 消息并更新状态 */    private suspend fun sendOutgoingMessage(
         msgId: Long, source: String, destination: String, body: String, msgNum: String, retry: Int
     ) {
         val packet = AprsPacket.formatMessage(source, destination, body, msgNum)
@@ -289,7 +332,12 @@ class AprsViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** 连接成功后重发所有待发/失败消息（离线入队核心） */
+    /**
+     * 连接成功后重发所有未达重试上限的待发/失败消息（离线入队核心）。
+     *
+     * `retryCount ≥ [MSG_MAX_RETRY]` 的消息被跳过 —— 它们已判定投递失败，
+     * 留在库里供用户查看，不能每次连上都再发一遍。
+     */
     private fun sendPendingMessages() {
         val config = _settings.value
         if (config.callsign.isEmpty()) return
@@ -370,7 +418,21 @@ class AprsViewModel(application: Application) : AndroidViewModel(application) {
                             // 收到 ACK，标记对应 outgoing 消息为已送达
                             messageStore.markAcknowledged(parsed.source, parsed.msgNumber)
                         } else if (!parsed.isAck && !parsed.isRej && parsed.msgNumber != null) {
-                            // 普通消息：入库 + 自动回 ACK
+                            // P1-5：收件校验 —— destination 必须与本台呼号（含 SSID）精确匹配，
+                            // 否则 APRS-IS 上广播/发往他人的消息会被误入库并错误回 ACK。
+                            val myCallsign = _settings.value.fullCallsign
+                            if (!parsed.destination.equals(myCallsign, ignoreCase = false)) {
+                                return@launch
+                            }
+                            // P2-4：按 (source, msgNumber) 去重，防止网关/中继重复投递
+                            // 导致同一条消息重复入库。近期去重集合上限 [MSG_DEDUP_MAX]。
+                            val dedupKey = parsed.source to parsed.msgNumber
+                            if (recentMsgKeys.contains(dedupKey)) {
+                                // 重复报文仍需补 ACK（对端可能没收到上次的 ACK）
+                                sendAck(parsed.source, parsed.msgNumber)
+                                return@launch
+                            }
+                            rememberMsgKey(dedupKey)
                             messageStore.insertMessage(
                                 AprsMessage(
                                     source = parsed.source,
@@ -382,7 +444,7 @@ class AprsViewModel(application: Application) : AndroidViewModel(application) {
                             )
                             sendAck(parsed.source, parsed.msgNumber)
                         } else if (!parsed.isAck && !parsed.isRej) {
-                            // 无 msgNumber 的消息：仅入库
+                            // 无 msgNumber 的消息：仅入库（无法按编号去重）
                             messageStore.insertMessage(
                                 AprsMessage(
                                     source = parsed.source,
@@ -434,6 +496,9 @@ class AprsViewModel(application: Application) : AndroidViewModel(application) {
         const val MSG_STATUS_ACKED = 2
         const val MSG_STATUS_FAILED = 3
         private const val MSG_MAX_RETRY = 3
+
+        /** P2-4：收包去重集合的内存上限（APRS 网关重发窗口内的合理规模） */
+        private const val MSG_DEDUP_MAX = 512
 
         /** 只读模式（未填写 passcode）下的发送拦截提示（HK-REQ-003） */
         const val READ_ONLY_SEND_BLOCKED = "只读模式：未填写 Passcode，无法发送"

@@ -149,15 +149,14 @@ class LiveSatelliteTracker(
                         }
                         _trackHistory.value = historyBuffer.toList()
                     }
-                } else if (info == null || info.elevationDeg <= -5.0) {
-                    // 卫星连续低于 -5° 仰角时清空轨迹，避免过时数据残留
+                } else {
+                    // 修复 P3-1：buffer 只收 elevation > -5.0 的点，last 点永远 > -5°，
+                    // 原基于 last 点的清空条件永假。改为首次跌破 -5° 时立即清空，
+                    // 避免过时轨迹数据残留。
                     synchronized(historyLock) {
                         if (historyBuffer.isNotEmpty()) {
-                            val last = historyBuffer.last()
-                            if (last.second <= -5.0) {
-                                historyBuffer.clear()
-                                _trackHistory.value = emptyList()
-                            }
+                            historyBuffer.clear()
+                            _trackHistory.value = emptyList()
                         }
                     }
                 }

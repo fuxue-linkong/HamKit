@@ -51,7 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.data.sstv.SstvEncoder
 import com.example.hamkit.data.sstv.SstvMode
-import com.example.hamkit.ui.appViewModel
+import com.example.hamkit.ui.applicationScopedViewModel
 import com.example.hamkit.ui.component.material.SegmentedColumn
 import com.example.hamkit.ui.component.material.SegmentedSwitchItem
 import com.example.hamkit.ui.navigation3.Route
@@ -71,7 +71,7 @@ fun SstvTxScreenMaterial(
     onNavigate: (Route) -> Unit = {},
     onNavigateBack: () -> Unit = {},
 ) {
-    val viewModel = appViewModel<SstvViewModel>()
+    val viewModel = applicationScopedViewModel<SstvViewModel>()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     // 相册选图：首选系统内置图片选择器（见 SstvTxScreen.kt 中同段注释）
@@ -90,7 +90,9 @@ fun SstvTxScreenMaterial(
     ) { uri -> uri?.let { viewModel.exportTxAudio(it) } }
 
     val mode = uiState.txMode
-    val scriptSeconds = mode.frameSeconds + SstvEncoder.VIS_TOTAL_SECONDS
+    // 时长与实际编码一致：VIS 头由「包含 VIS 头」开关决定，不能恒按含 VIS 估算
+    val scriptSeconds = mode.frameSeconds +
+        (SstvEncoder.VIS_TOTAL_SECONDS.takeIf { uiState.txIncludeVis } ?: 0.0)
 
     Scaffold(
         topBar = {
@@ -155,7 +157,9 @@ fun SstvTxScreenMaterial(
                         text = listOfNotNull(
                             uiState.txSourceLabel,
                             "$mode ${mode.linePixels}×${mode.imageLines}",
-                            "单帧 ${"%.0f".format(scriptSeconds)} 秒（含 0.91 秒 VIS 头）",
+                            // 与 scriptSeconds 的口径一致：开关关掉时 VIS 头不编码，也不该出现在文案里
+                            "单帧 ${"%.0f".format(scriptSeconds)} 秒" +
+                                if (uiState.txIncludeVis) "（含 0.91 秒 VIS 头）" else "",
                         ).joinToString(" · "),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,

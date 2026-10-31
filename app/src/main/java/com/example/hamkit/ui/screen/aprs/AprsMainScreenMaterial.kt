@@ -32,7 +32,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.R
-import com.example.hamkit.ui.appViewModel
+import com.example.hamkit.ui.applicationScopedViewModel
 import com.example.hamkit.ui.navigation3.Route
 import com.example.hamkit.ui.viewmodel.AprsViewModel
 import java.util.Locale
@@ -54,7 +54,7 @@ fun AprsMainScreenMaterial(
     onNavigate: (Route) -> Unit = {},
     onNavigateBack: () -> Unit = {}
 ) {
-    val viewModel = appViewModel<AprsViewModel>()
+    val viewModel = applicationScopedViewModel<AprsViewModel>()
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val stations by viewModel.stations.collectAsStateWithLifecycle()
     val lastError by viewModel.lastError.collectAsStateWithLifecycle()

@@ -24,7 +24,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.dropUnlessResumed
 import com.example.hamkit.R
-import com.example.hamkit.ui.appViewModel
+import com.example.hamkit.ui.applicationScopedViewModel
 import com.example.hamkit.ui.navigation3.LocalNavigator
 
 /**
@@ -40,7 +40,7 @@ import com.example.hamkit.ui.navigation3.LocalNavigator
 @Composable
 fun CWPracticeRouteScreenMaterial() {
     val navigator = LocalNavigator.current
-    val cwViewModel = appViewModel<CWPracticeViewModel>()
+    val cwViewModel = applicationScopedViewModel<CWPracticeViewModel>()
     val settings by cwViewModel.settings.collectAsStateWithLifecycle()
 
     var page by rememberSaveable { mutableStateOf(CWPage.Main) }

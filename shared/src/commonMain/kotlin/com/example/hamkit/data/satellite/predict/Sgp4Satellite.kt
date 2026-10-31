@@ -16,7 +16,8 @@ import kotlin.math.*
  * 2. 每次调用 [propagate] 传入"距历元的时间（分钟）"，得到 TEME 惯性系
  *    位置（km）与速度（km/s）。
  *
- * 线程安全：实例创建后只读，[propagate] 无内部状态修改，可并发调用。
+ * 非线程安全：[propagate] 会写入实例内的短周期/深空积分状态（如 [atime]/[xli]/[xni]）。
+ * 每次预测应为每颗卫星创建独立实例，禁止多线程共享同一实例。
  */
 class Sgp4Satellite private constructor(
     /** 卫星编号字符串 */

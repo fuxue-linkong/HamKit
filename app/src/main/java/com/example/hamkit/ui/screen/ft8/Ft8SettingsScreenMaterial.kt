@@ -43,7 +43,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.data.ft8.Ft8Band
-import com.example.hamkit.ui.appViewModel
+import com.example.hamkit.ui.applicationScopedViewModel
 import com.example.hamkit.ui.component.material.ExpressiveSwitch
 import com.example.hamkit.ui.viewmodel.Ft8ViewModel
 
@@ -58,7 +58,7 @@ import com.example.hamkit.ui.viewmodel.Ft8ViewModel
 fun Ft8SettingsScreenMaterial(
     onNavigateBack: () -> Unit = {}
 ) {
-    val viewModel = appViewModel<Ft8ViewModel>()
+    val viewModel = applicationScopedViewModel<Ft8ViewModel>()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val config = uiState.config
 
@@ -166,12 +166,12 @@ fun Ft8SettingsScreenMaterial(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "允许发射",
+                            text = "允许发射（预留）",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "启用后可在 FT8 模式下发送消息",
+                            text = "目前 FT8 尚无发送功能；此开关仅作预留，暂不影响任何行为",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

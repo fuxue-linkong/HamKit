@@ -36,7 +36,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.R
 import com.example.hamkit.ui.LocalUiMode
 import com.example.hamkit.ui.UiMode
-import com.example.hamkit.ui.appViewModel
+import com.example.hamkit.ui.applicationScopedViewModel
 import com.example.hamkit.ui.navigation3.Route
 import com.example.hamkit.ui.viewmodel.AprsViewModel
 import top.yukonga.miuix.kmp.basic.Card
@@ -81,7 +81,7 @@ fun AprsSettingsScreenMiuix(
     onNavigateBack: () -> Unit = {},
     onNavigate: (Route) -> Unit = {}
 ) {
-    val viewModel = appViewModel<AprsViewModel>()
+    val viewModel = applicationScopedViewModel<AprsViewModel>()
     val config by viewModel.settings.collectAsStateWithLifecycle()
     val lastError by viewModel.lastError.collectAsStateWithLifecycle()
 
@@ -211,7 +211,8 @@ fun AprsSettingsScreenMiuix(
                     Spacer(Modifier.height(8.dp))
                     TextField(
                         value = config.transmitInterval.toString(),
-                        onValueChange = { it.toIntOrNull()?.let { i -> viewModel.updateSettings { c -> c.copy(transmitInterval = i) } } },
+                        // P2-12：写入前 clamp 到下限 30 秒，避免 0 形成定位+发报紧循环
+                        onValueChange = { it.toIntOrNull()?.let { i -> viewModel.updateSettings { c -> c.copy(transmitInterval = i.coerceAtLeast(30)) } } },
                         label = "发送间隔 (秒)",
                         modifier = Modifier.fillMaxWidth(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)

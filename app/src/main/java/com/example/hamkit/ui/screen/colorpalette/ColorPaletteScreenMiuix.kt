@@ -1,15 +1,10 @@
 package com.example.hamkit.ui.screen.colorpalette
 
 import android.annotation.SuppressLint
-import android.graphics.Bitmap
-import android.net.Uri
 import android.os.Build
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.ui.platform.LocalContext
-import java.io.File
-import java.io.FileOutputStream
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -69,9 +64,6 @@ import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
 import com.materialkolor.rememberDynamicColorScheme
 import com.canhub.cropper.CropImageContract
-import com.canhub.cropper.CropImageContractOptions
-import com.canhub.cropper.CropImageOptions
-import com.canhub.cropper.CropImageView
 import com.example.hamkit.R
 import com.example.hamkit.ui.component.miuix.ScaleDialog
 import com.example.hamkit.ui.theme.LocalEnableBlur
@@ -114,43 +106,20 @@ fun ColorPaletteScreenMiuix(
     val isDark = currentColorMode.isDark || currentColorMode.isSystem && isSystemInDarkTheme()
     val context = LocalContext.current
 
+    // 图库选图与裁剪页的启动统一收敛到 ColorPaletteScreen（见其注释）：
+    // 这里只负责把裁剪结果分发到 actions，选图入口走 actions.onOpenImagePicker。
     val cropLauncher = rememberLauncherForActivityResult(CropImageContract()) { result ->
-        if (result != null && result.isSuccessful) {
-            result.uriContent?.let { actions.onSetCustomBackground(it) }
-                ?: result.bitmap?.let { bitmap ->
-                    // 回退：uriContent 为空时用 bitmap 保存到临时文件
-                    val file = File(context.cacheDir, "crop_temp.jpg")
-                    try {
-                        FileOutputStream(file).use { fos ->
-                            if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 90, fos)) {
-                                file.delete()
-                                return@let
-                            }
-                        }
-                        actions.onSetCustomBackground(Uri.fromFile(file))
-                    } catch (_: Exception) {
-                        file.delete()
-                    }
-                }
-        }
-    }
-
-    // 先仅从相册选图，再进入裁剪界面（避免弹出相机/相册选择，且裁剪界面有确认按钮）
-    val pickMedia = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
-        uri?.let {
-            cropLauncher.launch(
-                CropImageContractOptions(
-                    uri = it,
-                    cropImageOptions = CropImageOptions(
-                        guidelines = CropImageView.Guidelines.ON,
-                        fixAspectRatio = true,
-                        aspectRatioX = 16,
-                        aspectRatioY = 9,
-                    )
-                )
-            )
+        // 裁剪结果优先使用内存位图，避免 uriContent 指向相册 uri 时授权失效导致保存失败
+        val cropped = result?.takeIf { it.isSuccessful }?.bitmap
+        if (cropped != null) {
+            actions.onSetCustomBackgroundBitmap(cropped)
+        } else {
+            val uri = result?.takeIf { it.isSuccessful }?.uriContent
+            if (uri != null) {
+                actions.onSetCustomBackground(uri)
+            } else {
+                Log.w("BgImport", "裁剪结果为空或失败：successful=${result?.isSuccessful}, error=${result?.error}")
+            }
         }
     }
 
@@ -479,9 +448,9 @@ fun ColorPaletteScreenMiuix(
                                 )
                             },
                             onClick = {
-                                pickMedia.launch(
-                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                )
+                                // 经 actions 打开图库：ColorPaletteScreen 会先登记
+                                // in-flight 状态，吞掉图库期间派发回来的返回事件
+                                actions.onOpenImagePicker()
                             },
                         )
                     }

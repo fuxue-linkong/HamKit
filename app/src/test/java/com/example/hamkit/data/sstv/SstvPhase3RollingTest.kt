@@ -189,7 +189,7 @@ class SstvPhase3RollingTest {
         assertTrue("首行应接近最早的行", pixels[0] <= 1)
         assertTrue("末行应接近最新的行", pixels[(height - 1) * 2] >= 30)
 
-        // toResult 可直接交给图库/后处理/融合：默认按 maxHeightRows（本对象为 10）抽样，
+        // toResult 可直接交给图库/后处理：默认按 maxHeightRows（本对象为 10）抽样，
         // 与上面显式要求 8 行的 toPixels 不是同一档；需要同一档时把 maxHeight 传下去。
         val result = rolling.toResult(SstvMode.ROBOT_36)
         assertNotNull(result)

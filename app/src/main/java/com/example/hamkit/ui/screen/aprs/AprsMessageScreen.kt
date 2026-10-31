@@ -1,5 +1,6 @@
 package com.example.hamkit.ui.screen.aprs
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,7 +41,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.data.aprs.AprsMessage
 import com.example.hamkit.ui.LocalUiMode
 import com.example.hamkit.ui.UiMode
-import com.example.hamkit.ui.appViewModel
+import com.example.hamkit.ui.applicationScopedViewModel
 import com.example.hamkit.ui.viewmodel.AprsViewModel
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.IconButton
@@ -81,7 +82,7 @@ fun AprsMessageScreenMiuix(
     partnerCallsign: String = "",
     onNavigateBack: () -> Unit = {}
 ) {
-    val viewModel = appViewModel<AprsViewModel>()
+    val viewModel = applicationScopedViewModel<AprsViewModel>()
     val allMessages by viewModel.messages.collectAsStateWithLifecycle()
     val conversationPartners by viewModel.conversationPartners.collectAsStateWithLifecycle()
 
@@ -145,6 +146,9 @@ fun AprsMessageScreenMiuix(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 8.dp)
+                                // P1-4：会话条目点击后切换页内 selectedPartner，
+                                // 进入对话视图并触发 markConversationRead
+                                .clickable { selectedPartner = partner }
                         )
                     }
                 }

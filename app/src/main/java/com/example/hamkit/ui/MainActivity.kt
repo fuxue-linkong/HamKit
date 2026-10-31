@@ -67,6 +67,8 @@ import androidx.navigationevent.compose.rememberNavigationEventState
 import kotlinx.coroutines.flow.MutableStateFlow
 import com.example.hamkit.R
 import com.example.hamkit.HamKitApplication
+import com.example.hamkit.data.privacy.AmapPrivacyInitializer
+import com.example.hamkit.data.privacy.PrivacyConsentStore
 import com.example.hamkit.data.sstv.SstvLaunchIntent
 import com.example.hamkit.data.sstv.SstvLaunchRequest
 import com.example.hamkit.ui.component.bottombar.BottomBar
@@ -83,6 +85,8 @@ import com.example.hamkit.ui.screen.colorpalette.ColorPaletteScreen
 import com.example.hamkit.ui.screen.home.HomePager
 import com.example.hamkit.ui.screen.location.LocationDetailScreen
 import com.example.hamkit.ui.screen.permission.PermissionScreen
+import com.example.hamkit.ui.screen.privacy.PrivacyConsentScreen
+import com.example.hamkit.ui.screen.privacy.PrivacyPolicyScreen
 import com.example.hamkit.ui.screen.reminder.ReminderListRouteScreen
 import com.example.hamkit.ui.screen.satellite.SatelliteFilterScreen
 import com.example.hamkit.ui.screen.satellite.SatelliteManagementScreen
@@ -90,6 +94,8 @@ import com.example.hamkit.ui.screen.satellite.SatelliteDetailScreen
 import com.example.hamkit.ui.screen.satellite.SatelliteRadarScreen
 import com.example.hamkit.ui.screen.satellite.SatelliteMapScreen
 import com.example.hamkit.ui.screen.settings.SettingPager
+import com.example.hamkit.ui.screen.ai.AiAssistantScreen
+import com.example.hamkit.ui.screen.ai.AiSettingsScreen
 import com.example.hamkit.ui.screen.aprs.AprsMainScreen
 import com.example.hamkit.ui.screen.aprs.AprsSettingsScreen
 import com.example.hamkit.ui.screen.aprs.AprsStationListScreen
@@ -144,13 +150,35 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Android 13+ 首次进入即请求通知权限；用户拒绝后下次仍可经权限页面再次请求
-        requestNotificationPermissionIfNeeded()
-
         // 冷启动时由通知点击带入的「直达 SSTV 接收态」请求（二期 T8）
         consumeSstvLaunchIntent(intent)
 
         setContent {
+            val context = LocalContext.current
+            var consentGranted by remember {
+                mutableStateOf(PrivacyConsentStore.isAccepted(context))
+            }
+
+            // 首启隐私闸门：同意前不创建业务 ViewModel、不请求权限、不初始化高德 SDK。
+            if (!consentGranted) {
+                PrivacyConsentScreen(
+                    onAgree = { aprsPublic ->
+                        PrivacyConsentStore.accept(
+                            context = context,
+                            location = true,
+                            aprsPublic = aprsPublic,
+                        )
+                        AmapPrivacyInitializer.initialize(context)
+                        consentGranted = true
+                    },
+                    onDecline = { (context as? Activity)?.finishAffinity() },
+                )
+                return@setContent
+            }
+
+            // 只有通过隐私闸门后才请求通知权限；定位/麦克风由各功能页在需要时请求。
+            LaunchedEffect(Unit) { requestNotificationPermissionIfNeeded() }
+
             val viewModel = viewModel<MainActivityViewModel>()
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             val selectedMainPage by viewModel.selectedMainPage.collectAsStateWithLifecycle()
@@ -241,6 +269,11 @@ class MainActivity : ComponentActivity() {
                             entryProvider = entryProvider {
                                 entry<Route.Main> { WithApplicationViewModelStoreOwner { mainScreenEntry() } }
                                 entry<Route.About> { WithApplicationViewModelStoreOwner { AboutScreen() } }
+                                entry<Route.PrivacyPolicy> {
+                                    WithApplicationViewModelStoreOwner {
+                                        PrivacyPolicyScreen(onBack = { navigator.pop() })
+                                    }
+                                }
                                 entry<Route.ColorPalette> { WithApplicationViewModelStoreOwner { ColorPaletteScreen() } }
                                 entry<Route.Permissions> { WithApplicationViewModelStoreOwner { PermissionScreen() } }
                                 entry<Route.Home> { WithApplicationViewModelStoreOwner { mainScreenEntry() } }
@@ -279,6 +312,7 @@ class MainActivity : ComponentActivity() {
                                 entry<Route.SstvTx> { WithApplicationViewModelStoreOwner { SstvTxScreen(onNavigate = { navigator.push(it) }, onNavigateBack = { navigator.pop() }) } }
                                 entry<Route.HfFax> { WithApplicationViewModelStoreOwner { HfFaxScreen(onNavigateBack = { navigator.pop() }) } }
                                 entry<Route.QsoLogList> { WithApplicationViewModelStoreOwner { QsoLogScreen(onNavigateBack = { navigator.pop() }) } }
+                                entry<Route.AiSettings> { WithApplicationViewModelStoreOwner { AiSettingsScreen(onBack = { navigator.pop() }) } }
                             }
                         )
                     }
@@ -294,9 +328,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        setIntent(intent)
         // 应用已在运行时点通知：解析新的直达请求，由 Compose 侧的 LaunchedEffect 消费
         consumeSstvLaunchIntent(intent)
+        // 消费后再 setIntent：此时 extra 已被剥离，重建后 getIntent() 不会再重复解析
+        setIntent(intent)
     }
 
     /**
@@ -311,6 +346,10 @@ class MainActivity : ComponentActivity() {
             presetModeName = SstvLaunchIntent.presetModeName(intent),
             autoStart = true,
         )
+        // 用后即剥离 extra（P1-6）：否则 Activity 重建时 onCreate 会重新解析同一
+        // Intent，再次置位 pendingSstvLaunch 导致 SSTV 页重复入栈。
+        intent?.removeExtra(SstvLaunchIntent.EXTRA_AUTO_START)
+        intent?.removeExtra(SstvLaunchIntent.EXTRA_PRESET_MODE)
     }
 
     private fun requestNotificationPermissionIfNeeded() {
@@ -404,7 +443,8 @@ fun MainScreen(
                     val isCurrentPage = page == settledPage
                     when (page) {
                         0 -> HomePager(navController, bottomInnerPadding, isCurrentPage)
-                        1 -> SettingPager(navController, bottomInnerPadding)
+                        1 -> AiAssistantScreen(bottomInnerPadding = bottomInnerPadding)
+                        2 -> SettingPager(navController, bottomInnerPadding)
                     }
                 }
             }

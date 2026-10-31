@@ -109,7 +109,7 @@ class SstvDemodulator(
      * 由「相位二阶差分的中位绝对值」换算：对零均值高斯噪声 `median(|X|) = 0.6745σ`，
      * 而二阶差分 `φ[n] − 2φ[n−1] + φ[n−2]` 把噪声标准差放大了 `√6` 倍，
      * 故 `σφ = median / (0.6745 × √6)`，再按 `σf = σφ·fs / 2π` 折算到频率。
-     * 样本不足或全为 0 时返回 [NOISE_UNKNOWN_HZ]。
+     * 样本不足时返回 [NOISE_UNKNOWN_HZ]；中位数为 0（无任何相位抖动）时返回 0.0。
      */
     fun estimatedFrequencyNoiseHz(): Double {
         if (noiseFilled < NOISE_WINDOW / 4) return NOISE_UNKNOWN_HZ
@@ -169,7 +169,7 @@ class SstvDemodulator(
             phase += phaseStep
             if (phase >= TWO_PI) phase -= TWO_PI
 
-            // 4 阶低通：抑制 2f₀ 镜像，否则中心频率附近相位会剧烈抖动
+            // 8 阶低通：抑制 2f₀ 镜像，否则中心频率附近相位会剧烈抖动
             val inPhase = inPhaseFilter.process(x * cosP)
             val quad = quadratureFilter.process(-x * sinP)
 

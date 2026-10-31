@@ -31,7 +31,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.R
-import com.example.hamkit.ui.appViewModel
+import com.example.hamkit.ui.applicationScopedViewModel
 import com.example.hamkit.ui.component.material.SegmentedColumn
 import com.example.hamkit.ui.component.material.SegmentedListItem
 import com.example.hamkit.ui.component.material.SegmentedSwitchItem
@@ -60,7 +60,7 @@ fun AprsSettingsScreenMaterial(
     onNavigateBack: () -> Unit = {},
     onNavigate: (Route) -> Unit = {}
 ) {
-    val viewModel = appViewModel<AprsViewModel>()
+    val viewModel = applicationScopedViewModel<AprsViewModel>()
     val config by viewModel.settings.collectAsStateWithLifecycle()
     val lastError by viewModel.lastError.collectAsStateWithLifecycle()
 
@@ -221,10 +221,10 @@ fun AprsSettingsScreenMaterial(
                         SegmentedTextField(
                             label = "发送间隔 (秒)",
                             value = config.transmitInterval.toString(),
-                            // 同端口：非法输入忽略，避免间隔被写成 0 或缺省
+                            // 同端口：非法输入忽略；P2-12 写入前 clamp 到下限 30 秒，避免 0 形成定位+发报紧循环
                             onValueChange = {
                                 it.toIntOrNull()?.let { i ->
-                                    viewModel.updateSettings { c -> c.copy(transmitInterval = i) }
+                                    viewModel.updateSettings { c -> c.copy(transmitInterval = i.coerceAtLeast(30)) }
                                 }
                             },
                             modifier = Modifier.fillMaxWidth(),

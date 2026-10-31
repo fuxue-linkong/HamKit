@@ -30,7 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.data.sstv.SstvMode
-import com.example.hamkit.ui.appViewModel
+import com.example.hamkit.ui.applicationScopedViewModel
 import com.example.hamkit.ui.component.material.SegmentedColumn
 import com.example.hamkit.ui.component.material.SegmentedDropdownItem
 import com.example.hamkit.ui.component.material.SegmentedListItem
@@ -57,7 +57,7 @@ fun SstvSettingsScreenMaterial(
     onNavigate: (Route) -> Unit = {},
     onNavigateBack: () -> Unit = {},
 ) {
-    val viewModel = appViewModel<SstvViewModel>()
+    val viewModel = applicationScopedViewModel<SstvViewModel>()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     // 图库数量由 ViewModel 在协程中统计（文件 IO 不落在主线程）
     val galleryCount = uiState.galleryCount

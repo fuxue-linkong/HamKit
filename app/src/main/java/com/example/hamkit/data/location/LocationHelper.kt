@@ -3,23 +3,18 @@ package com.example.hamkit.data.location
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
-import android.location.Address
-import android.location.Geocoder
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
-import android.os.Build
 import android.os.Bundle
 import android.os.Looper
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -32,11 +27,15 @@ import kotlin.coroutines.resumeWithException
  */
 class LocationHelper(private val context: Context) {
 
+    private val amapGeocodeService = AmapGeocodeService()
+
     companion object {
         /** 单次定位精度门槛：精度优于此值立即返回，否则继续等更优结果 */
         private const val ACCURACY_THRESHOLD_METERS = 20f
         /** lastKnown 缓存最大可接受精度：超过此值的缓存视为不可用 */
         private const val CACHE_MAX_ACCURACY_METERS = 50f
+        /** lastKnown 缓存最大时效：超过 10 分钟的缓存视为过期，不可作为秒回结果 */
+        private const val CACHE_MAX_AGE_MS = 10 * 60 * 1000L
         /** 持续定位去重时间窗：此窗口内只保留精度最优的一次上报 */
         private const val DEDUP_WINDOW_MS = 1500L
     }
@@ -263,7 +262,8 @@ class LocationHelper(private val context: Context) {
                     return@suspendCancellableCoroutine
                 }
 
-                // lastKnown 精度筛选：仅接受精度优于阈值的缓存，按"时间×精度"综合排序取最优
+                // lastKnown 筛选：精度达标且时间未过期（10 分钟内）才可用，避免拿到数小时前的陈旧位置
+                val now = System.currentTimeMillis()
                 val bestCached = providers
                     .mapNotNull { p ->
                         try {
@@ -274,7 +274,10 @@ class LocationHelper(private val context: Context) {
                             null
                         }
                     }
-                    .filter { it.hasAccuracy() && it.accuracy <= CACHE_MAX_ACCURACY_METERS }
+                    .filter {
+                        it.hasAccuracy() && it.accuracy <= CACHE_MAX_ACCURACY_METERS &&
+                            now - it.time <= CACHE_MAX_AGE_MS
+                    }
                     .maxByOrNull { if (it.accuracy > 0) it.time / it.accuracy.toLong() else it.time }
 
                 if (bestCached != null && bestCached.accuracy <= ACCURACY_THRESHOLD_METERS) {
@@ -337,39 +340,8 @@ class LocationHelper(private val context: Context) {
      */
     suspend fun getAddress(latitude: Double, longitude: Double): String {
         return try {
-            withTimeout(3_000) {
-                if (!Geocoder.isPresent()) {
-                    return@withTimeout ""
-                }
-
-                val geocoder = Geocoder(context)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    suspendCancellableCoroutine { continuation ->
-                        geocoder.getFromLocation(
-                            latitude,
-                            longitude,
-                            1,
-                            object : Geocoder.GeocodeListener {
-                                override fun onGeocode(addresses: MutableList<Address>) {
-                                    continuation.resume(formatAddress(addresses.firstOrNull()))
-                                }
-
-                                override fun onError(errorMessage: String?) {
-                                    continuation.resume("")
-                                }
-                            }
-                        )
-                        // Geocoder 异步回调无显式取消 API，注册取消回调明确意图
-                        continuation.invokeOnCancellation { /* 迟到回调由 CancellableContinuation 静默忽略 */ }
-                    }
-                } else {
-                    // pre-TIRAMISU 的同步阻塞调用，切到 IO 调度器避免阻塞主线程
-                    withContext(Dispatchers.IO) {
-                        @Suppress("DEPRECATION")
-                        val addresses = geocoder.getFromLocation(latitude, longitude, 1)
-                        formatAddress(addresses?.firstOrNull())
-                    }
-                }
+            withTimeout(5_000) {
+                amapGeocodeService.reverse(latitude, longitude)?.formatted.orEmpty()
             }
         } catch (e: CancellationException) {
             throw e
@@ -379,65 +351,18 @@ class LocationHelper(private val context: Context) {
     }
 
     /**
-     * 仅返回市级地址（locality 优先，缺失时回退到 adminArea）。
+     * 仅返回市级地址（city 优先，缺失时回退到 province）。
      * 失败或不可用时返回空字符串。
      */
     suspend fun getCityAddress(latitude: Double, longitude: Double): String {
         return try {
-            withTimeout(3_000) {
-                if (!Geocoder.isPresent()) {
-                    return@withTimeout ""
-                }
-
-                val geocoder = Geocoder(context)
-                val address: Address? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    suspendCancellableCoroutine { continuation ->
-                        geocoder.getFromLocation(
-                            latitude,
-                            longitude,
-                            1,
-                            object : Geocoder.GeocodeListener {
-                                override fun onGeocode(addresses: MutableList<Address>) {
-                                    continuation.resume(addresses.firstOrNull())
-                                }
-
-                                override fun onError(errorMessage: String?) {
-                                    continuation.resume(null)
-                                }
-                            }
-                        )
-                        continuation.invokeOnCancellation { /* 迟到回调由 CancellableContinuation 静默忽略 */ }
-                    }
-                } else {
-                    withContext(Dispatchers.IO) {
-                        @Suppress("DEPRECATION")
-                        geocoder.getFromLocation(latitude, longitude, 1)?.firstOrNull()
-                    }
-                }
-
-                address?.locality?.takeIf { it.isNotBlank() }
-                    ?: address?.adminArea?.takeIf { it.isNotBlank() }
-                    ?: ""
+            withTimeout(5_000) {
+                amapGeocodeService.reverse(latitude, longitude)?.city.orEmpty()
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             ""
-        }
-    }
-
-    private fun formatAddress(address: Address?): String {
-        if (address == null) return ""
-        val parts = listOfNotNull(
-            address.adminArea,
-            address.locality,
-            address.subLocality,
-            address.thoroughfare
-        ).filter { it.isNotBlank() }
-        return if (parts.isNotEmpty()) {
-            parts.joinToString(" ")
-        } else {
-            address.getAddressLine(0) ?: ""
         }
     }
 }

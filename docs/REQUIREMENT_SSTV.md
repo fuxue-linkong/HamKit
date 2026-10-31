@@ -884,7 +884,7 @@ ReminderReceiver（已存在，AlarmManager 触发）
 ## 十四、三期实现记录：持续接收 + 跨帧高质量融合
 
 > 日期：2026-10-17 ｜ 调研依据：[SSTV_PHASE3_PLAN.md](SSTV_PHASE3_PLAN.md)、Q0 设计：[SSTV_STREAM_DECODER_DESIGN.md](SSTV_STREAM_DECODER_DESIGN.md)
-> 状态：**Q0–Q5 全部实现**，新增单元测试 16 项（`SstvPhase3RollingTest` 8 + `SstvPhase3FusionTest` 8），Q0 的 11 项继续守护逐像素一致性
+> 状态：**Q0–Q2 已实现**；Q3–Q5（跨帧融合）曾实现，因实测增益有限（+1 dB 量级）已在 `e4f9b44` 移除。现存单元测试：`SstvPhase3RollingTest` 7 项 + `SstvStreamDecoderTest` 12 项
 
 ### 14.1 交付清单
 
@@ -893,9 +893,9 @@ ReminderReceiver（已存在，AlarmManager 触发）
 | **Q0 流式解码** | `data/sstv/SstvStreamDecoder.kt`（重写） | 任意起点、有状态逐行、`finalize()` 与一期逐像素一致 |
 | **Q1 滚动缓冲** | 同上 + `data/sstv/SstvRollingImage.kt`（新） | 两段式频率缓冲；动态高度图像（到顶滚出、导出抽样） |
 | **Q2 持续接收** | `ui/viewmodel/SstvViewModel.kt` | 自建「音源 → 解调 → 流式解码 → 卷纸」链路；节流重建预览；停止即落盘 |
-| **Q3 重复帧识别** | `data/sstv/SstvFrameFusion.kt`（新） | 16×16 灰度缩略图归一化互相关 + 最近邻多簇聚类 |
-| **Q4 筛选配准融合** | 同上 | 质量门限、整数行/列偏移配准、中位数 / 加权均值融合 |
-| **Q5 融合 UI** | `ui/screen/sstv/SstvMainScreen.kt`、`SstvMainScreenMaterial.kt` | 持续接收与跨帧融合开关；接收明细显示行数、素材段数、融合帧数与**实测增益** |
+| ~~**Q3 重复帧识别**~~ | ~~`data/sstv/SstvFrameFusion.kt`~~ | 已移除：16×16 灰度缩略图归一化互相关 + 最近邻多簇聚类 |
+| ~~**Q4 筛选配准融合**~~ | 同上 | 已移除：质量门限、整数行/列偏移配准、中位数 / 加权均值融合 |
+| ~~**Q5 融合 UI**~~ | ~~`SstvMainScreen.kt`、`SstvMainScreenMaterial.kt`~~ | 已移除：跨帧融合开关与融合明细显示 |
 
 ### 14.2 关键技术决策
 
@@ -910,29 +910,26 @@ ReminderReceiver（已存在，AlarmManager 触发）
    同步脉冲的中心（Scottie 族的同步在行中）。少留一个行周期就会整幅错位。
 3. **构造参数顺序**：`onLine` 放在最后。Q1 增加 `maxSegments` 参数时若插在 `onLine` 前面，
    已有调用 `SstvStreamDecoder(rate, mode) { … }` 会编译失败（一次真实的回归）。
-4. **融合用中位数而不是均值**。调研实验二指出弱信号下未筛选的均值融合会**反噬**；
-   中位数对「某帧局部错位」这类离群点不敏感，实测与加权均值同量级但不劣于单帧。
-5. **增益按实测残差估计，不用 √K 理论**。`10·log10(单帧偏离 / 融合偏离)`，
-   各帧相同的系统误差会被抵消，因此不会把预期抬到「K=4 就 +6 dB」这种做不到的水平。
+4. ~~**融合用中位数而不是均值**~~。~~调研实验二指出弱信号下未筛选的均值融合会**反噬**；中位数对「某帧局部错位」这类离群点不敏感，实测与加权均值同量级但不劣于单帧。~~（随 Q3–Q5 移除）
+5. ~~**增益按实测残差估计，不用 √K 理论**。~~（随 Q3–Q5 移除）
 6. **持续接收要求先锁定模式**。没有 VIS 就无从反推行周期；开一条永远解不出图的热麦克风
    比直接提示更糟。切换开关时**不自动重启**接收（两种状态机不可互换，静默重启会丢掉已收内容）。
 
-### 14.3 测试（新增 16 项，`:app:testDebugUnitTest --tests "com.example.hamkit.data.sstv.*"`）
+### 14.3 测试（`:app:testDebugUnitTest --tests "com.example.hamkit.data.sstv.*"`）
 
 | 测试 | 用例数 | 覆盖 |
 |---|---|---|
-| `SstvPhase3RollingTest`（新） | 8 | 回收后 finalize 逐像素一致（Rob 36 / Sco 1 / Mar 1）、10 分钟内存有界、分块粒度无关、dropHistory、卷纸滚动/回写/导出抽样 |
-| `SstvPhase3FusionTest`（新） | 8 | 同图同簇、异图不同簇（逐像素断言）、K=4 ≥ 最佳单帧 +1 dB、错位帧不拉低、三类筛除原因、行/列配准、中位数 vs 加权均值、空/单帧边界 |
-| `SstvStreamDecoderTest`（Q0） | 11 | 逐像素一致性等长期护栏（本轮重跑通过） |
+| `SstvPhase3RollingTest` | 7 | 回收后 finalize 逐像素一致（Rob 36 / Sco 1 / Mar 1）、10 分钟内存有界、分块粒度无关、dropHistory、卷纸滚动/回写/导出抽样 |
+| `SstvStreamDecoderTest` | 12 | 逐像素一致性等长期护栏 |
+| ~~`SstvPhase3FusionTest`~~ | ~~8~~ | 已随 Q3–Q5 移除 |
 
 ### 14.4 已知限制
 
 | 项 | 说明 |
 |---|---|
-| **真机验证** | 与一期/二期相同的限制：声学链路、AGC、真实 ISS 信号下的持续接收与融合收益只能在真机验证。本轮的端到端证据是「编码 → 加噪 → 解调 → 解码 → 融合」的纯 JVM 用例 |
-| **亚像素配准** | 只做整数行/列偏移；行内线性伸缩由解码器的 slant 拟合覆盖。调研认为亚像素收益小，未做 |
+| **真机验证** | 与一期/二期相同的限制：声学链路、AGC、真实 ISS 信号下的持续接收表现只能在真机验证。本轮的端到端证据是「编码 → 加噪 → 解调 → 解码」的纯 JVM 用例 |
 | **中途 VIS 不改模式** | 中途捕到的 VIS 只用于收尾判定，不实时切换模式 —— 切换会让流水号断裂、已收内容与新模式行周期不匹配 |
-| **融合收益有限** | 实测 K=4 约 +1 dB 量级，远低于 √K 理论。这是调研就已确认的物理事实（系统误差主导），UI 只显示实测值 |
+| **跨帧融合已移除** | 曾实现（Q3–Q5），实测 K=4 约 +1 dB 量级、远低于 √K 理论（系统误差主导），已于 `e4f9b44` 移除 |
 | **卷纸上限** | 默认 20000 行（Robot 36 约 83 分钟），超过后滚出最老行；一次过境足够，通宵守听请定期保存 |
 
 ---

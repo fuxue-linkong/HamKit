@@ -58,7 +58,7 @@ import com.example.hamkit.data.sstv.SstvMode
 import com.example.hamkit.data.sstv.SstvRecorder
 import com.example.hamkit.ui.LocalUiMode
 import com.example.hamkit.ui.UiMode
-import com.example.hamkit.ui.appViewModel
+import com.example.hamkit.ui.applicationScopedViewModel
 import com.example.hamkit.ui.navigation3.Route
 import com.example.hamkit.ui.viewmodel.SstvViewModel
 import kotlin.math.roundToInt
@@ -110,6 +110,42 @@ fun SstvMainScreen(
     }
 }
 
+/**
+ * 修复 P3-8：SSTV 页面共用的「过境提醒直达接收」启动逻辑。
+ * 除麦克风（RECORD_AUDIO）外还需校验通知权限（Android 13+ POST_NOTIFICATIONS）——
+ * 前台服务通知在未授权时会被系统静默丢弃，直达接收将变成无提示的后台录制。
+ * 未授权时引导开启（沿用项目内现有的运行时请求方式，参照 MainActivity 的 launcher 模式）。
+ */
+internal fun autoStartReceivingWithPermissions(
+    autoStart: Boolean,
+    context: Context,
+    viewModel: SstvViewModel,
+    requestAudioPermission: () -> Unit,
+    requestNotificationPermission: () -> Unit,
+) {
+    if (!autoStart) return
+    // 先校验通知权限（仅 Android 13+ 需要运行时请求；13- 默认授予）
+    val notificationGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+        PackageManager.PERMISSION_GRANTED
+    // 再校验麦克风权限
+    val audioGranted = ContextCompat.checkSelfPermission(
+        context, Manifest.permission.RECORD_AUDIO,
+    ) == PackageManager.PERMISSION_GRANTED
+    when {
+        // 两个权限都已授予，直接进入接收态
+        notificationGranted && audioGranted -> viewModel.startReceiving()
+        // 麦克风缺失：弹系统授权（回调 granted 后由原逻辑开收）
+        !audioGranted -> requestAudioPermission()
+        // 仅缺通知权限：引导开启，麦克风已有则照常开收（前台服务仍可运行，
+        // 但提示用户开通知以看到接收状态）
+        else -> {
+            requestNotificationPermission()
+            viewModel.startReceiving()
+        }
+    }
+}
+
 /** Miuix（MIUI）风格实现。 */
 @Composable
 fun SstvMainScreenMiuix(
@@ -118,7 +154,7 @@ fun SstvMainScreenMiuix(
     onNavigate: (Route) -> Unit = {},
     onNavigateBack: () -> Unit = {},
 ) {
-    val viewModel = appViewModel<SstvViewModel>()
+    val viewModel = applicationScopedViewModel<SstvViewModel>()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scrollBehavior = MiuixScrollBehavior()
@@ -129,11 +165,20 @@ fun SstvMainScreenMiuix(
         onDispose { viewModel.clearPreset() }
     }
 
+    // 图库的大图查看器与接收页共用应用级 ViewModel。进入接收页时先收起它，
+    // 这样从接收页返回图库（图 1）时看到的是列表，而不是上次留下的大图（图 3）。
+    LaunchedEffect(Unit) { viewModel.closeViewer() }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted) viewModel.startReceiving() else viewModel.onPermissionDenied()
     }
+
+    // 修复 P3-8：通知权限运行时请求（Android 13+ POST_NOTIFICATIONS）
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { }
 
     // 由卫星详情页或过境提醒进入时预置模式：ISS 等 SSTV 卫星可直接锁定其常用模式。
     // 走 applyPreset（不写设置）而非 setManualMode，并在离开页面时清除 ——
@@ -144,16 +189,16 @@ fun SstvMainScreenMiuix(
 
         // 二期 T8：卫星过境提醒直达接收态。必须与 applyPreset 同处一个 LaunchedEffect，
         // 因为 startReceiving 读的正是 applyPreset 刚写下的 presetOverride —— 拆到两个
-        // 协程里就没有先后保证了。权限已授予就直接开收，否则弹一次系统授权。
-        if (!autoStart) return@LaunchedEffect
-        val granted = ContextCompat.checkSelfPermission(
-            context, Manifest.permission.RECORD_AUDIO,
-        ) == PackageManager.PERMISSION_GRANTED
-        if (granted) {
-            viewModel.startReceiving()
-        } else {
-            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-        }
+        // 协程里就没有先后保证了。
+        autoStartReceivingWithPermissions(
+            autoStart = autoStart,
+            context = context,
+            viewModel = viewModel,
+            requestAudioPermission = { permissionLauncher.launch(Manifest.permission.RECORD_AUDIO) },
+            requestNotificationPermission = {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            },
+        )
     }
 
     // 音频文件导入：OpenDocument 无需存储权限；WAV 的 mime 在不同提供方之间不统一，
@@ -404,12 +449,6 @@ fun SstvMainScreenMiuix(
                     onCheckedChange = { viewModel.setPersistent(it) },
                 )
                 SstvSwitchRow(
-                    title = "跨帧融合",
-                    summary = "同一张图被重复发送时，筛选并配准后合并多次结果（实测有增益，但不是倍数级）",
-                    checked = uiState.fusionEnabled,
-                    onCheckedChange = { viewModel.setFusionEnabled(it) },
-                )
-                SstvSwitchRow(
                     title = "连续接收",
                     summary = "收满一帧后保留模式与失谐量，自动接续下一帧（ISS 连发多张时用）",
                     checked = uiState.continuous,
@@ -439,8 +478,8 @@ fun SstvMainScreenMiuix(
                         )
                         Spacer(Modifier.height(2.dp))
                         Text(
-                            text = "1200 Hz 冒青、1500 Hz 偏绿、2300 Hz 偏红。调谐时看那条同步线是否" +
-                                "稳稳落在青色区；散成一片说明信噪比差。",
+                            text = "1200 Hz 偏红橙、1500 Hz 偏黄绿、2300 Hz 偏青蓝（频率越低越暖、越高越冷）。" +
+                                "调谐时看那条同步线是否稳稳落在青色区；散成一片说明信噪比差。",
                             style = MiuixTheme.textStyles.footnote1,
                             color = colorScheme.onBackground,
                         )
@@ -518,16 +557,6 @@ fun SstvMainScreenMiuix(
                         }
                         if (uiState.rollingRows > 0) {
                             SstvInfoRow("持续接收", "已解 ${uiState.rollingRows} 行")
-                        }
-                        if (uiState.fusionFrames > 0) {
-                            SstvInfoRow("融合素材", "${uiState.fusionFrames} 段图像")
-                        }
-                        if (uiState.fusionUsedFrames > 0) {
-                            SstvInfoRow(
-                                "融合结果",
-                                "${uiState.fusionUsedFrames} 帧合并，实测 +${"%.1f".format(uiState.fusionGainDb)} dB" +
-                                    if (uiState.fusionRejected > 0) "（筛掉 ${uiState.fusionRejected} 帧）" else "",
-                            )
                         }
                         uiState.savedFileName?.let { SstvInfoRow("已保存", it) }
                     }

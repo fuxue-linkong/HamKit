@@ -1,11 +1,12 @@
 package com.example.hamkit.ui.screen.about
 
 import android.os.Build
-import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -39,7 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -49,12 +50,14 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import kotlinx.coroutines.flow.onEach
 import com.example.hamkit.R
 import com.example.hamkit.ui.component.miuix.effect.BgEffectBackground
@@ -62,7 +65,6 @@ import com.example.hamkit.ui.component.miuix.effect.ColorBlendToken
 import com.example.hamkit.ui.theme.LocalEnableBlur
 import com.example.hamkit.ui.theme.isInDarkTheme
 import com.example.hamkit.ui.util.BlurredBar
-import com.example.hamkit.ui.util.rememberAppIconPainter
 import com.example.hamkit.ui.util.rememberBlurBackdrop
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
@@ -87,6 +89,35 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 import androidx.compose.ui.graphics.BlendMode as ComposeBlendMode
+
+@Composable
+private fun ContributorRow(contributor: ContributorInfo) {
+    // 点击整行打开对应 GitHub 主页
+    val uriHandler = LocalUriHandler.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { uriHandler.openUri("https://github.com/${contributor.githubId}") }
+            .padding(top = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AsyncImage(
+            model = "https://github.com/${contributor.githubId}.png",
+            contentDescription = contributor.name,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .size(36.dp)
+                .clip(RoundedCornerShape(50)),
+        )
+        Text(
+            modifier = Modifier.padding(start = 12.dp),
+            // 有呼号则显示「名字（呼号）」
+            text = contributor.callsign?.let { "${contributor.name}（$it）" } ?: contributor.name,
+            color = colorScheme.onBackground,
+            fontSize = 15.sp,
+        )
+    }
+}
 
 @Composable
 fun AboutScreenMiuix(
@@ -204,14 +235,12 @@ private fun AboutContent(
         }
     }
 
-    // Logo parallax/fade tracking
+    // Logo 区视差/淡出跟踪（图标已移除，仅保留应用名与版本号）
     var logoHeightDp by remember { mutableStateOf(300.dp) }
     var logoAreaY by remember { mutableFloatStateOf(0f) }
-    var iconY by remember { mutableFloatStateOf(0f) }
     var projectNameY by remember { mutableFloatStateOf(0f) }
     var versionCodeY by remember { mutableFloatStateOf(0f) }
 
-    var iconProgress by remember { mutableFloatStateOf(0f) }
     var projectNameProgress by remember { mutableFloatStateOf(0f) }
     var versionCodeProgress by remember { mutableFloatStateOf(0f) }
     var initialLogoAreaY by remember { mutableFloatStateOf(0f) }
@@ -220,7 +249,6 @@ private fun AboutContent(
         snapshotFlow { lazyListState.firstVisibleItemScrollOffset }
             .onEach { offset ->
                 if (lazyListState.firstVisibleItemIndex > 0) {
-                    if (iconProgress != 1f) iconProgress = 1f
                     if (projectNameProgress != 1f) projectNameProgress = 1f
                     if (versionCodeProgress != 1f) versionCodeProgress = 1f
                     return@onEach
@@ -233,14 +261,11 @@ private fun AboutContent(
 
                 val stage1TotalLength = refLogoAreaY - versionCodeY
                 val stage2TotalLength = versionCodeY - projectNameY
-                val stage3TotalLength = projectNameY - iconY
 
                 val versionCodeDelay = stage1TotalLength * 0.5f
                 versionCodeProgress = ((offset.toFloat() - versionCodeDelay) / (stage1TotalLength - versionCodeDelay).coerceAtLeast(1f))
                     .coerceIn(0f, 1f)
                 projectNameProgress = ((offset.toFloat() - stage1TotalLength) / stage2TotalLength.coerceAtLeast(1f))
-                    .coerceIn(0f, 1f)
-                iconProgress = ((offset.toFloat() - stage1TotalLength - stage2TotalLength) / stage3TotalLength.coerceAtLeast(1f))
                     .coerceIn(0f, 1f)
             }
             .collect { }
@@ -265,7 +290,7 @@ private fun AboutContent(
         effectBackground = effectBackground,
         alpha = { 1f - scrollProgress },
     ) {
-        // Logo area
+        // 标题区（应用名 / 版本号）
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -279,46 +304,6 @@ private fun AboutContent(
                 },
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .size(100.dp)
-                    .clipToBounds()
-                    .graphicsLayer {
-                        alpha = 1 - iconProgress
-                        scaleX = 1 - (iconProgress * 0.05f)
-                        scaleY = 1 - (iconProgress * 0.05f)
-                    }
-                    .onGloballyPositioned { coordinates ->
-                        if (iconY != 0f) return@onGloballyPositioned
-                        val y = coordinates.positionInWindow().y
-                        val size = coordinates.size
-                        iconY = y + size.height
-                    },
-            ) {
-                Image(
-                    // 尺寸必须与外层 100dp 的裁切容器一致：此处历史值为 245dp，
-                    // 配合外层的 clipToBounds() 会把整幅 Logo 裁成中心一小块（表现为「人物面部特写」）
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .then(
-                            if (enableBlur) {
-                                Modifier.textureBlur(
-                                    backdrop = backdrop,
-                                    shape = RoundedCornerShape(0.dp),
-                                    blurRadius = 150f,
-                                    colors = BlurColors(blendColors = logoBlend),
-                                    contentBlendMode = ComposeBlendMode.DstIn,
-                                    enabled = true,
-                                )
-                            } else Modifier
-                        ),
-                    painter = rememberAppIconPainter(),
-                    contentDescription = null,
-                    // 显式声明等比完整显示：禁止任何隐式缩放策略把图标裁成局部特写
-                    contentScale = ContentScale.Fit,
-                )
-            }
             Text(
                 modifier = Modifier
                     .padding(top = 12.dp, bottom = 5.dp)
@@ -465,6 +450,44 @@ private fun AboutContent(
                                     actions.onOpenLink(it.url)
                                 }
                             )
+                        }
+                    }
+
+                    // 开发者卡
+                    Card(
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        colors = CardDefaults.defaultColors(
+                            if (enableBlur) Color.Transparent else colorScheme.surfaceContainer,
+                            Color.Transparent,
+                        ),
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = stringResource(R.string.about_developers_title),
+                                color = colorScheme.onBackground,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 16.sp,
+                            )
+                            state.developers.forEach { ContributorRow(it) }
+                        }
+                    }
+
+                    // 捐赠者卡
+                    Card(
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        colors = CardDefaults.defaultColors(
+                            if (enableBlur) Color.Transparent else colorScheme.surfaceContainer,
+                            Color.Transparent,
+                        ),
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = stringResource(R.string.about_donors_title),
+                                color = colorScheme.onBackground,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 16.sp,
+                            )
+                            state.donors.forEach { ContributorRow(it) }
                         }
                     }
 

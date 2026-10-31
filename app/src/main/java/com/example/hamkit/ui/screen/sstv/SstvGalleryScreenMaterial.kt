@@ -1,6 +1,7 @@
 package com.example.hamkit.ui.screen.sstv
 
 import android.content.Intent
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -37,6 +38,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -53,7 +55,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.data.sstv.SstvImageStore
-import com.example.hamkit.ui.appViewModel
+import com.example.hamkit.ui.applicationScopedViewModel
 import com.example.hamkit.ui.component.material.SegmentedColumn
 import com.example.hamkit.ui.component.material.SegmentedListItem
 import com.example.hamkit.ui.viewmodel.SstvViewModel
@@ -75,7 +77,7 @@ fun SstvGalleryScreenMaterial(
     onPicked: (SstvImageStore.Entry) -> Unit = {},
     onNavigateBack: () -> Unit = {},
 ) {
-    val viewModel = appViewModel<SstvViewModel>()
+    val viewModel = applicationScopedViewModel<SstvViewModel>()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var pendingDelete by remember { mutableStateOf<SstvImageStore.Entry?>(null) }
@@ -86,12 +88,27 @@ fun SstvGalleryScreenMaterial(
     // 录音列表与图库一起刷新（两者都是「接收留下的东西」）
     LaunchedEffect(Unit) { viewModel.refreshRecordings() }
 
+    // 查看器状态（viewing/viewingBitmap）存在应用级 SstvViewModel 里，不随本页销毁。
+    // 离开图库时若不收起，它会在返回栈里继续存活：下次从接收页返回图库、或再次点
+    // 「图库」进入时，会直接落在大图（图 3），而不是图库列表（图 1）。
+    DisposableEffect(Unit) {
+        onDispose { viewModel.closeViewer() }
+    }
+
+    // 大图展开时，系统返回键先收起查看器回到列表，而不是把整个图库弹出返回栈。
+    BackHandler(enabled = uiState.viewing != null) {
+        viewModel.closeViewer()
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(if (pickForTx) "选择要发射的图像" else "SSTV 图库") },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(onClick = {
+                        // 与系统返回一致：大图展开时先回列表，否则才退出图库
+                        if (uiState.viewing != null) viewModel.closeViewer() else onNavigateBack()
+                    }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
                     }
                 },
@@ -166,8 +183,9 @@ fun SstvGalleryScreenMaterial(
                                 )
                                 Spacer(Modifier.height(4.dp))
                                 Text(
-                                    text = "${uiState.recordingsLabel}。录音带 VIS 头，可直接重解 —— " +
-                                        "当时没解好的帧还有机会救回来。",
+                                    text = "${uiState.recordingsLabel}。录音多为带 VIS 头的按帧接收，可直接重解 —— " +
+                                        "当时没解好的帧还有机会救回来；持续接收的录音从任意时刻开始，" +
+                                        "重解时用盲扫识别模式。",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )

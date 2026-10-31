@@ -72,6 +72,26 @@ class Navigator(
     }
 
     /**
+     * 确保返回栈至少包含指定的最短路径（按顺序、含栈底）。
+     *
+     * 用途：外部 Activity（系统图库/裁剪页）在前台期间，返回事件可能被派发回
+     * 本应用的 Activity 级 BackHandler 导致栈被意外 pop。选图成功后调用本方法
+     * 把栈收敛为最短路径，保证之后无论怎么 pop 都不会多退一层或直接退出。
+     *
+     * 实现：先按 [keys] 顺序重建栈底，再保留调用方当前栈顶（若不在 keys 中）。
+     */
+    fun ensureMinimumBackStack(vararg keys: NavKey) {
+        if (keys.isEmpty()) return
+        val currentTop = backStack.lastOrNull()
+        backStack.clear()
+        keys.forEach { backStack.add(it) }
+        // 当前栈顶若不在最短路径里（如中间还有别的子页），保留在最顶上，避免丢页面
+        if (currentTop != null && backStack.none { it == currentTop }) {
+            backStack.add(currentTop)
+        }
+    }
+
+    /**
      * Navigate expecting a result. Caller should subscribe via observeResult(requestKey).
      */
     fun navigateForResult(route: Route, requestKey: String) {
@@ -125,7 +145,9 @@ class Navigator(
         val Saver: Saver<Navigator, Any> = listSaver(save = { navigator ->
             navigator.backStack.toList()
         }, restore = { savedList ->
-            val initialKey = savedList.firstOrNull() ?: Route.Home
+            // P3-9：兜底回退到启动路由 Route.Main（Route.Home 未在 entry 中注册，
+            // 空栈恢复到它会导致白屏/崩溃）
+            val initialKey = savedList.firstOrNull() ?: Route.Main
             val navigator = Navigator(initialKey)
             navigator.backStack.clear()
             navigator.backStack.addAll(savedList)

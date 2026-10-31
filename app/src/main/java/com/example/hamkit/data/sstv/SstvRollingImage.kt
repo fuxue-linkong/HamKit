@@ -194,7 +194,7 @@ class SstvRollingImage(
         if (shift == 0) row else (row + writeIndex) % (rows.size / width)
 
     /**
-     * 导出为 [SstvDecoder.Result]（可直接交给图库保存、后处理、跨帧融合）。
+     * 导出为 [SstvDecoder.Result]（可直接交给图库保存、后处理）。
      *
      * @param mode 用于标注模式名与失谐量
      * @param hedrShiftHz 本次接收的失谐量
