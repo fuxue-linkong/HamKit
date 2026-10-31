@@ -119,6 +119,7 @@ import androidx.compose.material.icons.rounded.SatelliteAlt
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
@@ -133,6 +134,12 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.FileDownload
+import androidx.compose.ui.text.style.TextOverflow
+import java.util.Calendar
 
 /** Material 风格实现，与 Miuix 版共用 [AiAssistantViewModel]。 */
 @Composable
@@ -157,6 +164,7 @@ fun AiAssistantScreenMaterial(bottomInnerPadding: Dp = 0.dp) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var showHistory by remember { mutableStateOf(false) }
+    var pendingDelete by remember { mutableStateOf<AiSessionSummary?>(null) }
     var pendingExport by remember { mutableStateOf<String?>(null) }
     val exportPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("text/markdown"),
@@ -259,16 +267,36 @@ fun AiAssistantScreenMaterial(bottomInnerPadding: Dp = 0.dp) {
                 )
             }
             if (showHistory) {
-                AiHistoryDialogMaterial(
+                AiHistorySheetMaterial(
                     sessions = state.sessions,
+                    currentSessionId = state.sessionId,
+                    onNewChat = { viewModel.newSession(); showHistory = false },
                     onDismiss = { showHistory = false },
                     onLoad = { id -> viewModel.loadSession(id); showHistory = false },
-                    onDelete = viewModel::deleteSession,
+                    onDelete = { id -> pendingDelete = state.sessions.firstOrNull { it.id == id } },
                     onExport = { id ->
                         scope.launch {
                             val markdown = viewModel.exportMarkdown(id) ?: return@launch
                             pendingExport = markdown
                             exportPicker.launch("hamkit-ai.md")
+                        }
+                    },
+                )
+            }
+            pendingDelete?.let { session ->
+                AlertDialog(
+                    onDismissRequest = { pendingDelete = null },
+                    title = { Text(stringResource(R.string.ai_history_delete_title)) },
+                    text = { Text(stringResource(R.string.ai_history_delete_desc)) },
+                    confirmButton = {
+                        Button(onClick = {
+                            pendingDelete = null
+                            viewModel.deleteSession(session.id)
+                        }) { Text(stringResource(R.string.ai_delete)) }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { pendingDelete = null }) {
+                            Text(stringResource(R.string.ai_cancel))
                         }
                     },
                 )
@@ -1122,49 +1150,143 @@ private fun AiConfirmDialogMaterial(
 }
 
 @Composable
-private fun AiHistoryDialogMaterial(
+private fun AiHistorySheetMaterial(
     sessions: List<AiSessionSummary>,
+    currentSessionId: String?,
+    onNewChat: () -> Unit,
     onDismiss: () -> Unit,
     onLoad: (String) -> Unit,
     onDelete: (String) -> Unit,
     onExport: (String) -> Unit,
 ) {
-    AlertDialog(
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.ai_history_title)) },
-        text = {
+        sheetState = sheetState,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 16.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(R.string.ai_history_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(onClick = onNewChat) {
+                    Icon(
+                        Icons.Rounded.Add,
+                        contentDescription = stringResource(R.string.ai_new_chat_desc),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        Icons.Rounded.Close,
+                        contentDescription = stringResource(R.string.ai_close),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             if (sessions.isEmpty()) {
-                Text(stringResource(R.string.ai_history_empty))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Icon(
+                        Icons.Rounded.History,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(32.dp),
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        stringResource(R.string.ai_history_empty),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        stringResource(R.string.ai_history_empty_desc),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             } else {
-                LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                LazyColumn(
+                    modifier = Modifier.padding(top = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     items(sessions, key = { it.id }) { session ->
+                        val current = session.id == currentSessionId
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .background(
+                                    if (current) {
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                                    },
+                                    RoundedCornerShape(12.dp),
+                                )
+                                .border(
+                                    width = 1.dp,
+                                    color = if (current) {
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                                    } else {
+                                        Color.Transparent
+                                    },
+                                    shape = RoundedCornerShape(12.dp),
+                                )
                                 .clickable { onLoad(session.id) }
-                                .padding(vertical = 8.dp),
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(Modifier.weight(1f)) {
-                                Text(session.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
                                 Text(
-                                    "${formatAiTimeMaterial(Instant.ofEpochMilli(session.updatedAt))} · " +
-                                        "${session.messageCount} 条",
+                                    session.title,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    "${formatSessionTimeMaterial(session.updatedAt)} · " +
+                                        stringResource(
+                                            R.string.ai_history_messages,
+                                            session.messageCount,
+                                        ),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(top = 2.dp),
                                 )
                             }
-                            TextButton(onClick = { onExport(session.id) }) { Text(stringResource(R.string.ai_export)) }
-                            TextButton(onClick = { onDelete(session.id) }) { Text(stringResource(R.string.ai_delete)) }
+                            IconButton(onClick = { onExport(session.id) }) {
+                                Icon(
+                                    Icons.Rounded.FileDownload,
+                                    contentDescription = stringResource(R.string.ai_export),
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                            IconButton(onClick = { onDelete(session.id) }) {
+                                Icon(
+                                    Icons.Rounded.Delete,
+                                    contentDescription = stringResource(R.string.ai_delete),
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
                         }
                     }
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.ai_close)) }
-        },
-    )
+        }
+    }
 }
 
 @Composable
@@ -1195,5 +1317,19 @@ private fun SstvCardMaterial(mode: String?, imagePath: String?) {
                 )
             }
         }
+    }
+}
+
+/** Material 版历史相对时间（与 Miuix 版保持一致）。 */
+private fun formatSessionTimeMaterial(epochMs: Long): String {
+    val now = Calendar.getInstance()
+    val then = Calendar.getInstance().apply { timeInMillis = epochMs }
+    val sameYear = now.get(Calendar.YEAR) == then.get(Calendar.YEAR)
+    val sameDay = sameYear && now.get(Calendar.DAY_OF_YEAR) == then.get(Calendar.DAY_OF_YEAR)
+    return when {
+        sameDay -> String.format(Locale.US, "%02d:%02d", then.get(Calendar.HOUR_OF_DAY), then.get(Calendar.MINUTE))
+        sameYear && now.get(Calendar.DAY_OF_YEAR) - then.get(Calendar.DAY_OF_YEAR) == 1 -> "昨天"
+        sameYear -> String.format(Locale.US, "%02d-%02d", then.get(Calendar.MONTH) + 1, then.get(Calendar.DAY_OF_MONTH))
+        else -> String.format(Locale.US, "%04d-%02d-%02d", then.get(Calendar.YEAR), then.get(Calendar.MONTH) + 1, then.get(Calendar.DAY_OF_MONTH))
     }
 }

@@ -160,4 +160,10 @@
     <string name="ai_open_gallery">打开图库</string>
     <string name="ai_reminder_created">过境提醒已创建</string>
     <string name="ai_remove_attachment">移除附件</string>
+    <string name="ai_history_empty_desc">还没有对话，开始一个新的吧</string>
+    <string name="ai_history_messages">%1$d 条消息</string>
+    <string name="ai_history_yesterday">昨天</string>
+    <string name="ai_history_delete_title">删除对话</string>
+    <string name="ai_history_delete_desc">删除后不可恢复。</string>
+    <string name="ai_history_open">打开对话历史</string>
 </resources>

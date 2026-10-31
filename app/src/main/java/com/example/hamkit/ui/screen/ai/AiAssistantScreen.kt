@@ -138,6 +138,12 @@ import com.example.hamkit.ui.theme.SafeColors
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.FileDownload
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.window.DialogProperties
+import java.util.Calendar
 
 /**
  * AI 助手主页（底部导航第 2 项）。
@@ -175,6 +181,7 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
         ActivityResultContracts.OpenMultipleDocuments(),
     ) { uris -> if (uris.isNotEmpty()) viewModel.addAttachments(uris) }
     var showHistory by remember { mutableStateOf(false) }
+    var pendingDelete by remember { mutableStateOf<AiSessionSummary?>(null) }
     var pendingExport by remember { mutableStateOf<String?>(null) }
     val exportPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("text/markdown"),
@@ -281,12 +288,13 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
                 )
             }
             if (showHistory) {
-                AiHistoryDialogMiuix(
+                AiHistorySheetMiuix(
                     sessions = state.sessions,
+                    currentSessionId = state.sessionId,
                     onNewChat = { viewModel.newSession(); showHistory = false },
                     onDismiss = { showHistory = false },
                     onLoad = { id -> viewModel.loadSession(id); showHistory = false },
-                    onDelete = viewModel::deleteSession,
+                    onDelete = { id -> pendingDelete = state.sessions.firstOrNull { it.id == id } },
                     onExport = { id ->
                         scope.launch {
                             val markdown = viewModel.exportMarkdown(id) ?: return@launch
@@ -294,6 +302,20 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
                             exportPicker.launch("hamkit-ai.md")
                         }
                     },
+                )
+            }
+            pendingDelete?.let { session ->
+                AiConfirmDialogMiuix(
+                    request = AiConfirmRequest(
+                        id = session.id,
+                        title = stringResource(R.string.ai_history_delete_title),
+                        message = stringResource(R.string.ai_history_delete_desc),
+                    ),
+                    onApprove = {
+                        pendingDelete = null
+                        viewModel.deleteSession(session.id)
+                    },
+                    onDeny = { pendingDelete = null },
                 )
             }
             ComposerMiuix(
@@ -1161,70 +1183,186 @@ private fun AiConfirmDialogMiuix(
 }
 
 @Composable
-private fun AiHistoryDialogMiuix(
+private fun AiHistorySheetMiuix(
     sessions: List<AiSessionSummary>,
+    currentSessionId: String?,
     onNewChat: () -> Unit,
     onDismiss: () -> Unit,
     onLoad: (String) -> Unit,
     onDelete: (String) -> Unit,
     onExport: (String) -> Unit,
 ) {
-    Dialog(onDismissRequest = onDismiss) {
-        Column(
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = 460.dp)
-                .background(colorScheme.surface, RoundedCornerShape(20.dp))
-                .padding(16.dp),
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.32f))
+                .clickable(onClick = onDismiss),
         ) {
-            Text(stringResource(R.string.ai_history_title), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(8.dp))
-            if (sessions.isEmpty()) {
-                Text(
-                    stringResource(R.string.ai_history_empty),
-                    fontSize = 12.sp,
-                    color = colorScheme.onSurfaceVariantSummary,
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .heightIn(max = 520.dp)
+                    .background(
+                        colorScheme.surface,
+                        RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+                    )
+                    // 消费面板内的点击，避免穿透到遮罩导致误关闭
+                    .clickable { }
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .padding(top = 6.dp)
+                        .size(width = 36.dp, height = 4.dp)
+                        .background(
+                            colorScheme.onSurface.copy(alpha = 0.2f),
+                            CircleShape,
+                        )
+                        .align(Alignment.CenterHorizontally),
                 )
-            } else {
-                LazyColumn(Modifier.weight(1f, fill = false)) {
-                    items(sessions, key = { it.id }) { session ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onLoad(session.id) }
-                                .padding(vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(session.title, fontSize = 13.sp, maxLines = 1)
-                                Text(
-                                    "${formatAiTime(Instant.ofEpochMilli(session.updatedAt))} · " +
-                                        "${session.messageCount} 条",
-                                    fontSize = 10.sp,
-                                    color = colorScheme.onSurfaceVariantSummary,
-                                )
+                Row(
+                    modifier = Modifier.padding(top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        stringResource(R.string.ai_history_title),
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(onClick = onNewChat) {
+                        Icon(
+                            Icons.Rounded.Add,
+                            contentDescription = stringResource(R.string.ai_new_chat_desc),
+                            tint = colorScheme.primary,
+                        )
+                    }
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            Icons.Rounded.Close,
+                            contentDescription = stringResource(R.string.ai_close),
+                            tint = colorScheme.onSurfaceVariantSummary,
+                        )
+                    }
+                }
+                if (sessions.isEmpty()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Icon(
+                            Icons.Rounded.History,
+                            contentDescription = null,
+                            tint = colorScheme.onSurfaceVariantSummary,
+                            modifier = Modifier.size(32.dp),
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            stringResource(R.string.ai_history_empty),
+                            fontSize = 13.sp,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            stringResource(R.string.ai_history_empty_desc),
+                            fontSize = 11.sp,
+                            color = colorScheme.onSurfaceVariantSummary,
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .padding(top = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(sessions, key = { it.id }) { session ->
+                            val current = session.id == currentSessionId
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(
+                                        if (current) {
+                                            colorScheme.primary.copy(alpha = 0.08f)
+                                        } else {
+                                            colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                                        },
+                                        RoundedCornerShape(12.dp),
+                                    )
+                                    .border(
+                                        width = 1.dp,
+                                        color = if (current) {
+                                            colorScheme.primary.copy(alpha = 0.5f)
+                                        } else {
+                                            Color.Transparent
+                                        },
+                                        shape = RoundedCornerShape(12.dp),
+                                    )
+                                    .clickable { onLoad(session.id) }
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        session.title,
+                                        fontSize = 14.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Text(
+                                        "${formatSessionTime(session.updatedAt)} · " +
+                                            stringResource(
+                                                R.string.ai_history_messages,
+                                                session.messageCount,
+                                            ),
+                                        fontSize = 11.sp,
+                                        color = colorScheme.onSurfaceVariantSummary,
+                                        modifier = Modifier.padding(top = 2.dp),
+                                    )
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .clickable { onExport(session.id) },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        Icons.Rounded.FileDownload,
+                                        contentDescription = stringResource(R.string.ai_export),
+                                        tint = colorScheme.primary,
+                                        modifier = Modifier.size(17.dp),
+                                    )
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .clickable { onDelete(session.id) },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        Icons.Rounded.Delete,
+                                        contentDescription = stringResource(R.string.ai_delete),
+                                        tint = colorScheme.error,
+                                        modifier = Modifier.size(17.dp),
+                                    )
+                                }
                             }
-                            Text(
-                                stringResource(R.string.ai_export),
-                                fontSize = 11.sp,
-                                color = colorScheme.primary,
-                                modifier = Modifier
-                                    .clickable { onExport(session.id) }
-                                    .padding(6.dp),
-                            )
-                            Text(
-                                stringResource(R.string.ai_delete),
-                                fontSize = 11.sp,
-                                color = colorScheme.error,
-                                modifier = Modifier
-                                    .clickable { onDelete(session.id) }
-                                    .padding(6.dp),
-                            )
                         }
                     }
                 }
+                Spacer(Modifier.height(4.dp))
+                TextButton(
+                    text = stringResource(R.string.ai_close),
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
-            TextButton(text = stringResource(R.string.ai_close), onClick = onDismiss)
         }
     }
 }
@@ -1268,4 +1406,18 @@ private fun toolIcon(name: String): ImageVector = when {
     name == "open_screen" -> Icons.Rounded.ArrowForward
     name == "add_pass_reminder" -> Icons.Rounded.Notifications
     else -> Icons.Rounded.Build
+}
+
+/** 历史列表的相对时间：今天显示时分，昨天显示「昨天」，更早显示日期。 */
+private fun formatSessionTime(epochMs: Long): String {
+    val now = Calendar.getInstance()
+    val then = Calendar.getInstance().apply { timeInMillis = epochMs }
+    val sameYear = now.get(Calendar.YEAR) == then.get(Calendar.YEAR)
+    val sameDay = sameYear && now.get(Calendar.DAY_OF_YEAR) == then.get(Calendar.DAY_OF_YEAR)
+    return when {
+        sameDay -> String.format(Locale.US, "%02d:%02d", then.get(Calendar.HOUR_OF_DAY), then.get(Calendar.MINUTE))
+        sameYear && now.get(Calendar.DAY_OF_YEAR) - then.get(Calendar.DAY_OF_YEAR) == 1 -> "昨天"
+        sameYear -> String.format(Locale.US, "%02d-%02d", then.get(Calendar.MONTH) + 1, then.get(Calendar.DAY_OF_MONTH))
+        else -> String.format(Locale.US, "%04d-%02d-%02d", then.get(Calendar.YEAR), then.get(Calendar.MONTH) + 1, then.get(Calendar.DAY_OF_MONTH))
+    }
 }
