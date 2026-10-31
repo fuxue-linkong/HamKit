@@ -4,8 +4,6 @@ import com.example.hamkit.data.satellite.RadioInfo
 import com.example.hamkit.data.satellite.SatelliteCatalog
 import com.example.hamkit.data.satellite.SatelliteInfo
 import com.example.hamkit.data.satellite.SatelliteNameMatcher
-import org.json.JSONArray
-import org.json.JSONObject
 import java.time.Instant
 import java.util.Locale
 
@@ -53,12 +51,17 @@ sealed interface TagParseResult {
 }
 
 /**
- * 从工具参数里解析 tag。
+ * 解析 tag（纯 Kotlin 参数，便于 JVM 单测）。
  *
- * 兼容旧参数：`mode` 等价追加对应模式 tag，`only_above = true` 等价追加 [SatelliteTag.VISIBLE]。
+ * [rawTags] 可以是数组元素或逗号分隔字符串展开后的列表；[mode] 是旧参数
+ * （等价追加对应模式 tag），[onlyAbove] 等价追加 [SatelliteTag.VISIBLE]。
  * 未知 tag 不静默忽略，而是返回可读错误，避免模型误以为过滤生效。
  */
-fun parseSatelliteTags(args: JSONObject): TagParseResult {
+fun parseSatelliteTags(
+    rawTags: List<String>?,
+    mode: String?,
+    onlyAbove: Boolean,
+): TagParseResult {
     val tags = linkedSetOf<SatelliteTag>()
 
     fun add(raw: String): TagParseResult.Failure? {
@@ -72,29 +75,11 @@ fun parseSatelliteTags(args: JSONObject): TagParseResult {
         return null
     }
 
-    when (val raw = args.opt("tags")) {
-        is JSONArray -> {
-            for (index in 0 until raw.length()) {
-                add(raw.optString(index))?.let { return it }
-            }
-        }
-
-        is String -> {
-            raw.split(',').forEach { part ->
-                add(part)?.let { return it }
-            }
-        }
-
-        null, JSONObject.NULL -> Unit
-        else -> return TagParseResult.Failure("tags 必须是字符串数组。${SatelliteTag.DOC}")
+    rawTags?.forEach { part ->
+        add(part)?.let { return it }
     }
-
-    args.optString("mode").takeIf { it.isNotBlank() }?.let { mode ->
-        add(mode)?.let { return it }
-    }
-    if (args.optBoolean("only_above", false)) {
-        tags += SatelliteTag.VISIBLE
-    }
+    mode?.takeIf { it.isNotBlank() }?.let { add(it)?.let { failure -> return failure } }
+    if (onlyAbove) tags += SatelliteTag.VISIBLE
     return TagParseResult.Success(tags)
 }
 

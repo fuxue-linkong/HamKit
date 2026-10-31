@@ -154,7 +154,19 @@ object SearchSatellitesTool : AiTool {
         if (all.isEmpty()) return errorOutcome("卫星列表为空，请先在首页刷新卫星数据")
 
         val query = args.optStringOrNullArg("query")?.trim()?.takeIf { it.isNotEmpty() }
-        val tags = when (val result = parseSatelliteTags(args)) {
+        val rawTags = when (val raw = args.opt("tags")) {
+            is JSONArray -> (0 until raw.length()).map { raw.optString(it) }
+            is String -> raw.split(',')
+            null, JSONObject.NULL -> emptyList()
+            else -> return errorOutcome("tags 必须是字符串数组。${SatelliteTag.DOC}")
+        }
+        val tags = when (
+            val result = parseSatelliteTags(
+                rawTags = rawTags,
+                mode = args.optStringOrNullArg("mode"),
+                onlyAbove = args.optBoolean("only_above", false),
+            )
+        ) {
             is TagParseResult.Success -> result.tags
             is TagParseResult.Failure -> return errorOutcome(result.message)
         }
