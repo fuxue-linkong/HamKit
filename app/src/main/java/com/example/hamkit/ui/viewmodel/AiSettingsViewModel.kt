@@ -7,6 +7,8 @@ import com.example.hamkit.data.ai.AiClientFactory
 import com.example.hamkit.data.ai.AiConfig
 import com.example.hamkit.data.ai.AiConfigStore
 import com.example.hamkit.data.ai.AiKeyStore
+import com.example.hamkit.data.ai.AiModelProfile
+import com.example.hamkit.data.ai.AiProfileStore
 import com.example.hamkit.data.ai.AiErrorKind
 import com.example.hamkit.data.ai.AiModelList
 import com.example.hamkit.data.ai.AiModelListException
@@ -21,6 +23,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.UUID
 import kotlinx.coroutines.withContext
 
 /** AI 设置页状态。 */
@@ -35,6 +38,10 @@ data class AiSettingsUiState(
     val models: List<String> = emptyList(),
     val fetchingModels: Boolean = false,
     val modelsError: String? = null,
+    /** 已配置的模型列表。 */
+    val profiles: List<AiModelProfile> = emptyList(),
+    /** 当前编辑/使用的模型 id。 */
+    val activeProfileId: String = AiModelProfile.DEFAULT_ID,
 ) {
     val hasKey: Boolean get() = keyMasked != null
 }
@@ -47,6 +54,7 @@ class AiSettingsViewModel(application: Application) : AndroidViewModel(applicati
 
     private val configStore = AiConfigStore(application)
     private val keyStore = AiKeyStore(application)
+    private val profileStore = AiProfileStore(application)
     private val sessionStore = AiSessionStore(application)
 
     private val _uiState = MutableStateFlow(AiSettingsUiState())
@@ -54,9 +62,95 @@ class AiSettingsViewModel(application: Application) : AndroidViewModel(applicati
 
     init {
         viewModelScope.launch {
-            val config = withContext(Dispatchers.IO) { configStore.load() }
-            val masked = withContext(Dispatchers.IO) { keyStore.masked() }
-            _uiState.update { it.copy(config = config, keyMasked = masked) }
+            val legacy = withContext(Dispatchers.IO) { configStore.load() }
+            val profile = withContext(Dispatchers.IO) {
+                profileStore.ensureMigrated(legacy, keyStore.hasKey())
+            }
+            val masked = withContext(Dispatchers.IO) { keyStoreFor(profile.id).masked() }
+            _uiState.update {
+                it.copy(
+                    config = profile.applyTo(legacy),
+                    keyMasked = masked,
+                    profiles = profileStore.list(),
+                    activeProfileId = profile.id,
+                )
+            }
+        }
+    }
+
+    private fun keyStoreFor(profileId: String): AiKeyStore =
+        AiKeyStore(getApplication(), if (profileId == AiModelProfile.DEFAULT_ID) "" else profileId)
+
+    /** 把当前表单写回当前 profile（切换/新建前调用，避免丢改动）。 */
+    private fun persistCurrentProfile() {
+        val state = _uiState.value
+        val current = state.profiles.firstOrNull { it.id == state.activeProfileId } ?: return
+        profileStore.upsert(AiModelProfile.fromConfig(current.id, current.name, state.config))
+    }
+
+    fun selectProfile(id: String) {
+        val state = _uiState.value
+        if (id == state.activeProfileId) return
+        persistCurrentProfile()
+        val profiles = profileStore.list()
+        val target = profiles.firstOrNull { it.id == id } ?: return
+        profileStore.setActive(id)
+        viewModelScope.launch {
+            val masked = withContext(Dispatchers.IO) { keyStoreFor(id).masked() }
+            _uiState.update {
+                it.copy(
+                    config = target.applyTo(it.config),
+                    keyMasked = masked,
+                    activeProfileId = id,
+                    profiles = profiles,
+                    probe = null,
+                    models = emptyList(),
+                    error = null,
+                    notice = "已切换到「${target.name}」",
+                )
+            }
+        }
+    }
+
+    fun addProfile() {
+        persistCurrentProfile()
+        val state = _uiState.value
+        val id = "p_" + UUID.randomUUID().toString().take(8)
+        val name = "模型 ${state.profiles.size + 1}"
+        profileStore.upsert(AiModelProfile.fromConfig(id, name, state.config))
+        profileStore.setActive(id)
+        _uiState.update {
+            it.copy(
+                profiles = profileStore.list(),
+                activeProfileId = id,
+                keyMasked = null,
+                notice = "已新建「$name」，请填写 Key",
+                probe = null,
+                models = emptyList(),
+                error = null,
+            )
+        }
+    }
+
+    fun deleteProfile(id: String) {
+        if (!profileStore.delete(id)) {
+            _uiState.update { it.copy(error = "至少保留一个模型") }
+            return
+        }
+        viewModelScope.launch {
+            val profiles = withContext(Dispatchers.IO) { profileStore.list() }
+            val active = withContext(Dispatchers.IO) { profileStore.active(profiles) }
+            val masked = withContext(Dispatchers.IO) { keyStoreFor(active.id).masked() }
+            _uiState.update {
+                it.copy(
+                    profiles = profiles,
+                    activeProfileId = active.id,
+                    config = active.applyTo(it.config),
+                    keyMasked = masked,
+                    notice = "已删除模型",
+                    error = null,
+                )
+            }
         }
     }
 
@@ -142,9 +236,17 @@ class AiSettingsViewModel(application: Application) : AndroidViewModel(applicati
             return
         }
         viewModelScope.launch {
-            withContext(Dispatchers.IO) { configStore.save(config) }
+            withContext(Dispatchers.IO) {
+                configStore.save(config)
+                persistCurrentProfile()
+            }
             _uiState.update {
-                it.copy(config = config, notice = "设置已保存", error = null)
+                it.copy(
+                    config = config,
+                    profiles = profileStore.list(),
+                    notice = "设置已保存",
+                    error = null,
+                )
             }
             onSaved(true)
         }
@@ -155,8 +257,8 @@ class AiSettingsViewModel(application: Application) : AndroidViewModel(applicati
         if (trimmed.isEmpty()) return
         viewModelScope.launch {
             val masked = withContext(Dispatchers.IO) {
-                keyStore.save(trimmed)
-                keyStore.masked()
+                keyStoreFor(_uiState.value.activeProfileId).save(trimmed)
+                keyStoreFor(_uiState.value.activeProfileId).masked()
             }
             _uiState.update { it.copy(keyMasked = masked, notice = "API Key 已加密保存", error = null) }
         }
@@ -164,7 +266,7 @@ class AiSettingsViewModel(application: Application) : AndroidViewModel(applicati
 
     fun clearKey() {
         viewModelScope.launch {
-            withContext(Dispatchers.IO) { keyStore.clear() }
+            withContext(Dispatchers.IO) { keyStoreFor(_uiState.value.activeProfileId).clear() }
             _uiState.update { it.copy(keyMasked = null, notice = "API Key 已清除", probe = null) }
         }
     }
@@ -184,7 +286,7 @@ class AiSettingsViewModel(application: Application) : AndroidViewModel(applicati
         }
         _uiState.update { it.copy(testing = true, probe = null, error = null) }
         viewModelScope.launch {
-            val apiKey = withContext(Dispatchers.IO) { keyStore.load() }
+            val apiKey = withContext(Dispatchers.IO) { keyStoreFor(_uiState.value.activeProfileId).load() }
             if (apiKey.isNullOrBlank()) {
                 _uiState.update { it.copy(testing = false, error = "API Key 读取失败，请重新保存") }
                 return@launch
@@ -217,7 +319,7 @@ class AiSettingsViewModel(application: Application) : AndroidViewModel(applicati
         }
         _uiState.update { it.copy(fetchingModels = true, modelsError = null, error = null) }
         viewModelScope.launch {
-            val apiKey = withContext(Dispatchers.IO) { keyStore.load() }
+            val apiKey = withContext(Dispatchers.IO) { keyStoreFor(_uiState.value.activeProfileId).load() }
             if (apiKey.isNullOrBlank()) {
                 _uiState.update {
                     it.copy(fetchingModels = false, modelsError = "API Key 读取失败，请重新保存")

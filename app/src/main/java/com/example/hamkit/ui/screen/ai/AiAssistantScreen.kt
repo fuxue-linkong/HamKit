@@ -62,6 +62,7 @@ import com.example.hamkit.R
 import com.example.hamkit.data.ai.AiAttachment
 import com.example.hamkit.data.ai.AiAttachmentKind
 import com.example.hamkit.data.ai.AiAttachmentStatus
+import com.example.hamkit.data.ai.AiModelProfile
 import com.example.hamkit.data.ai.AiRole
 import com.example.hamkit.data.ai.AiSessionSummary
 import com.example.hamkit.data.ai.tool.AiCard
@@ -130,6 +131,7 @@ import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.SatelliteAlt
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
@@ -188,6 +190,7 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
         ActivityResultContracts.OpenMultipleDocuments(),
     ) { uris -> if (uris.isNotEmpty()) viewModel.addAttachments(uris) }
     var showHistory by remember { mutableStateOf(false) }
+    var showModels by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<AiSessionSummary?>(null) }
     var pendingExport by remember { mutableStateOf<String?>(null) }
     val exportPicker = rememberLauncherForActivityResult(
@@ -219,6 +222,16 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
             TopAppBar(
                 title = stringResource(R.string.ai_title),
                 actions = {
+                    IconButton(
+                        onClick = { viewModel.reloadConfig(); showModels = true },
+                        modifier = Modifier.clip(CircleShape),
+                    ) {
+                        Icon(
+                            Icons.Rounded.SwapHoriz,
+                            contentDescription = stringResource(R.string.ai_model_switch),
+                            tint = colorScheme.primary,
+                        )
+                    }
                     IconButton(
                         onClick = { viewModel.refreshSessions(); showHistory = true },
                         modifier = Modifier.clip(CircleShape),
@@ -297,6 +310,17 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
                     request = request,
                     onApprove = { viewModel.resolveConfirm(true) },
                     onDeny = { viewModel.resolveConfirm(false) },
+                )
+            }
+            if (showModels) {
+                AiModelPickerMiuix(
+                    profiles = state.profiles,
+                    activeId = state.activeProfileId,
+                    onPick = { id ->
+                        viewModel.switchProfile(id)
+                        showModels = false
+                    },
+                    onDismiss = { showModels = false },
                 )
             }
             if (showHistory) {
@@ -1485,5 +1509,110 @@ private fun formatSessionTime(epochMs: Long): String {
         sameYear && now.get(Calendar.DAY_OF_YEAR) - then.get(Calendar.DAY_OF_YEAR) == 1 -> "昨天"
         sameYear -> String.format(Locale.US, "%02d-%02d", then.get(Calendar.MONTH) + 1, then.get(Calendar.DAY_OF_MONTH))
         else -> String.format(Locale.US, "%04d-%02d-%02d", then.get(Calendar.YEAR), then.get(Calendar.MONTH) + 1, then.get(Calendar.DAY_OF_MONTH))
+    }
+}
+
+@Composable
+private fun AiModelPickerMiuix(
+    profiles: List<AiModelProfile>,
+    activeId: String,
+    onPick: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.32f))
+                .clickable(onClick = onDismiss),
+        ) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .heightIn(max = 520.dp)
+                    .background(
+                        colorScheme.surface,
+                        RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+                    )
+                    .clickable { }
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .padding(top = 6.dp)
+                        .size(width = 36.dp, height = 4.dp)
+                        .background(colorScheme.onSurface.copy(alpha = 0.2f), CircleShape)
+                        .align(Alignment.CenterHorizontally),
+                )
+                Row(
+                    modifier = Modifier.padding(top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        stringResource(R.string.ai_models_title),
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(onClick = onDismiss, modifier = Modifier.clip(CircleShape)) {
+                        Icon(
+                            Icons.Rounded.Close,
+                            contentDescription = stringResource(R.string.ai_close),
+                            tint = colorScheme.onSurfaceVariantSummary,
+                        )
+                    }
+                }
+                if (profiles.isEmpty()) {
+                    Text(
+                        stringResource(R.string.ai_model_empty),
+                        fontSize = 12.sp,
+                        color = colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.padding(vertical = 24.dp),
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.padding(top = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(profiles, key = { it.id }) { profile ->
+                            val current = profile.id == activeId
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        if (current) colorScheme.primary.copy(alpha = 0.08f)
+                                        else colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                        RoundedCornerShape(12.dp),
+                                    )
+                                    .clickable { onPick(profile.id) }
+                                    .padding(horizontal = 12.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(profile.name, fontSize = 14.sp)
+                                    Text(
+                                        "${profile.protocol.label} · ${profile.model}",
+                                        fontSize = 11.sp,
+                                        color = colorScheme.onSurfaceVariantSummary,
+                                    )
+                                }
+                                if (current) {
+                                    Text(
+                                        stringResource(R.string.ai_model_current),
+                                        fontSize = 10.sp,
+                                        color = colorScheme.primary,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

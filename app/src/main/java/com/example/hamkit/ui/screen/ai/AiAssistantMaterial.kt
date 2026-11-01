@@ -76,6 +76,7 @@ import coil.compose.AsyncImage
 import com.example.hamkit.R
 import com.example.hamkit.data.ai.AiAttachment
 import com.example.hamkit.data.ai.AiAttachmentStatus
+import com.example.hamkit.data.ai.AiModelProfile
 import com.example.hamkit.data.ai.AiRole
 import com.example.hamkit.data.ai.AiSessionSummary
 import com.example.hamkit.data.ai.tool.AiCard
@@ -121,6 +122,7 @@ import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.SatelliteAlt
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -171,6 +173,7 @@ fun AiAssistantScreenMaterial(bottomInnerPadding: Dp = 0.dp) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var showHistory by remember { mutableStateOf(false) }
+    var showModels by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<AiSessionSummary?>(null) }
     var pendingExport by remember { mutableStateOf<String?>(null) }
     val exportPicker = rememberLauncherForActivityResult(
@@ -200,6 +203,16 @@ fun AiAssistantScreenMaterial(bottomInnerPadding: Dp = 0.dp) {
             TopAppBar(
                 title = { Text(stringResource(R.string.ai_title), fontWeight = FontWeight.SemiBold) },
                 actions = {
+                    IconButton(
+                        onClick = { viewModel.reloadConfig(); showModels = true },
+                        modifier = Modifier.clip(CircleShape),
+                    ) {
+                        Icon(
+                            Icons.Rounded.SwapHoriz,
+                            contentDescription = stringResource(R.string.ai_model_switch),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
                     IconButton(
                         onClick = { viewModel.refreshSessions(); showHistory = true },
                         modifier = Modifier.clip(CircleShape),
@@ -279,6 +292,17 @@ fun AiAssistantScreenMaterial(bottomInnerPadding: Dp = 0.dp) {
                     request = request,
                     onApprove = { viewModel.resolveConfirm(true) },
                     onDeny = { viewModel.resolveConfirm(false) },
+                )
+            }
+            if (showModels) {
+                AiModelPickerMaterial(
+                    profiles = state.profiles,
+                    activeId = state.activeProfileId,
+                    onPick = { id ->
+                        viewModel.switchProfile(id)
+                        showModels = false
+                    },
+                    onDismiss = { showModels = false },
                 )
             }
             if (showHistory) {
@@ -1398,4 +1422,63 @@ private fun formatSessionTimeMaterial(epochMs: Long): String {
         sameYear -> String.format(Locale.US, "%02d-%02d", then.get(Calendar.MONTH) + 1, then.get(Calendar.DAY_OF_MONTH))
         else -> String.format(Locale.US, "%04d-%02d-%02d", then.get(Calendar.YEAR), then.get(Calendar.MONTH) + 1, then.get(Calendar.DAY_OF_MONTH))
     }
+}
+
+@Composable
+private fun AiModelPickerMaterial(
+    profiles: List<AiModelProfile>,
+    activeId: String,
+    onPick: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.ai_models_title)) },
+        text = {
+            if (profiles.isEmpty()) {
+                Text(stringResource(R.string.ai_model_empty))
+            } else {
+                LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                    items(profiles, key = { it.id }) { profile ->
+                        val current = profile.id == activeId
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(
+                                    if (current) {
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                                    },
+                                    RoundedCornerShape(12.dp),
+                                )
+                                .clickable { onPick(profile.id) }
+                                .padding(horizontal = 12.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(profile.name, style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    "${profile.protocol.label} · ${profile.model}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            if (current) {
+                                Text(
+                                    stringResource(R.string.ai_model_current),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.ai_close)) }
+        },
+    )
 }

@@ -168,4 +168,11 @@
     <string name="ai_history_open">打开对话历史</string>
     <string name="ai_tools_collapsed">已折叠 %1$d 次工具调用</string>
     <string name="ai_tools_expanded">%1$d 次工具调用</string>
+    <string name="ai_models_title">模型</string>
+    <string name="ai_models_hint">切换只影响连接参数；系统提示词、工具与历史为全局设置。</string>
+    <string name="ai_model_new">新建模型</string>
+    <string name="ai_model_delete">删除模型</string>
+    <string name="ai_model_current">当前</string>
+    <string name="ai_model_switch">切换模型</string>
+    <string name="ai_model_empty">还没有模型</string>
 </resources>

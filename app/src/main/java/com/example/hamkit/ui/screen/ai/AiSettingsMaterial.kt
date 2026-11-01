@@ -33,12 +33,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.R
+import com.example.hamkit.data.ai.AiModelProfile
 import com.example.hamkit.data.ai.AiPreset
 import com.example.hamkit.data.ai.tool.AiToolRegistry
 import com.example.hamkit.data.ai.AiProtocol
@@ -46,6 +48,8 @@ import com.example.hamkit.ui.appViewModel
 import com.example.hamkit.ui.component.material.SwitchItem
 import com.example.hamkit.ui.viewmodel.AiSettingsUiState
 import com.example.hamkit.ui.viewmodel.AiSettingsViewModel
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 
 /** Material 风格实现，与 Miuix 版共用 [AiSettingsViewModel]。 */
 @Composable
@@ -74,6 +78,13 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            ModelListCardMaterial(
+                profiles = state.profiles,
+                activeId = state.activeProfileId,
+                onSelect = viewModel::selectProfile,
+                onAdd = viewModel::addProfile,
+                onDelete = viewModel::deleteProfile,
+            )
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
@@ -393,5 +404,67 @@ private fun ResultTextMaterial(state: AiSettingsUiState) {
             style = MaterialTheme.typography.bodySmall,
             color = if (probe.ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
         )
+    }
+}
+
+@Composable
+private fun ModelListCardMaterial(
+    profiles: List<AiModelProfile>,
+    activeId: String,
+    onSelect: (String) -> Unit,
+    onAdd: () -> Unit,
+    onDelete: (String) -> Unit,
+) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(R.string.ai_models_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onAdd) { Text(stringResource(R.string.ai_model_new)) }
+            }
+            profiles.forEach { profile ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { onSelect(profile.id) }
+                        .padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(profile.name, style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "${profile.protocol.label} · ${profile.model}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (profile.id == activeId) {
+                        Text(
+                            stringResource(R.string.ai_model_current),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    if (profiles.size > 1) {
+                        TextButton(onClick = { onDelete(profile.id) }) {
+                            Text(stringResource(R.string.ai_model_delete))
+                        }
+                    }
+                }
+            }
+            Text(
+                stringResource(R.string.ai_models_hint),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }

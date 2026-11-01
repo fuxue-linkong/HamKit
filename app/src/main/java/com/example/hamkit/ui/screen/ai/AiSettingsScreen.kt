@@ -30,12 +30,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.R
+import com.example.hamkit.data.ai.AiModelProfile
 import com.example.hamkit.data.ai.AiPreset
 import com.example.hamkit.data.ai.tool.AiToolRegistry
 import com.example.hamkit.data.ai.AiProtocol
@@ -106,6 +108,13 @@ fun AiSettingsScreenMiuix(onBack: () -> Unit = {}) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             StatusCardMiuix(state = state)
+            ModelListCardMiuix(
+                profiles = state.profiles,
+                activeId = state.activeProfileId,
+                onSelect = viewModel::selectProfile,
+                onAdd = viewModel::addProfile,
+                onDelete = viewModel::deleteProfile,
+            )
             PresetCardMiuix(
                 selected = state.config.preset,
                 onSelect = viewModel::selectPreset,
@@ -440,5 +449,68 @@ private fun ProbeResultMiuix(state: com.example.hamkit.ui.viewmodel.AiSettingsUi
             fontSize = 11.sp,
             color = if (probe.ok) colorScheme.primary else colorScheme.error,
         )
+    }
+}
+
+@Composable
+private fun ModelListCardMiuix(
+    profiles: List<AiModelProfile>,
+    activeId: String,
+    onSelect: (String) -> Unit,
+    onAdd: () -> Unit,
+    onDelete: (String) -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(R.string.ai_models_title),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    text = stringResource(R.string.ai_model_new),
+                    onClick = onAdd,
+                )
+            }
+            profiles.forEach { profile ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { onSelect(profile.id) }
+                        .padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(profile.name, fontSize = 13.sp)
+                        Text(
+                            "${profile.protocol.label} · ${profile.model}",
+                            fontSize = 10.sp,
+                            color = colorScheme.onSurfaceVariantSummary,
+                        )
+                    }
+                    if (profile.id == activeId) {
+                        Text(
+                            stringResource(R.string.ai_model_current),
+                            fontSize = 10.sp,
+                            color = colorScheme.primary,
+                        )
+                    }
+                    if (profiles.size > 1) {
+                        TextButton(
+                            text = stringResource(R.string.ai_model_delete),
+                            onClick = { onDelete(profile.id) },
+                        )
+                    }
+                }
+            }
+            Text(
+                stringResource(R.string.ai_models_hint),
+                fontSize = 10.sp,
+                color = colorScheme.onSurfaceVariantSummary,
+            )
+        }
     }
 }
