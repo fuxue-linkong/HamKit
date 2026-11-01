@@ -175,4 +175,15 @@
     <string name="ai_model_current">当前</string>
     <string name="ai_model_switch">切换模型</string>
     <string name="ai_model_empty">还没有模型</string>
+    <string name="ai_model_edit">编辑</string>
+    <string name="ai_model_preset_tab">预设服务商</string>
+    <string name="ai_model_custom_tab">自定义 API</string>
+    <string name="ai_model_catalog_empty">还没获取模型；目录外 ID 仍可直接填写。</string>
+    <string name="ai_model_name">显示名称</string>
+    <string name="ai_model_id">模型 ID</string>
+    <string name="ai_model_save">保存模型</string>
+    <string name="ai_model_cancel">取消</string>
+    <string name="ai_model_advanced">高级</string>
+    <string name="ai_model_catalog">模型目录</string>
+    <string name="ai_model_notice_key">当前模型还没有配置 API Key。</string>
 </resources>

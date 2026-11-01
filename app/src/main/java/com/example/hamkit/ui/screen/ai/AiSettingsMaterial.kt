@@ -50,6 +50,17 @@ import com.example.hamkit.ui.viewmodel.AiSettingsUiState
 import com.example.hamkit.ui.viewmodel.AiSettingsViewModel
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.unit.Dp
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.AlertDialog
 
 /** Material 风格实现，与 Miuix 版共用 [AiSettingsViewModel]。 */
 @Composable
@@ -57,6 +68,7 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
     val viewModel = appViewModel<AiSettingsViewModel>()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var keyInput by remember { mutableStateOf("") }
+    var showModelPicker by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -78,193 +90,43 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            ModelListCardMaterial(
-                profiles = state.profiles,
-                activeId = state.activeProfileId,
-                onSelect = viewModel::selectProfile,
-                onAdd = viewModel::addProfile,
-                onDelete = viewModel::deleteProfile,
+            ActiveModelCardMaterial(
+                state = state,
+                onSwitch = { showModelPicker = true },
             )
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                ),
-            ) {
-                Column(Modifier.padding(14.dp)) {
-                    Row {
-                        Text(
-                            "${state.config.preset.label} · ${state.config.model}",
-                            style = MaterialTheme.typography.titleSmall,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Text(
-                            when {
-                                state.probe?.ok == true -> "已连接"
-                                state.probe != null -> "连接失败"
-                                else -> "未测试"
-                            },
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (state.probe?.ok == true) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                        )
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "协议：${state.config.protocol.label} · " +
-                            if (state.config.allowCleartext) "允许内网 HTTP" else "仅 HTTPS",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+            if (showModelPicker) {
+                ModelPickerDialogMaterial(
+                    profiles = state.profiles,
+                    activeId = state.activeProfileId,
+                    onSelect = { id ->
+                        viewModel.selectProfile(id)
+                        showModelPicker = false
+                    },
+                    onAdd = {
+                        viewModel.addProfile()
+                        showModelPicker = false
+                    },
+                    onDelete = viewModel::deleteProfile,
+                    onDismiss = { showModelPicker = false },
+                )
             }
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                ),
-            ) {
-                Column(Modifier.padding(14.dp)) {
-                    Text("服务商", style = MaterialTheme.typography.titleSmall)
-                    Spacer(Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        AiPreset.entries.forEach { preset ->
-                            FilterChip(
-                                selected = preset == state.config.preset,
-                                onClick = { viewModel.selectPreset(preset) },
-                                label = { Text(preset.label) },
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    Text("API 协议", style = MaterialTheme.typography.titleSmall)
-                    Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        AiProtocol.entries.forEach { protocol ->
-                            FilterChip(
-                                selected = protocol == state.config.protocol,
-                                onClick = { viewModel.selectProtocol(protocol) },
-                                label = { Text(protocol.label) },
-                            )
-                        }
-                    }
-                }
-            }
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                ),
-            ) {
-                Column(Modifier.padding(14.dp)) {
-                    OutlinedTextField(
-                        value = state.config.baseUrl,
-                        onValueChange = viewModel::setBaseUrl,
-                        label = { Text("Base URL") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    OutlinedTextField(
-                        value = state.config.model,
-                        onValueChange = viewModel::setModel,
-                        label = { Text("模型") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Row(
-                        modifier = Modifier.padding(top = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        TextButton(
-                            onClick = viewModel::fetchModels,
-                            enabled = !state.fetchingModels,
-                        ) {
-                            Text(if (state.fetchingModels) stringResource(R.string.ai_settings_fetching) else stringResource(R.string.ai_settings_fetch_models))
-                        }
-                        state.modelsError?.let {
-                            Text(
-                                it,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.error,
-                            )
-                        }
-                    }
-                    if (state.models.isNotEmpty()) {
-                        Row(
-                            modifier = Modifier.horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            state.models.forEach { model ->
-                                FilterChip(
-                                    selected = model == state.config.model,
-                                    onClick = { viewModel.setModel(model) },
-                                    label = { Text(model) },
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                ),
-            ) {
-                Column(Modifier.padding(14.dp)) {
-                    Text("API Key", style = MaterialTheme.typography.titleSmall)
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        state.keyMasked?.let { "已保存：$it" } ?: stringResource(R.string.ai_settings_not_saved),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (state.hasKey) {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        } else {
-                            MaterialTheme.colorScheme.error
-                        },
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = keyInput,
-                        onValueChange = { keyInput = it },
-                        label = { Text("输入新的 API Key") },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Button(
-                            onClick = {
-                                viewModel.saveKey(keyInput)
-                                keyInput = ""
-                            },
-                            enabled = keyInput.isNotBlank(),
-                        ) {
-                            Text(stringResource(R.string.ai_settings_save_key))
-                        }
-                        TextButton(onClick = viewModel::clearKey) { Text(stringResource(R.string.ai_settings_clear)) }
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        stringResource(R.string.ai_settings_key_hint),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-
+            ModelConfigCardMaterial(
+                state = state,
+                keyInput = keyInput,
+                onKeyInputChange = { keyInput = it },
+                onNameChange = viewModel::setProfileName,
+                onPreset = viewModel::selectPreset,
+                onProtocol = viewModel::selectProtocol,
+                onBaseUrl = viewModel::setBaseUrl,
+                onModel = viewModel::setModel,
+                onFetchModels = viewModel::fetchModels,
+                onSaveKey = {
+                    viewModel.saveKey(keyInput)
+                    keyInput = ""
+                },
+                onSave = { viewModel.save() },
+                onCancel = viewModel::resetToSaved,
+            )
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
@@ -467,4 +329,355 @@ private fun ModelListCardMaterial(
             )
         }
     }
+}
+
+@Composable
+private fun ActiveModelCardMaterial(state: AiSettingsUiState, onSwitch: () -> Unit) {
+    val active = state.profiles.firstOrNull { it.id == state.activeProfileId }
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        active?.name ?: "默认",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        stringResource(R.string.ai_model_current),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .background(
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+                                RoundedCornerShape(6.dp),
+                            )
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "${state.config.protocol.label} · ${state.config.model}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            TextButton(onClick = onSwitch) {
+                Text(stringResource(R.string.ai_model_switch))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModelConfigCardMaterial(
+    state: AiSettingsUiState,
+    keyInput: String,
+    onKeyInputChange: (String) -> Unit,
+    onNameChange: (String) -> Unit,
+    onPreset: (AiPreset) -> Unit,
+    onProtocol: (AiProtocol) -> Unit,
+    onBaseUrl: (String) -> Unit,
+    onModel: (String) -> Unit,
+    onFetchModels: () -> Unit,
+    onSaveKey: () -> Unit,
+    onSave: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    var customApi by remember { mutableStateOf(false) }
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                stringResource(R.string.ai_models_title),
+                style = MaterialTheme.typography.titleSmall,
+            )
+            Spacer(Modifier.height(10.dp))
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        RoundedCornerShape(10.dp),
+                    )
+                    .padding(3.dp),
+            ) {
+                listOf(
+                    false to stringResource(R.string.ai_model_preset_tab),
+                    true to stringResource(R.string.ai_model_custom_tab),
+                ).forEach { (isCustom, label) ->
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(
+                                if (customApi == isCustom) {
+                                    MaterialTheme.colorScheme.surface
+                                } else {
+                                    Color.Transparent
+                                },
+                            )
+                            .clickable { customApi = isCustom }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            label,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (customApi == isCustom) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+
+            if (!customApi) {
+                Row(
+                    modifier = Modifier
+                        .horizontalScroll(rememberScrollState())
+                        .padding(bottom = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    AiPreset.entries.forEach { preset ->
+                        FilterChip(
+                            selected = preset == state.config.preset,
+                            onClick = { onPreset(preset) },
+                            label = { Text(preset.label) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+            } else {
+                Row(
+                    modifier = Modifier
+                        .horizontalScroll(rememberScrollState())
+                        .padding(bottom = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    AiProtocol.entries.forEach { protocol ->
+                        FilterChip(
+                            selected = protocol == state.config.protocol,
+                            onClick = { onProtocol(protocol) },
+                            label = { Text(protocol.label) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = state.config.baseUrl,
+                    onValueChange = onBaseUrl,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Base URL") },
+                    placeholder = { Text("https://gateway.example/v1") },
+                    singleLine = true,
+                )
+                Spacer(Modifier.height(12.dp))
+            }
+
+            val activeName = state.profiles.firstOrNull { it.id == state.activeProfileId }?.name.orEmpty()
+            OutlinedTextField(
+                value = activeName,
+                onValueChange = onNameChange,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.ai_model_name)) },
+                singleLine = true,
+            )
+            Spacer(Modifier.height(10.dp))
+            OutlinedTextField(
+                value = state.config.model,
+                onValueChange = onModel,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.ai_model_id)) },
+                singleLine = true,
+            )
+
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(R.string.ai_model_catalog),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onFetchModels, enabled = !state.fetchingModels) {
+                    Text(
+                        if (state.fetchingModels) {
+                            stringResource(R.string.ai_settings_fetching)
+                        } else {
+                            stringResource(R.string.ai_settings_fetch_models)
+                        },
+                    )
+                }
+            }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .dashedBorderMaterial(MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+                    .padding(14.dp),
+            ) {
+                if (state.models.isEmpty()) {
+                    Text(
+                        stringResource(R.string.ai_model_catalog_empty),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        state.models.forEach { model ->
+                            FilterChip(
+                                selected = model == state.config.model,
+                                onClick = { onModel(model) },
+                                label = { Text(model) },
+                            )
+                        }
+                    }
+                }
+                state.modelsError?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+            Text(
+                stringResource(R.string.ai_settings_key_hint),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                state.keyMasked?.let { "已保存：$it" } ?: stringResource(R.string.ai_settings_not_saved),
+                style = MaterialTheme.typography.labelSmall,
+                color = if (state.hasKey) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.error
+                },
+            )
+            OutlinedTextField(
+                value = keyInput,
+                onValueChange = onKeyInputChange,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("API Key") },
+                singleLine = true,
+            )
+            Spacer(Modifier.height(8.dp))
+            TextButton(onClick = onSaveKey, enabled = keyInput.isNotBlank()) {
+                Text(stringResource(R.string.ai_settings_save_key))
+            }
+
+            Spacer(Modifier.height(14.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                TextButton(onClick = onCancel, modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.ai_model_cancel))
+                }
+                Button(onClick = onSave, modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.ai_model_save))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModelPickerDialogMaterial(
+    profiles: List<AiModelProfile>,
+    activeId: String,
+    onSelect: (String) -> Unit,
+    onAdd: () -> Unit,
+    onDelete: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.ai_models_title)) },
+        text = {
+            Column(Modifier.heightIn(max = 420.dp)) {
+                if (profiles.isEmpty()) {
+                    Text(stringResource(R.string.ai_model_empty))
+                } else {
+                    profiles.forEach { profile ->
+                        val current = profile.id == activeId
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(
+                                    if (current) {
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+                                    } else {
+                                        Color.Transparent
+                                    },
+                                )
+                                .clickable { onSelect(profile.id) }
+                                .padding(vertical = 8.dp, horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(profile.name, style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    "${profile.protocol.label} · ${profile.model}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            if (current) {
+                                Text(
+                                    stringResource(R.string.ai_model_current),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                            if (profiles.size > 1) {
+                                TextButton(onClick = { onDelete(profile.id) }) {
+                                    Text(stringResource(R.string.ai_model_delete))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onAdd) { Text(stringResource(R.string.ai_model_new)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.ai_close)) }
+        },
+    )
+}
+
+private fun Modifier.dashedBorderMaterial(color: Color, radius: Dp = 12.dp): Modifier = this.drawBehind {
+    drawRoundRect(
+        color = color,
+        style = Stroke(
+            width = 1.dp.toPx(),
+            pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f), 0f),
+        ),
+        cornerRadius = CornerRadius(radius.toPx()),
+    )
 }

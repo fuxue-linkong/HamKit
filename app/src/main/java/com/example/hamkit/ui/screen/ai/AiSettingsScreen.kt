@@ -59,6 +59,18 @@ import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.unit.Dp
+import androidx.compose.foundation.layout.Box
+import com.example.hamkit.ui.viewmodel.AiSettingsUiState
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.window.Dialog
 
 /**
  * AI 设置页（从「设置」或 AI 页右上角进入）。
@@ -78,6 +90,7 @@ fun AiSettingsScreenMiuix(onBack: () -> Unit = {}) {
     val viewModel = appViewModel<AiSettingsViewModel>()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var keyInput by remember { mutableStateOf("") }
+    var showModelPicker by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -108,114 +121,43 @@ fun AiSettingsScreenMiuix(onBack: () -> Unit = {}) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             StatusCardMiuix(state = state)
-            ModelListCardMiuix(
-                profiles = state.profiles,
-                activeId = state.activeProfileId,
-                onSelect = viewModel::selectProfile,
-                onAdd = viewModel::addProfile,
-                onDelete = viewModel::deleteProfile,
+            ActiveModelCardMiuix(
+                state = state,
+                onSwitch = { showModelPicker = true },
             )
-            PresetCardMiuix(
-                selected = state.config.preset,
-                onSelect = viewModel::selectPreset,
-            )
-            ProtocolCardMiuix(
-                selected = state.config.protocol,
-                onSelect = viewModel::selectProtocol,
-            )
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(14.dp)) {
-                    Text("连接", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(8.dp))
-                    Text("Base URL", fontSize = 11.sp, color = colorScheme.onSurfaceVariantSummary)
-                    Spacer(Modifier.height(4.dp))
-                    TextField(
-                        value = state.config.baseUrl,
-                        onValueChange = viewModel::setBaseUrl,
-                        modifier = Modifier.fillMaxWidth(),
-                        maxLines = 1,
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    Text("模型", fontSize = 11.sp, color = colorScheme.onSurfaceVariantSummary)
-                    Spacer(Modifier.height(4.dp))
-                    TextField(
-                        value = state.config.model,
-                        onValueChange = viewModel::setModel,
-                        modifier = Modifier.fillMaxWidth(),
-                        maxLines = 1,
-                    )
-                    Row(
-                        modifier = Modifier.padding(top = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        TextButton(
-                            text = if (state.fetchingModels) stringResource(R.string.ai_settings_fetching) else stringResource(R.string.ai_settings_fetch_models),
-                            onClick = viewModel::fetchModels,
-                            enabled = !state.fetchingModels,
-                        )
-                        state.modelsError?.let {
-                            Text(it, fontSize = 10.sp, color = colorScheme.error)
-                        }
-                    }
-                    if (state.models.isNotEmpty()) {
-                        Row(
-                            modifier = Modifier
-                                .horizontalScroll(rememberScrollState())
-                                .padding(top = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            state.models.forEach { model ->
-                                ChipMiuix(
-                                    text = model,
-                                    selected = model == state.config.model,
-                                    onClick = { viewModel.setModel(model) },
-                                )
-                            }
-                        }
-                    }
-                }
+            if (showModelPicker) {
+                ModelPickerDialogMiuix(
+                    profiles = state.profiles,
+                    activeId = state.activeProfileId,
+                    onSelect = { id ->
+                        viewModel.selectProfile(id)
+                        showModelPicker = false
+                    },
+                    onAdd = {
+                        viewModel.addProfile()
+                        showModelPicker = false
+                    },
+                    onDelete = viewModel::deleteProfile,
+                    onDismiss = { showModelPicker = false },
+                )
             }
-
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(14.dp)) {
-                    Text("API Key", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        state.keyMasked?.let { "已保存：$it" } ?: stringResource(R.string.ai_settings_not_saved),
-                        fontSize = 11.sp,
-                        color = if (state.hasKey) colorScheme.onSurfaceVariantSummary else colorScheme.error,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    TextField(
-                        value = keyInput,
-                        onValueChange = { keyInput = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        maxLines = 1,
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Button(
-                            onClick = {
-                                viewModel.saveKey(keyInput)
-                                keyInput = ""
-                            },
-                            enabled = keyInput.isNotBlank(),
-                            colors = ButtonDefaults.buttonColorsPrimary(),
-                        ) {
-                            Text(stringResource(R.string.ai_settings_save_key))
-                        }
-                        TextButton(text = stringResource(R.string.ai_settings_clear), onClick = viewModel::clearKey)
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        stringResource(R.string.ai_settings_key_hint),
-                        fontSize = 10.sp,
-                        color = colorScheme.onSurfaceVariantSummary,
-                    )
-                }
-            }
-
+            ModelConfigCardMiuix(
+                state = state,
+                keyInput = keyInput,
+                onKeyInputChange = { keyInput = it },
+                onNameChange = viewModel::setProfileName,
+                onPreset = viewModel::selectPreset,
+                onProtocol = viewModel::selectProtocol,
+                onBaseUrl = viewModel::setBaseUrl,
+                onModel = viewModel::setModel,
+                onFetchModels = viewModel::fetchModels,
+                onSaveKey = {
+                    viewModel.saveKey(keyInput)
+                    keyInput = ""
+                },
+                onSave = { viewModel.save() },
+                onCancel = viewModel::resetToSaved,
+            )
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column {
                     SwitchPreference(
@@ -513,4 +455,377 @@ private fun ModelListCardMiuix(
             )
         }
     }
+}
+
+@Composable
+private fun ActiveModelCardMiuix(state: AiSettingsUiState, onSwitch: () -> Unit) {
+    val active = state.profiles.firstOrNull { it.id == state.activeProfileId }
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        active?.name ?: "默认",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        stringResource(R.string.ai_model_current),
+                        fontSize = 10.sp,
+                        color = colorScheme.primary,
+                        modifier = Modifier
+                            .background(
+                                colorScheme.primary.copy(alpha = 0.10f),
+                                RoundedCornerShape(6.dp),
+                            )
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "${state.config.protocol.label} · ${state.config.model}",
+                    fontSize = 11.sp,
+                    color = colorScheme.onSurfaceVariantSummary,
+                )
+            }
+            TextButton(
+                text = stringResource(R.string.ai_model_switch),
+                onClick = onSwitch,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ModelConfigCardMiuix(
+    state: AiSettingsUiState,
+    keyInput: String,
+    onKeyInputChange: (String) -> Unit,
+    onNameChange: (String) -> Unit,
+    onPreset: (AiPreset) -> Unit,
+    onProtocol: (AiProtocol) -> Unit,
+    onBaseUrl: (String) -> Unit,
+    onModel: (String) -> Unit,
+    onFetchModels: () -> Unit,
+    onSaveKey: () -> Unit,
+    onSave: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    var customApi by remember { mutableStateOf(false) }
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                stringResource(R.string.ai_models_title),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.height(10.dp))
+
+            // 预设 / 自定义 分段
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                    .padding(3.dp),
+            ) {
+                listOf(false to stringResource(R.string.ai_model_preset_tab), true to stringResource(R.string.ai_model_custom_tab))
+                    .forEach { (isCustom, label) ->
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(
+                                    if (customApi == isCustom) colorScheme.surface else Color.Transparent,
+                                )
+                                .clickable { customApi = isCustom }
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                label,
+                                fontSize = 12.sp,
+                                color = if (customApi == isCustom) {
+                                    colorScheme.primary
+                                } else {
+                                    colorScheme.onSurfaceVariantSummary
+                                },
+                            )
+                        }
+                    }
+            }
+            Spacer(Modifier.height(12.dp))
+
+            if (!customApi) {
+                Row(
+                    modifier = Modifier
+                        .horizontalScroll(rememberScrollState())
+                        .padding(bottom = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    AiPreset.entries.forEach { preset ->
+                        ChipMiuix(
+                            text = preset.label,
+                            selected = preset == state.config.preset,
+                            onClick = { onPreset(preset) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+            } else {
+                Row(
+                    modifier = Modifier
+                        .horizontalScroll(rememberScrollState())
+                        .padding(bottom = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    AiProtocol.entries.forEach { protocol ->
+                        ChipMiuix(
+                            text = protocol.label,
+                            selected = protocol == state.config.protocol,
+                            onClick = { onProtocol(protocol) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Base URL",
+                    fontSize = 11.sp,
+                    color = colorScheme.onSurfaceVariantSummary,
+                )
+                Spacer(Modifier.height(4.dp))
+                TextField(
+                    value = state.config.baseUrl,
+                    onValueChange = onBaseUrl,
+                    modifier = Modifier.fillMaxWidth(),
+                    maxLines = 1,
+                )
+                Spacer(Modifier.height(12.dp))
+            }
+
+            val activeName = state.profiles.firstOrNull { it.id == state.activeProfileId }?.name.orEmpty()
+            Text(
+                stringResource(R.string.ai_model_name),
+                fontSize = 11.sp,
+                color = colorScheme.onSurfaceVariantSummary,
+            )
+            Spacer(Modifier.height(4.dp))
+            TextField(
+                value = activeName,
+                onValueChange = onNameChange,
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 1,
+            )
+            Spacer(Modifier.height(12.dp))
+
+            Text(
+                stringResource(R.string.ai_model_id),
+                fontSize = 11.sp,
+                color = colorScheme.onSurfaceVariantSummary,
+            )
+            Spacer(Modifier.height(4.dp))
+            TextField(
+                value = state.config.model,
+                onValueChange = onModel,
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 1,
+            )
+
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(R.string.ai_model_catalog),
+                    fontSize = 11.sp,
+                    color = colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    text = if (state.fetchingModels) {
+                        stringResource(R.string.ai_settings_fetching)
+                    } else {
+                        stringResource(R.string.ai_settings_fetch_models)
+                    },
+                    onClick = onFetchModels,
+                    enabled = !state.fetchingModels,
+                )
+            }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .dashedBorder(colorScheme.onSurface.copy(alpha = 0.22f))
+                    .padding(14.dp),
+            ) {
+                if (state.models.isEmpty()) {
+                    Text(
+                        stringResource(R.string.ai_model_catalog_empty),
+                        fontSize = 11.sp,
+                        color = colorScheme.onSurfaceVariantSummary,
+                    )
+                } else {
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        state.models.forEach { model ->
+                            ChipMiuix(
+                                text = model,
+                                selected = model == state.config.model,
+                                onClick = { onModel(model) },
+                            )
+                        }
+                    }
+                }
+                state.modelsError?.let {
+                    Text(it, fontSize = 10.sp, color = colorScheme.error)
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+            Text(
+                stringResource(R.string.ai_settings_key_hint),
+                fontSize = 10.sp,
+                color = colorScheme.onSurfaceVariantSummary,
+            )
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    state.keyMasked?.let { "已保存：$it" } ?: stringResource(R.string.ai_settings_not_saved),
+                    fontSize = 11.sp,
+                    color = if (state.hasKey) colorScheme.onSurfaceVariantSummary else colorScheme.error,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            TextField(
+                value = keyInput,
+                onValueChange = onKeyInputChange,
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 1,
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(
+                    onClick = onSaveKey,
+                    enabled = keyInput.isNotBlank(),
+                    colors = ButtonDefaults.buttonColorsPrimary(),
+                ) {
+                    Text(stringResource(R.string.ai_settings_save_key))
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                TextButton(
+                    text = stringResource(R.string.ai_model_cancel),
+                    onClick = onCancel,
+                    modifier = Modifier.weight(1f),
+                )
+                Button(
+                    onClick = onSave,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColorsPrimary(),
+                ) {
+                    Text(stringResource(R.string.ai_model_save))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModelPickerDialogMiuix(
+    profiles: List<AiModelProfile>,
+    activeId: String,
+    onSelect: (String) -> Unit,
+    onAdd: () -> Unit,
+    onDelete: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 460.dp)
+                .background(colorScheme.surface, RoundedCornerShape(20.dp))
+                .padding(16.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(R.string.ai_models_title),
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    text = stringResource(R.string.ai_model_new),
+                    onClick = onAdd,
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            if (profiles.isEmpty()) {
+                Text(
+                    stringResource(R.string.ai_model_empty),
+                    fontSize = 12.sp,
+                    color = colorScheme.onSurfaceVariantSummary,
+                )
+            } else {
+                LazyColumn(Modifier.weight(1f, fill = false)) {
+                    items(profiles, key = { it.id }) { profile ->
+                        val current = profile.id == activeId
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(
+                                    if (current) colorScheme.primary.copy(alpha = 0.08f)
+                                    else Color.Transparent,
+                                )
+                                .clickable { onSelect(profile.id) }
+                                .padding(vertical = 8.dp, horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(profile.name, fontSize = 13.sp)
+                                Text(
+                                    "${profile.protocol.label} · ${profile.model}",
+                                    fontSize = 10.sp,
+                                    color = colorScheme.onSurfaceVariantSummary,
+                                )
+                            }
+                            if (current) {
+                                Text(
+                                    stringResource(R.string.ai_model_current),
+                                    fontSize = 10.sp,
+                                    color = colorScheme.primary,
+                                )
+                            }
+                            if (profiles.size > 1) {
+                                TextButton(
+                                    text = stringResource(R.string.ai_model_delete),
+                                    onClick = { onDelete(profile.id) },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            TextButton(text = stringResource(R.string.ai_close), onClick = onDismiss)
+        }
+    }
+}
+
+private fun Modifier.dashedBorder(color: Color, radius: Dp = 12.dp): Modifier = this.drawBehind {
+    drawRoundRect(
+        color = color,
+        style = Stroke(
+            width = 1.dp.toPx(),
+            pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f), 0f),
+        ),
+        cornerRadius = CornerRadius(radius.toPx()),
+    )
 }

@@ -88,6 +88,39 @@ class AiSettingsViewModel(application: Application) : AndroidViewModel(applicati
         profileStore.upsert(AiModelProfile.fromConfig(current.id, current.name, state.config))
     }
 
+    /** 取消编辑：重新载入当前 profile 的已保存值。 */
+    fun resetToSaved() {
+        val profiles = profileStore.list()
+        val active = profiles.firstOrNull { it.id == _uiState.value.activeProfileId }
+            ?: profileStore.active(profiles)
+        viewModelScope.launch {
+            val legacy = withContext(Dispatchers.IO) { configStore.load() }
+            val masked = withContext(Dispatchers.IO) { keyStoreFor(active.id).masked() }
+            _uiState.update {
+                it.copy(
+                    config = active.applyTo(legacy),
+                    keyMasked = masked,
+                    profiles = profiles,
+                    activeProfileId = active.id,
+                    probe = null,
+                    models = emptyList(),
+                    error = null,
+                )
+            }
+        }
+    }
+
+    /** 修改当前 profile 的显示名称。 */
+    fun setProfileName(value: String) {
+        val state = _uiState.value
+        val current = state.profiles.firstOrNull { it.id == state.activeProfileId } ?: return
+        val updated = current.copy(name = value)
+        profileStore.upsert(updated)
+        _uiState.update {
+            it.copy(profiles = it.profiles.map { p -> if (p.id == updated.id) updated else p })
+        }
+    }
+
     fun selectProfile(id: String) {
         val state = _uiState.value
         if (id == state.activeProfileId) return

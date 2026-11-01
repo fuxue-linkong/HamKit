@@ -532,4 +532,15 @@
     <string name="ai_model_current">Current</string>
     <string name="ai_model_switch">Switch model</string>
     <string name="ai_model_empty">No models yet</string>
+    <string name="ai_model_edit">Edit</string>
+    <string name="ai_model_preset_tab">Presets</string>
+    <string name="ai_model_custom_tab">Custom API</string>
+    <string name="ai_model_catalog_empty">No models fetched yet; you can still type any model id.</string>
+    <string name="ai_model_name">Display name</string>
+    <string name="ai_model_id">Model ID</string>
+    <string name="ai_model_save">Save model</string>
+    <string name="ai_model_cancel">Cancel</string>
+    <string name="ai_model_advanced">Advanced</string>
+    <string name="ai_model_catalog">Model catalog</string>
+    <string name="ai_model_notice_key">This model has no API key yet.</string>
 </resources>
