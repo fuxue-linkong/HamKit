@@ -525,4 +525,11 @@
     <string name="ai_history_open">Open history</string>
     <string name="ai_tools_collapsed">%1$d tool calls collapsed</string>
     <string name="ai_tools_expanded">%1$d tool calls</string>
+    <string name="ai_models_title">Models</string>
+    <string name="ai_models_hint">Switching only changes connection settings; system prompt, tools and history are shared.</string>
+    <string name="ai_model_new">New model</string>
+    <string name="ai_model_delete">Delete model</string>
+    <string name="ai_model_current">Current</string>
+    <string name="ai_model_switch">Switch model</string>
+    <string name="ai_model_empty">No models yet</string>
 </resources>

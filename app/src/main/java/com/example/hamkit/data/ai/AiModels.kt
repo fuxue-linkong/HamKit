@@ -267,3 +267,55 @@ data class AiProbeResult(
     /** 该模型/网关是否接受 tools（null 表示未探测或无法判断）。 */
     val toolsSupported: Boolean? = null,
 )
+
+/**
+ * 一组可切换的模型配置（连接参数 + 独立 Key 槽位）。
+ *
+ * 全局设置（系统提示词、工具权限、历史等）仍在 [AiConfig] 中，不随模型切换。
+ */
+data class AiModelProfile(
+    val id: String,
+    val name: String,
+    val preset: AiPreset = AiPreset.DEEPSEEK,
+    val protocol: AiProtocol = preset.protocol,
+    val baseUrl: String = preset.baseUrl,
+    val model: String = preset.defaultModel,
+    val temperature: Float = 0.6f,
+    val maxOutputTokens: Int = 2048,
+) {
+    fun normalized(): AiModelProfile = copy(
+        name = name.trim().ifBlank { "未命名" },
+        baseUrl = baseUrl.trim().trimEnd('/'),
+        model = model.trim(),
+        temperature = temperature.coerceIn(0f, 2f),
+        maxOutputTokens = maxOutputTokens.coerceIn(64, 8192),
+    )
+
+    /** 把本 profile 的连接参数覆盖到全局配置上。 */
+    fun applyTo(config: AiConfig): AiConfig {
+        val value = normalized()
+        return config.copy(
+            preset = value.preset,
+            protocol = value.protocol,
+            baseUrl = value.baseUrl,
+            model = value.model,
+            temperature = value.temperature,
+            maxOutputTokens = value.maxOutputTokens,
+        )
+    }
+
+    companion object {
+        const val DEFAULT_ID = "default"
+
+        fun fromConfig(id: String, name: String, config: AiConfig): AiModelProfile = AiModelProfile(
+            id = id,
+            name = name,
+            preset = config.preset,
+            protocol = config.protocol,
+            baseUrl = config.baseUrl,
+            model = config.model,
+            temperature = config.temperature,
+            maxOutputTokens = config.maxOutputTokens,
+        )
+    }
+}

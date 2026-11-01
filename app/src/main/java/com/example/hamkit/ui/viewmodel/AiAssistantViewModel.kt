@@ -22,6 +22,8 @@ import com.example.hamkit.data.ai.AiError
 import com.example.hamkit.data.ai.AiErrorKind
 import com.example.hamkit.data.ai.AiEvent
 import com.example.hamkit.data.ai.AiKeyStore
+import com.example.hamkit.data.ai.AiModelProfile
+import com.example.hamkit.data.ai.AiProfileStore
 import com.example.hamkit.data.ai.AiMessage
 import com.example.hamkit.data.ai.AiNetworkPolicy
 import com.example.hamkit.data.ai.AiPrompts
@@ -108,6 +110,10 @@ data class AiChatUiState(
     val attachments: List<AiAttachment> = emptyList(),
     /** 历史会话列表（最近在前）。 */
     val sessions: List<AiSessionSummary> = emptyList(),
+    /** 已配置的模型列表。 */
+    val profiles: List<AiModelProfile> = emptyList(),
+    /** 当前使用的模型 id。 */
+    val activeProfileId: String = AiModelProfile.DEFAULT_ID,
     /** 等待用户确认的副作用操作。 */
     val pendingConfirm: AiConfirmRequest? = null,
 )
@@ -125,6 +131,7 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
 
     private val configStore = AiConfigStore(application)
     private val keyStore = AiKeyStore(application)
+    private val profileStore = AiProfileStore(application)
     private val sessionStore = AiSessionStore(application)
 
     private val registry = AiToolRegistry()
@@ -341,11 +348,48 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
 
     fun reloadConfig() {
         viewModelScope.launch {
-            val config = withContext(Dispatchers.IO) { configStore.load() }
-            val hasKey = withContext(Dispatchers.IO) { keyStore.hasKey() }
-            _uiState.update { it.copy(config = config, hasKey = hasKey) }
+            val legacy = withContext(Dispatchers.IO) { configStore.load() }
+            val profiles = withContext(Dispatchers.IO) { profileStore.list() }
+            val active = profiles.firstOrNull { it.id == _uiState.value.activeProfileId }
+                ?: profileStore.active(profiles)
+            val hasKey = withContext(Dispatchers.IO) { keyStoreFor(active.id).hasKey() }
+            _uiState.update {
+                it.copy(
+                    config = active.applyTo(legacy),
+                    hasKey = hasKey,
+                    profiles = profiles,
+                    activeProfileId = active.id,
+                )
+            }
         }
     }
+
+    /** 切换当前模型；生成中不允许切换。 */
+    fun switchProfile(id: String) {
+        if (_uiState.value.isStreaming) {
+            _uiState.update { it.copy(error = "生成中不能切换模型") }
+            return
+        }
+        viewModelScope.launch {
+            val legacy = withContext(Dispatchers.IO) { configStore.load() }
+            val profiles = withContext(Dispatchers.IO) { profileStore.list() }
+            val target = profiles.firstOrNull { it.id == id } ?: return@launch
+            withContext(Dispatchers.IO) { profileStore.setActive(id) }
+            val hasKey = withContext(Dispatchers.IO) { keyStoreFor(id).hasKey() }
+            _uiState.update {
+                it.copy(
+                    config = target.applyTo(legacy),
+                    hasKey = hasKey,
+                    profiles = profiles,
+                    activeProfileId = id,
+                    error = null,
+                )
+            }
+        }
+    }
+
+    private fun keyStoreFor(profileId: String): AiKeyStore =
+        AiKeyStore(getApplication(), if (profileId == AiModelProfile.DEFAULT_ID) "" else profileId)
 
     fun consumeError() {
         _uiState.update { it.copy(error = null) }
@@ -514,18 +558,23 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
     // ── 初始化 / 持久化 ────────────────────────────────────────────────────
 
     private suspend fun initialize() {
-        val config = withContext(Dispatchers.IO) { configStore.load() }
-        val hasKey = withContext(Dispatchers.IO) { keyStore.hasKey() }
+        val legacy = withContext(Dispatchers.IO) { configStore.load() }
+        // 首次升级：把旧版单模型配置迁移成 default profile，旧 Key 继续沿用
+        val profile = withContext(Dispatchers.IO) {
+            profileStore.ensureMigrated(legacy, keyStore.hasKey())
+        }
+        val hasKey = withContext(Dispatchers.IO) { keyStoreFor(profile.id).hasKey() }
         // 每次进入都是新对话：不再自动恢复上次会话，历史只在「历史」抽屉里手动打开。
-        // 同时预取历史摘要，抽屉打开时无需再等一次 IO。
         val sessions = sessionStore.summaries()
         sessionCreatedAt = System.currentTimeMillis()
         _uiState.update {
             it.copy(
-                config = config,
+                config = profile.applyTo(legacy),
                 hasKey = hasKey,
                 initialized = true,
                 sessions = sessions,
+                profiles = profileStore.list(),
+                activeProfileId = profile.id,
             )
         }
     }
@@ -563,7 +612,9 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
     // ── 多轮工具调用 ────────────────────────────────────────────────────────
 
     private suspend fun runConversation(activeFacade: AiAppFacade, userText: String) {
-        val apiKey = withContext(Dispatchers.IO) { keyStore.load() }
+        val apiKey = withContext(Dispatchers.IO) {
+            keyStoreFor(_uiState.value.activeProfileId).load()
+        }
         if (apiKey.isNullOrBlank()) {
             finishStreaming("", null, str(R.string.ai_err_key_read), 0L)
             return

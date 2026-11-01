@@ -95,10 +95,16 @@ class AiConfigStore(context: Context) {
  * - 不写日志、不进导出/备份（`allowBackup=false`）；
  * - 清除时同时删掉 Keystore 条目，避免残留密钥。
  */
-class AiKeyStore(context: Context) {
+class AiKeyStore(context: Context, private val slot: String = "") {
 
     private val prefs = context.applicationContext
         .getSharedPreferences(AiConfigStore.PREFS_NAME, Context.MODE_PRIVATE)
+
+    // slot 为空表示旧版单 Key（default profile 沿用），其他 profile 用独立槽位
+    private val cipherKey = if (slot.isBlank()) "api_key_cipher" else "api_key_cipher_$slot"
+    private val alias = if (slot.isBlank()) "hamkit_ai_api_key_v1" else "hamkit_ai_api_key_v1_$slot"
+    private val aad = (if (slot.isBlank()) "api_key" else "api_key_$slot")
+        .toByteArray(StandardCharsets.UTF_8)
 
     fun save(key: String) {
         val plain = key.trim().toByteArray(StandardCharsets.UTF_8)
@@ -106,24 +112,24 @@ class AiKeyStore(context: Context) {
             clear()
             return
         }
-        val encrypted = AiCrypto.encrypt(ALIAS, plain, AAD)
+        val encrypted = AiCrypto.encrypt(alias, plain, aad)
         prefs.edit()
-            .putString(KEY_CIPHER, Base64.encodeToString(encrypted, Base64.NO_WRAP))
+            .putString(cipherKey, Base64.encodeToString(encrypted, Base64.NO_WRAP))
             .apply()
     }
 
     fun load(): String? {
-        val encoded = prefs.getString(KEY_CIPHER, null) ?: return null
+        val encoded = prefs.getString(cipherKey, null) ?: return null
         val blob = runCatching { Base64.decode(encoded, Base64.NO_WRAP) }.getOrNull() ?: return null
-        val plain = AiCrypto.decrypt(ALIAS, blob, AAD) ?: return null
+        val plain = AiCrypto.decrypt(alias, blob, aad) ?: return null
         return String(plain, StandardCharsets.UTF_8).takeIf { it.isNotBlank() }
     }
 
     fun hasKey(): Boolean = load() != null
 
     fun clear() {
-        prefs.edit().remove(KEY_CIPHER).apply()
-        AiCrypto.deleteKey(ALIAS)
+        prefs.edit().remove(cipherKey).apply()
+        AiCrypto.deleteKey(alias)
     }
 
     /** 设置页展示用（`sk-••••7f3a`），不暴露完整 Key。 */
@@ -136,9 +142,5 @@ class AiKeyStore(context: Context) {
         }
     }
 
-    companion object {
-        private const val KEY_CIPHER = "api_key_cipher"
-        private const val ALIAS = "hamkit_ai_api_key_v1"
-        private val AAD = "api_key".toByteArray(StandardCharsets.UTF_8)
-    }
+    companion object
 }
