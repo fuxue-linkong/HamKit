@@ -43,6 +43,10 @@ targets:
         # 等键全部冲掉（表现为应用以兼容模式黑边显示、真机请求定位直接崩溃）。
         GENERATE_INFOPLIST_FILE: "NO"
         INFOPLIST_FILE: HamKit/Info.plist
+        # 高德 Web Key 不进源码：默认留空，构建时用 AMAP_WEB_KEY 覆盖
+        # （xcodebuild AMAP_WEB_KEY=... / CI Secret / Xcode User-Defined），
+        # 经 Info.plist 的 AmapWebKey 传给 AmapKey.swift。
+        AMAP_WEB_KEY: ""
         # App 图标来自 Assets.xcassets/AppIcon（由 Android 的 ic_app_logo.png 生成）
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # 静态 framework 不需要在产物里再嵌入一次

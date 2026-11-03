@@ -22,6 +22,9 @@
     <string>$(CURRENT_PROJECT_VERSION)</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
+    <!-- 高德 Web 服务 Key：由构建设置 AMAP_WEB_KEY 注入，不写死在源码里 -->
+    <key>AmapWebKey</key>
+    <string>$(AMAP_WEB_KEY)</string>
     <key>NSLocationWhenInUseUsageDescription</key>
     <string>HamKit 需要获取你的位置来计算 CQ / ITU 分区与 Maidenhead 网格，并用于卫星过境预测。位置只在本机使用，不会上传。</string>
     <key>NSMicrophoneUsageDescription</key>

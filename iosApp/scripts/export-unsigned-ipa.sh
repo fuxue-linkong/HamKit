@@ -8,6 +8,7 @@
 #   ./iosApp/scripts/export-unsigned-ipa.sh              # Release（默认）
 #   ./iosApp/scripts/export-unsigned-ipa.sh --debug      # Debug 配置
 #   ./iosApp/scripts/export-unsigned-ipa.sh --no-generate # 已有 .xcodeproj，跳过 xcodegen
+#   AMAP_WEB_KEY=xxx ./iosApp/scripts/export-unsigned-ipa.sh  # 顺带注入高德 Web Key
 #
 # 注意：未签名 IPA 不能双击安装，需要 Sideloadly / AltStore 用自己的 Apple ID 重签。
 set -euo pipefail
@@ -21,7 +22,7 @@ for arg in "$@"; do
     --debug)       CONFIG=Debug ;;
     --release)     CONFIG=Release ;;
     --no-generate) GENERATE=0 ;;
-    -h|--help)     sed -n '2,16p' "$0"; exit 0 ;;
+    -h|--help)     sed -n '2,13p' "$0"; exit 0 ;;
     *) echo "未知参数: $arg（支持 --debug / --release / --no-generate）" >&2; exit 2 ;;
   esac
 done
@@ -46,6 +47,7 @@ DERIVED="build-device"
 LOG="../ios-device-build.log"
 
 echo "==> 构建 ${CONFIG}（iphoneos / arm64，已禁用签名）"
+AMAP_WEB_KEY="${AMAP_WEB_KEY:-}"
 set +e
 xcodebuild \
   -project HamKit.xcodeproj \
@@ -55,6 +57,7 @@ xcodebuild \
   -destination 'generic/platform=iOS' \
   -derivedDataPath "$DERIVED" \
   ARCHS=arm64 \
+  AMAP_WEB_KEY="$AMAP_WEB_KEY" \
   CODE_SIGNING_ALLOWED=NO \
   CODE_SIGNING_REQUIRED=NO \
   CODE_SIGN_IDENTITY="" \

@@ -48,8 +48,23 @@ open HamKit.xcodeproj
 # 3. 选择模拟器（Apple Silicon）后 Cmd+R
 ```
 
-> 天气与逆地理编码直接走高德 Web 服务，Key 写死在 `HamKit/AmapKey.swift`
-> （与 Android 端同一把；随 App 分发，安全性依赖高德控制台配额/用量监控）。
+> 天气与逆地理编码直接走高德 Web 服务。**Key 不写进源码**：`Info.plist` 的
+> `AmapWebKey` 是 `$(AMAP_WEB_KEY)`，构建时注入；未配置时首页天气卡片提示
+> 「未配置高德 Web Key（AMAP_WEB_KEY）」，其他功能不受影响。
+
+### 配置高德 Web Key
+
+```bash
+# 命令行构建 / 导出 IPA 时传入
+xcodebuild ... AMAP_WEB_KEY=<你的 Key>
+AMAP_WEB_KEY=<你的 Key> ./scripts/export-unsigned-ipa.sh
+```
+
+Xcode GUI：选中 HamKit target → Build Settings → 搜索 `AMAP_WEB_KEY`，
+直接填入 Key（改的是本地生成的工程，`xcodegen generate` 后需重填）。
+CI 读取仓库 Secret `AMAP_WEB_KEY`（未配置时为空，不影响构建）。
+
+> 早期版本的 Key 曾写在 `AmapKey.swift` 并进入公开历史，请在高德控制台轮换。
 
 Xcode 的 Run Script 阶段会自动执行：
 

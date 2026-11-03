@@ -3,7 +3,7 @@ import Combine
 import Shared
 
 /// 天气状态：直接走**高德 Web 服务**（逆地理编码 + 实时 + 4 天预报），30 分钟缓存。
-/// Key 写死在 `AmapKey.web`（项目要求）。
+/// Key 由构建设置 `AMAP_WEB_KEY` 注入（见 `AmapKey.web`）。
 final class WeatherStore: ObservableObject {
 
     static let shared = WeatherStore()
@@ -31,6 +31,11 @@ final class WeatherStore: ObservableObject {
             return
         }
         guard !isLoading else { return }
+        // 没配 Key（例如 fork 直接构建）就不发无效请求，把原因直接显示在首页
+        guard !AmapKey.web.isEmpty else {
+            error = "未配置高德 Web Key（AMAP_WEB_KEY）"
+            return
+        }
         isLoading = true
         error = nil
 

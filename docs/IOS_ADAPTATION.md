@@ -248,7 +248,7 @@ iOS 端已经不再使用硬编码 TLE，改为运行时拉取：
 | SSTV | 模式表/VIS/同步/FFT/解调/解码/编码（从 Android 移植） | 接收、音频文件解码、图库（分享/删除）、设置、发射 | ✅ 前台收发；后台接收受系统限制 |
 | HF Fax | `HfFaxDecoder`（WEFAX 解调/解码） | 接收、解码、保存相册 | ✅ 仅前台接收 |
 | QSO 日志 | `QsoRecord`、`QsoExporter`（ADIF 3.1.4 / ADX XML） | 列表、新增/编辑、删除、分享导出 | ✅ 持久化用 JSON 文件（Android 用 Room） |
-| 天气 | `WeatherApi`（高德 Web 直连，Key 写死在 `AmapKey.swift`） | 首页时间卡天气 + 城市 | ✅ 与 Android 同源；Key 随 App 分发 |
+| 天气 | `WeatherApi`（高德 Web 直连，Key 由 `AMAP_WEB_KEY` 构建注入） | 首页时间卡天气 + 城市 | ✅ 与 Android 同源；未配置 Key 时首页提示且不请求 |
 | AI 助手 | `AiChatEngine` / 三协议适配 / SSE / 工具层 / 会话编解码（全部在 `commonMain`） | 对话页、历史抽屉、AI 设置 | ✅ P0+P1 核心：文本对话、工具调用（9 个）、副作用确认、历史与导出；缺图片/文件附件、Markdown 表格、思考过程展示 |
 
 ### iOS 无等价能力的近似方案
@@ -273,7 +273,8 @@ iOS 端已经不再使用硬编码 TLE，改为运行时拉取：
 - FT8：自动 CQ 主叫、多候选择优、重发策略未移植；自动应答仅覆盖「呼叫本台」路径
 - SSTV：滚动预览（`SstvRollingImage`）与「播放捕获」未移植；仅前台接收
 - APRS：无 HTTP 上传器、无消息重试/ack 跟踪、地图仅 MapKit 标注
-- 天气：Key 写死在 `iosApp/HamKit/AmapKey.swift`，公开仓库会暴露 Key（用户明确要求）
+- 天气：Key 由构建变量 `AMAP_WEB_KEY` 注入（`Info.plist` 的 `AmapWebKey` → `AmapKey.web`），
+  源码不含 Key；早期写死的那把已进入公开历史，需在高德控制台轮换
 - AI 助手：图片/文件附件、模型列表自动获取、测试连接、工具卡折叠动效、Markdown 表格未移植；
   内核侧接口（`AiImage`、`AiProtocolCodec.probe`）已留好，属 UI 与探测入口的后续工作
 - 隐私：首启同意页在 iOS 上「不同意」只停留本页（系统不允许主动退出），与 Android 的退出行为不同

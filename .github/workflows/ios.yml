@@ -79,6 +79,9 @@ jobs:
         run: cd iosApp && xcodegen generate
 
       - name: Build app for simulator (no code signing)
+        env:
+          # 高德 Web Key 不进源码；仓库未配置该 Secret 时为空，不影响构建
+          AMAP_WEB_KEY: ${{ secrets.AMAP_WEB_KEY }}
         run: |
           set -o pipefail
           cd iosApp
@@ -90,6 +93,7 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build \
             ARCHS=arm64 \
+            AMAP_WEB_KEY="${AMAP_WEB_KEY:-}" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             build 2>&1 | tee ../ios-build.log
@@ -181,6 +185,8 @@ jobs:
       # 用户用自己的 Apple ID 通过 Sideloadly / AltStore 重签安装即可。
       - name: Build unsigned device IPA
         if: success()
+        env:
+          AMAP_WEB_KEY: ${{ secrets.AMAP_WEB_KEY }}
         run: |
           set -euo pipefail
           cd iosApp
@@ -192,6 +198,7 @@ jobs:
             -destination 'generic/platform=iOS' \
             -derivedDataPath build-device \
             ARCHS=arm64 \
+            AMAP_WEB_KEY="${AMAP_WEB_KEY:-}" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             build 2>&1 | tee ../ios-device-build.log
