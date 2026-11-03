@@ -1,5 +1,8 @@
 *.iml
 .gradle
+# 本地 Gradle / Android 用户目录（沙箱或离线构建会用到，绝不入库）
+/.gradle-user
+/.android-user
 /local.properties
 /.idea/
 .DS_Store
@@ -18,8 +21,17 @@ signing-report/
 *.log
 *.txt
 *.png
+# 文档里要引用的配图（论坛帖 / 说明文档），单独放行
+!docs/images/**
 ui.xml
 /.codex
 /.kotlin
 /.trae
+/shared/build
+# iOS：Xcode 工程由 XcodeGen 生成，不提交生成物
+/iosApp/*.xcodeproj
+/iosApp/*.xcworkspace
+/iosApp/build
+/iosApp/DerivedData
+/iosApp/.build
 

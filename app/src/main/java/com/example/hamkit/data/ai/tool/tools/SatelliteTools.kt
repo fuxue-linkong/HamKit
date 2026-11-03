@@ -408,7 +408,10 @@ object GetSatelliteTransmittersTool : AiTool {
         val card = SatelliteCardData(
             name = ref.name,
             catalogNumber = ref.catalogNumber,
-            modes = SatelliteCatalog.effectiveModes(ref.catalogNumber, radios),
+            modes = SatelliteCatalog.effectiveModes(
+                catalogNumber = ref.catalogNumber,
+                activeRadioModes = radios.filter { it.isActive }.map { it.mode },
+            ),
             radios = radios.map { it.toSnapshot() },
         )
         return ToolOutcome(

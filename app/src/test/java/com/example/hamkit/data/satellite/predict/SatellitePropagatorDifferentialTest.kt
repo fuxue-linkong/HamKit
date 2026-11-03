@@ -73,8 +73,8 @@ class SatellitePropagatorDifferentialTest {
     // 「TLE 老化」引入误差 —— 两个实现的外推速率略有差异，沿迹误差会随 TLE 年龄
     // 线性累积（实测 GEO 经度差 0.011°/天）。固定用 now 的用例在 TLE 刚拉取时是绿的，
     // 约一两个月后就会越界变红，属于典型的时间炸弹。
-    private val issEpochMs = issTle.epoch.toEpochMilli()
-    private val geoEpochMs = geoTle.epoch.toEpochMilli()
+    private val issEpochMs = issTle.epochMillis
+    private val geoEpochMs = geoTle.epochMillis
 
     // ── LEO / SGP4 差分 ──
 

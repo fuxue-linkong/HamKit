@@ -12,11 +12,17 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /**
- * SatNOGS DB 转发器数据源。
+ * SatNOGS 转发器数据源。
  *
- * 从 https://db.satnogs.org/api/transmitters/?format=json 拉取
- * 全部转发器记录（含 active/inactive，约 4000+ 条，覆盖业余卫星的
- * 上下行频率/模式/状态）。状态过滤在 UI 层按 [RadioInfo.status] 区分。
+ * **数据地址固定为自建 CDN 上的快照** `https://tle.hamkit.click/tle/transmitters.json`
+ * （由 `website/deploy/hamkit-tle-sync.sh` 每 24 小时从 SatNOGS DB 同步并裁剪）。
+ * 不再直连 `db.satnogs.org`：官方接口在国内容易被 DNS 污染 / 超时，且返回十几 MB
+ * 全量字段，首拉经常读不完；CDN 快照按 [parseTransmitterItem] 的规则裁剪过，
+ * 国内直连、有 CDN 缓存，体积约为官方的 1/3。
+ *
+ * 快照里仍是 JSON 数组，字段名保持 SatNOGS 原名（norad_cat_id / uplink_low /
+ * downlink_low / uplink_mode / downlink_mode / mode / name / description /
+ * inverted / status），解析结果与直连官方时逐条一致。
  *
  * JSON 解析使用 org.json（Android 自带，与 [AmsatStatusApiService] 风格一致），
  * 不做强类型校验：字段缺失/为 null 时按默认值处理，单条解析失败跳过该条。
@@ -39,9 +45,9 @@ class TransmitterDataSource {
 
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("SatNOGS transmitters 请求失败：${response.code}")
+                throw IOException("转发器快照请求失败：${response.code}（$TRANSMITTERS_URL）")
             }
-            val body = response.body?.string() ?: throw IOException("SatNOGS transmitters 响应为空")
+            val body = response.body?.string() ?: throw IOException("转发器快照响应为空")
             parseTransmitters(body)
         }
     }
@@ -130,9 +136,15 @@ class TransmitterDataSource {
     companion object {
         private const val TAG = "TransmitterDataSource"
 
-        /** SatNOGS DB transmitters API（含全部状态，状态区分在 UI 层） */
+        /**
+         * 自建 CDN 上的 SatNOGS 转发器快照（含全部状态，状态区分在 UI 层）。
+         *
+         * 地址写死为 CDN：国内可直连、无 DNS 污染、由 CDN 缓存；内容由
+         * `website/deploy/hamkit-tle-sync.sh` 定时同步并裁剪，字段与 SatNOGS
+         * 官方 `transmitters` 接口一致，解析逻辑无需区分来源。
+         */
         const val TRANSMITTERS_URL =
-            "https://db.satnogs.org/api/transmitters/?format=json"
+            "https://tle.hamkit.click/tle/transmitters.json"
     }
 }
 

@@ -3,8 +3,9 @@ package com.example.hamkit.data.satellite
 import java.util.Locale
 
 /**
- * 卫星转发器（transmitter）频率信息，来自 SatNOGS DB API
- * （https://db.satnogs.org/api/transmitters/）。
+ * 卫星转发器（transmitter）频率信息，来自 SatNOGS DB
+ * （App 读取的是自建 CDN 上的 SatNOGS 转发器快照，
+ * 见 [TransmitterDataSource.TRANSMITTERS_URL]）。
  *
  * 对应 API 字段：uuid, norad_cat_id, name, uplink_low/uplink_high/uplink_mode,
  * downlink_low/downlink_high/downlink_mode, inverted, status, description。

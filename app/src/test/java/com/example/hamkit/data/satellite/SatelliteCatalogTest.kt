@@ -93,7 +93,10 @@ class SatelliteCatalogTest {
             RadioInfo(noradCatId = 25544, name = "blank", mode = "", status = RadioInfo.STATUS_ACTIVE),
         )
 
-        assertEquals(listOf("FM", "SSTV"), SatelliteCatalog.effectiveModes(25544, radios))
+        assertEquals(
+            listOf("FM", "SSTV"),
+            SatelliteCatalog.effectiveModes(25544, radios.activeModes()),
+        )
     }
 
     @Test
@@ -102,11 +105,18 @@ class SatelliteCatalogTest {
             RadioInfo(noradCatId = 58334, name = "UHF", mode = "FM", status = RadioInfo.STATUS_ACTIVE),
         )
 
-        assertEquals(listOf("FM"), SatelliteCatalog.effectiveModes(58334, radios))
+        assertEquals(
+            listOf("FM"),
+            SatelliteCatalog.effectiveModes(58334, radios.activeModes()),
+        )
     }
 
     @Test
     fun `effectiveModes falls back to catalog when radios are empty`() {
-        assertEquals(listOf("FM", "SSTV"), SatelliteCatalog.effectiveModes(25544, emptyList()))
+        assertEquals(listOf("FM", "SSTV"), SatelliteCatalog.effectiveModes(25544, emptyList<String>()))
     }
+
+    /** 与生产代码同一投影：活跃转发器的模式（内核不依赖 Android 的 RadioInfo）。 */
+    private fun List<RadioInfo>.activeModes(): List<String> =
+        filter { it.isActive }.map { it.mode }
 }
