@@ -1,160 +1,199 @@
-# iosApp —— HamKit iOS 壳工程
+# iosApp —— HamKit iOS 客户端
 
-这里是 HamKit 的 iOS 外壳（SwiftUI），业务计算全部调用仓库根目录的 KMP 模块
-`:shared`（`Shared.framework`），Swift 侧不重复实现任何定位 / 轨道算法。
+SwiftUI 外壳 + Kotlin Multiplatform 内核。业务算法（SGP4/SDP4、TLE、CW、FT8、SSTV、HF Fax、APRS 报文、QSO、AI 引擎）全部在仓库根目录的 `:shared` 里，Android 与 iOS 跑同一份代码；Swift 侧只负责界面与平台能力（定位、音频、通知、网络、地图、Keychain）。
 
-> 现状：**可运行的演示壳**，已实现「分区定位 + TLE 网络拉取 + 卫星列表页 + Look4Sat 风格雷达 + 实时位置 + 下一次过境」。
-> TLE 与 Android `SatelliteDataSource` 同源：`tle.hamkit.click` 的
-> `amateur.3le` + `satnogs.3le` + `active.3le`（1.6 万+ 颗）按 NORAD 合并去重，
-> 失败自动回落到 CelesTrak 官方；网络全失败时使用内置 ISS TLE 兜底。
-> 「附近过境」只对业余子集（amateur + satnogs）预测，全量目录用于卫星管理与筛选。
-> 已接入：AMSAT 状态、收藏、本地过境提醒（`UNUserNotificationCenter` + `BGTaskScheduler`）。
-> 完整迁移路线见 [docs/IOS_ADAPTATION.md](../docs/IOS_ADAPTATION.md)。
+> 状态：**测试版**（`ios` 分支 @ `5b22dc76`，2026-11-03）。
+> 功能已对齐 Android 的主要模块，没有 App Store / TestFlight（项目无收入，买不起开发者账号），
+> 以**未签名 IPA** 分发，需自行用 Apple ID 重签。
+
+## 已实现
+
+**定位与卫星**
+
+- 一键定位 → CQ Zone / ITU Zone / 6 位梅登海德网格；定位失败静默重试
+- TLE 三源合并（amateur + satnogs + active，1.6 万+ 颗），自建 CDN 优先、CelesTrak 兜底
+- TLE、SatNOGS 转发器都落盘缓存，冷启动先渲染缓存再后台刷新；断网可用
+- 首页：时间卡（天气 / UTC / 每日一言）、附近过境、功能入口
+- 卫星管理：搜索、统计、筛选（模式 / 分类 / 在境 / AMSAT）、分类体系、来源标记
+- 单星详情：实时面板、过境倒计时、多普勒上下行、转发器列表、日照判定、SSTV 入口
+- Look4Sat 风格极坐标雷达（Canvas）+ MapKit 地面轨迹地图（可拖动缩放）
+- 收藏、过境本地提醒（提前量可配）、后台刷新
+
+**数字模式与图像**
+
+- CW：字符 / 呼号 / 文本练习，节拍时间线 + AVAudioEngine 合成
+- FT8：编解码 + LDPC/GFSK，自动 CQ、自动应答、自动记 QSO
+- SSTV：接收（逐行预览、图库）、发射（相册 / 图库选图、进度、导出 WAV）、音频文件导入解码
+- HF Fax：天气传真接收解码
+
+**日志与网络**
+
+- APRS：APRS-IS 连接（自动重连、连接日志、服务器原因透出）、站点 / 消息、位置上报、符号选择、站点地图
+- QSO 日志：记录、编辑、ADIF / ADX 导出
+
+**其它**
+
+- 天气（高德 Web 服务，Key 构建时注入）+ 每日一言 + UTC
+- 主题：深浅模式 + 9 档强调色，Miuix 风格卡片
+- AI 助手：OpenAI / Anthropic / Gemini 三协议，SSE 流式，Key 存 Keychain，可查卫星 / FT8 / APRS / QSO
+- 首启隐私同意、权限管理页、撤回同意
+
+## 架构
+
+```
+iosApp/ (SwiftUI)                         shared/ (Kotlin Multiplatform)
+├─ Views / 路由 / 状态层        <—>      ├─ data/satellite   SGP4-SDP4 / TLE / 过境 / 太阳位置
+├─ 平台能力：                    ├─ data/ft8、sstv      协议与 DSP
+│  CoreLocation / AVAudioEngine  ├─ shared/Aprs、Qso、MorseCode
+│  UNUserNotificationCenter      ├─ shared/ai          AI 引擎、工具、SSE
+│  URLSession / MapKit           └─ shared/net         HttpTransport（平台注入）
+├─ 缓存：TLE / 转发器 JSON
+└─ MapKit / Keychain
+```
+
+约定：
+
+- **算法只写一遍**：能进 `:shared` 的逻辑不留在 Swift / Kotlin-Android，避免两端结果漂移；
+- **网络由平台注入**：`HttpTransport` 由 iOS 的 `URLSessionTransport` 实现，TLS / ATS / 代理走系统默认；
+- **时间统一 Long 毫秒**，跨语言不传日期类型；异常不跨 Kotlin/Native 边界（失败用 null / 错误字段表达）；
+- **单一数据层**：`SatelliteStore` 持有目录 / 筛选 / 分类，`TrackerModel` 负责定位、过境、提醒；
+- 页面跳转只用一套 `navigationDestination(for: Route.self)`，避免视图式与值式导航混用。
 
 ## 目录
 
-```
-iosApp/
-├── project.yml            # XcodeGen 工程描述（不提交 .xcodeproj）
-├── HamKit/
-│   ├── HamKitApp.swift    # @main
-│   ├── ContentView.swift  # 首屏：地面站 / 分区 / 卫星数据 / 雷达 / 过境
-│   ├── SatelliteListView.swift  # 卫星列表页（可搜索）
-│   ├── RadarView.swift    # 极坐标雷达（Canvas 绘制）
-│   ├── TrackerModel.swift # 调 Shared.framework 的 ViewModel
-│   ├── LocationProvider.swift
-│   ├── Networking.swift   # URLSession 实现共享内核的 HttpTransport
-│   └── Info.plist         # 含定位权限说明
-└── README.md
-```
+| 模块 | 文件 |
+| --- | --- |
+| 入口 / 导航 | `HamKitApp.swift`、`AppRootView.swift`、`Routes.swift`、`RouteDestination.swift` |
+| 首页 | `ContentView.swift`、`WeatherStore.swift`、`DailyQuoteStore.swift`、`AmapKey.swift` |
+| 卫星 | `TrackerModel.swift`、`SatelliteStore.swift`、`SatelliteManagementView.swift`、`SatelliteDetailScreen.swift`、`SatellitePages.swift`、`SatelliteFilterView.swift`、`SatelliteCategoryManager.swift`、`SatelliteCategoryViews.swift`、`SatelliteMapView.swift`、`RadarView.swift` |
+| CW | `CwViews.swift`、`MorsePlayer.swift` |
+| FT8 | `Ft8Views.swift`、`Ft8Audio.swift`、`Ft8LogStore.swift` |
+| SSTV / HF Fax | `SstvViews.swift`、`HfFaxView.swift` |
+| APRS | `AprsClient.swift`、`AprsViews.swift` |
+| QSO | `QsoStore.swift`、`QsoViews.swift` |
+| AI 助手 | `AiChatModel.swift`、`AiTransport.swift`、`AiFacade.swift`、`AiViews.swift`、`AiSettingsView.swift`、`AiSettingsStore.swift` |
+| 设置 / 主题 / 合规 | `SettingsView.swift`、`ToolsView.swift`、`MiuixTheme.swift`、`PrivacyConsentView.swift` |
+| 平台能力 | `LocationProvider.swift`、`Networking.swift`、`AudioSession.swift`、`NotificationManager.swift`、`BackgroundReminderScheduler.swift` |
+| 缓存 | `TleDiskCache.swift`、`TransmitterDiskCache.swift` |
 
-## 前置条件（必须在 macOS 上）
+`Routes.swift` 里的 `Route` 与 Android `Routes.kt` 一一对应（首页、卫星管理 / 详情 / 雷达 / 地图 / 筛选 / 分类、APRS 六个页面、FT8、SSTV、HF Fax、CW、QSO、AI、设置类页面）。
+
+## 构建
+
+前置（必须在 macOS 上）：
 
 - macOS 14+ / Xcode 16+
-- JDK 17+（Gradle 侧，Android Studio 自带的即可）
+- JDK **21**（`brew install --cask temurin@21`）
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen)：`brew install xcodegen`
-- 首次构建会下载 Kotlin/Native 编译器与 Apple 平台依赖（约 1–2 GB），需要网络
-
-## 构建步骤
+- 首次构建会下载 Kotlin/Native 编译器与 Apple 平台依赖（约 1–2 GB）
 
 ```bash
-# 1. 生成 Xcode 工程
 cd iosApp
 xcodegen generate
-
-# 2. 打开
-open HamKit.xcodeproj
-
-# 3. 选择模拟器（Apple Silicon）后 Cmd+R
+open HamKit.xcodeproj      # 选 Apple Silicon 模拟器或真机，⌘R
 ```
 
-> 天气与逆地理编码直接走高德 Web 服务。**Key 不写进源码**：`Info.plist` 的
-> `AmapWebKey` 是 `$(AMAP_WEB_KEY)`，构建时注入；未配置时首页天气卡片提示
-> 「未配置高德 Web Key（AMAP_WEB_KEY）」，其他功能不受影响。
+Xcode 的 Run Script 会执行 `./gradlew :shared:embedAndSignAppleFrameworkForXcode`。
+脚本会自己解析 JDK 21 并校验 `Shared.framework` 是否真的产出——Xcode GUI 的脚本只继承
+`/usr/bin:/bin:/usr/sbin:/sbin`，终端里 `export JAVA_HOME` 传不进去，缺 JDK 时 Swift 只会报
+`Unable to resolve module dependency: 'Shared'`，很难定位。
 
-### 配置高德 Web Key
-
-```bash
-# 命令行构建 / 导出 IPA 时传入
-xcodebuild ... AMAP_WEB_KEY=<你的 Key>
-AMAP_WEB_KEY=<你的 Key> ./scripts/export-unsigned-ipa.sh
-```
-
-Xcode GUI：选中 HamKit target → Build Settings → 搜索 `AMAP_WEB_KEY`，
-直接填入 Key（改的是本地生成的工程，`xcodegen generate` 后需重填）。
-CI 读取仓库 Secret `AMAP_WEB_KEY`（未配置时为空，不影响构建）。
-
-> 早期版本的 Key 曾写在 `AmapKey.swift` 并进入公开历史，请在高德控制台轮换。
-
-Xcode 的 Run Script 阶段会自动执行：
-
-```bash
-cd "$SRCROOT/.."
-./gradlew :shared:embedAndSignAppleFrameworkForXcode
-```
-
-也可以先在命令行验证 framework 能否链接（排查 Kotlin/Native 问题更快）：
+也可以先在命令行验证 framework：
 
 ```bash
 ./gradlew :shared:linkDebugFrameworkIosSimulatorArm64
 # 产物：shared/build/bin/iosSimulatorArm64/debugFramework/Shared.framework
 ```
 
-真机调试需要：Xcode → Signing & Capabilities → 选择自己的 Team；
-`PRODUCT_BUNDLE_IDENTIFIER` 改成你自己的（默认 `click.hamkit.ios`）。
+### 高德 Web Key
+
+天气与逆地理编码走高德 Web 服务，**Key 不写进源码**：`Info.plist` 里是
+`$(AMAP_WEB_KEY)`，构建时注入。
+
+```bash
+xcodebuild ... AMAP_WEB_KEY=<你的 Key>
+AMAP_WEB_KEY=<你的 Key> ./scripts/export-unsigned-ipa.sh
+```
+
+Xcode GUI：target → Build Settings → 搜 `AMAP_WEB_KEY` 填入（改的是本地生成的工程，
+重新 `xcodegen generate` 后要重填）。CI 读仓库 Secret `AMAP_WEB_KEY`，未配置时首页提示
+「未配置高德 Web Key」，其余功能不受影响。
 
 ### 权限
 
-`Info.plist` 已声明：
-
-- `NSLocationWhenInUseUsageDescription`：分区定位与卫星过境
-- `NSMicrophoneUsageDescription`：CW / FT8 / SSTV / HF Fax 接收解码
-- `NSPhotoLibraryAddUsageDescription`：保存解码出的 SSTV / HF Fax 图片
-
-首次使用对应功能时系统会弹窗请求权限；音频只在本机解码，不上传。
+`Info.plist` 已声明：定位、麦克风（CW / FT8 / SSTV / HF Fax）、相册写入（保存解码图片）。
+首次使用对应功能时弹窗；音频只在本机解码，不上传。
 
 ## 未签名 IPA（没有开发者账号怎么装）
 
-本项目没有 Apple Developer 账号（$99/年，项目无收入），所以**不提供 App Store 或 TestFlight**。
-CI 会额外构建一份**未签名真机 IPA**（artifact：`HamKit-unsigned-ipa-<run_id>`），
-结构是标准的 `Payload/HamKit.app`，附带 SHA-256 校验值。
+项目没有 Apple Developer 账号，所以**不提供 App Store / TestFlight**。CI 会构建一份
+标准结构的未签名 IPA（`Payload/HamKit.app`，附 SHA-256）。
 
-### 在本机（Mac）自己导出
+### 自己导出
 
 ```bash
 ./iosApp/scripts/export-unsigned-ipa.sh          # Release，默认
-./iosApp/scripts/export-unsigned-ipa.sh --debug  # Debug 配置
+./iosApp/scripts/export-unsigned-ipa.sh --debug  # Debug
 ```
 
-产物是 `iosApp/HamKit-unsigned.ipa` + `HamKit-unsigned.ipa.sha256`，
-完整构建日志写到仓库根目录的 `ios-device-build.log`。
-脚本做的事就是 CI 那一套：`xcodegen generate` → `xcodebuild -sdk iphoneos`
-（`ARCHS=arm64`，`CODE_SIGNING_ALLOWED=NO`）→ 把 `HamKit.app` 塞进 `Payload/` → `zip`。
+产物：`iosApp/HamKit-unsigned.ipa` + `.sha256`，日志在仓库根目录 `ios-device-build.log`。
+脚本与 CI 同一套流程：`xcodegen generate` → `xcodebuild -sdk iphoneos`（`ARCHS=arm64`，
+`CODE_SIGNING_ALLOWED=NO`）→ `Payload/` → zip。
 
-> **没有 Mac 命令行也可以用 Xcode 图形界面手工出包**，等价步骤：
-> 1. Scheme 选 `HamKit`，运行目标选 **Any iOS Device (arm64)**；
-> 2. 选中工程 → **Signing & Capabilities** → 取消勾选 *Automatically manage signing*，
->    把 Team / Signing Certificate / Provisioning Profile 都设为 **None**；
-> 3. `Product → Build`（⌘B）。**不要用 `Product → Archive`** —— 未签名 archive
->    在 Organizer 里无法 Export，会一直要求选证书；
-> 4. 打开 DerivedData 里的 `Build/Products/Release-iphoneos/HamKit.app`
->    （Xcode：`Product → Show Build Folder in Finder`，再进 `Products`）；
-> 5. 新建一个 `Payload` 文件夹 → 把 `HamKit.app` 放进去 → 右键压缩 `Payload`
->    → 把 `Payload.zip` 改名 `HamKit-unsigned.ipa`。
+> 没有命令行也可以走 Xcode 图形界面：Scheme 选 `HamKit`，运行目标 **Any iOS Device (arm64)**，
+> Signing 全部设为 None，`Product → Build`（**不要用 Archive**，未签名 archive 无法 Export），
+> 再到 DerivedData 里把 `HamKit.app` 放进 `Payload/` 压缩、改名 `.ipa`。
 
 ### 安装
 
-它**不能双击安装**，需要用工具用自己的 Apple ID 重签：
-
 1. 电脑装 [Sideloadly](https://sideloadly.io/) 或 [AltStore](https://altstore.io/)；
-2. 用自己的 Apple ID 重签并安装 —— 免费账号签名 **7 天有效**，到期重签一次，App 数据不会丢；
-3. 有付费开发者证书的，用它重签一次即可长期使用；
+2. 用自己的 Apple ID 重签安装——免费账号 **7 天有效**，到期重签，App 数据不丢；
+3. 有付费证书的，重签一次可长期使用；
 4. TrollStore 只支持特定系统版本，不保证可用。
-
-> 不要使用来历不明的「企业证书」重签：证书被吊销后 App 会直接打不开。
-> 未签名 IPA 只从本仓库 Releases / Actions artifact 下载。
 
 ### 报错「无法安装此 App，因为无法验证其完整性」
 
-这句是 iOS 在**验证签名链失败**时的统一提示，和 App 内容无关。按顺序排查：
+iOS 校验证书链失败时的统一提示，与 App 内容无关：
 
-| 情况 | 现象 | 处理 |
-| --- | --- | --- |
-| 直接把未签名 IPA 拖进 Finder / 用「文件」App 点开 / 用 Apple Configurator 安装 | 一定报这句 | **未签名包不能直接装**，必须用 Sideloadly / AltStore 重签后再装 |
-| 免费 Apple ID 签名过期 | 装好用了几天，忽然打不开或重装报这句 | 重新用 Sideloadly 签一次（7 天有效期，数据不丢） |
-| 设备上有**同一个 Bundle ID** 的旧版本，用的是另一张证书 | 重装时报这句 | 先删除设备上的旧 HamKit，再装 |
-| 设备日期/时间不对 | 证书「尚未生效/已过期」 | 设置 → 通用 → 日期与时间 → 自动设置 |
-| Sideloadly 版本过旧 / 没装 Xcode 命令行工具 | 签名过程静默失败 | 更新 Sideloadly；`xcode-select --install` |
-| iOS 18+ 首次装自签 App | 装完点开闪退或提示未受信任 | 设置 → 隐私与安全性 → 开发者模式 打开；或在「VPN 与设备管理」里信任开发者证书 |
+| 情况 | 处理 |
+| --- | --- |
+| 直接把未签名 IPA 拖进 Finder / 用「文件」App 打开 | 不能直接装，必须用 Sideloadly / AltStore 重签 |
+| 用了几天忽然打不开 | 免费证书 7 天到期，重新签一次 |
+| 同 Bundle ID 的旧版本、证书不同 | 先删掉设备上的旧 HamKit 再装 |
+| 设备日期 / 时间不对 | 设置 → 通用 → 日期与时间 → 自动设置 |
+| Sideloadly 过旧 / 没装命令行工具 | 更新 Sideloadly；`xcode-select --install` |
+| iOS 18+ 首次装自签 App | 设置 → 隐私与安全性 → 开发者模式；或在「VPN 与设备管理」信任证书 |
 
-**最省事的替代方案**：不用 IPA，直接把手机连上 Mac，在 Xcode 里
-`Signing & Capabilities` 选自己的 Apple ID（免费账号即可），
-Scheme 选 `HamKit` + 真机，⌘R 直接装 —— 签名/续签都由 Xcode 处理。
+**最省事**：手机连 Mac，Xcode 里选自己的 Apple ID，⌘R 直接装，签名续签都交给 Xcode。
+
+> 只从官方仓库 <https://github.com/fuxue-linkong/HamKit> 和官网 <https://hamkit.click> 下载。
+> 不要用来历不明的「企业证书」重签——证书被吊销后 App 直接打不开。
+
+## 测试与 CI
+
+- 共享内核单测：`./gradlew :shared:jvmTest`（AI 协议 / 工具、SGP4、TLE、APRS、QSO 等）
+- CI：`.github/workflows/ios.yml`
+  - `linkDebugFrameworkIosSimulatorArm64` 链接内核
+  - `xcodebuild` 编译模拟器包（`ARCHS=arm64`，无需签名）
+  - 启动模拟器 → 安装 → 授权定位 → 启动 → 截图（`-smokeManage` / `-smokeDetail` 可自动进页面）
+  - 构建 device 包并打包未签名 IPA + SHA-256
 
 ## 已知限制
 
-- 只在 Apple Silicon 模拟器与 iOS 16+ 上验证目标；Intel 模拟器（`iosX64`）未配置，
-  需要时在 `shared/build.gradle.kts` 里加 `iosX64()`。
-- 首次启动若完全没有网络、也没有缓存，会显示内置的 2026-08-09 ISS TLE 示例；
-  SGP4 外推几十天后过境时间会有偏差，联网刷新后即消失。
-- 尚未实现：后台定位、地图、音频（SSTV/FT8/CW/APRS）、设置页与单位切换。
+- **没有「播放捕获」**：Android 10+ 可直接录其它 App 正在播放的音频，iOS 无对应能力，
+  SSTV 只能用麦克风或导入音频文件。
+- **后台受限**：APRS 长连接、SSTV 长时间接收在切后台后可能被系统挂起；接了 `BGTaskScheduler`，
+  但 iOS 的后台策略比 Android 严，做不到常驻。
+- **无推送**：只有本地通知（过境提醒）。
+- **首次启动慢**：要拉约 2.6 MB 的 active 全量目录，弱网下首页「附近过境」要等；之后有缓存。
+- **Intel 模拟器未配置**：只声明了 `iosArm64` / `iosSimulatorArm64`，需要时在
+  `shared/build.gradle.kts` 加 `iosX64()`。
+- **iPad 未专门适配**：沿用 iPhone 布局自适应，可能出现挤压。
+- **签名 7 天**：免费 Apple ID 的限制，与 App 无关。
+
+## 相关文档
+
+- [docs/IOS_ADAPTATION.md](../docs/IOS_ADAPTATION.md)：迁移路线、平台能力替换矩阵、阶段计划
+- [docs/UPSTREAM_SYNC_2026-10-31.md](../docs/UPSTREAM_SYNC_2026-10-31.md)、
+  [docs/UPSTREAM_SYNC_2026-11-01.md](../docs/UPSTREAM_SYNC_2026-11-01.md)：与上游 miuix 的同步记录
+- [README.md](../README.md)：项目总览（Android + 跨平台内核）
