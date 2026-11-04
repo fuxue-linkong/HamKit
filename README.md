@@ -8,6 +8,13 @@
 
 [hamkit.click](https://hamkit.click)
 
+## 分支说明
+
+- `miuix`：Android 主线（默认分支）
+- `ios`：iOS 客户端（SwiftUI + Kotlin Multiplatform 共享内核），独立维护
+- 两条分支共用 `:shared` 的算法与协议实现；计划在合适的时间点合并回主干
+
+
 ## 开发路线图
 
 ### 已完成
