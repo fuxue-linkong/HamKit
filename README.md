@@ -10,9 +10,10 @@
 
 ## 分支说明
 
-- `miuix`：Android 主线（默认分支）
+- `miuix`：Android 主线（默认分支），仍使用原有实现，**不依赖 `:shared`**
 - `ios`：iOS 客户端（SwiftUI + Kotlin Multiplatform 共享内核），独立维护
-- 两条分支共用 `:shared` 的算法与协议实现；计划在合适的时间点合并回主干
+- `:shared` 共享内核目前只在 `ios` 分支：内核还在验证期，为不影响 Android 体验，暂不进入主分支；
+  等它经过足够的真机验证，再择机把两条分支合并回主干
 
 
 ## 开发路线图
