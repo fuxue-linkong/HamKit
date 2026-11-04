@@ -6,6 +6,14 @@ SwiftUI 外壳 + Kotlin Multiplatform 内核。业务算法（SGP4/SDP4、TLE、
 > 功能已对齐 Android 的主要模块，没有 App Store / TestFlight（项目无收入，买不起开发者账号），
 > 以**未签名 IPA** 分发，需自行用 Apple ID 重签。
 
+## 分支与维护
+
+- **Android 与 iOS 目前分两条分支维护**：Android 走默认分支 `miuix`，iOS 走 `ios`；
+- 两条分支共用 `:shared` 内核，算法与协议层保持同源；UI、平台能力、构建脚本分别维护；
+- 计划在**合适的时间点**合并回主干。合并前，iOS 的改动只进 `ios` 分支，
+  两端共用的 `shared/` 改动需要互相 cherry-pick，避免算法漂移；
+- 因此 `ios` 分支不等于发布分支，正式版仍以主干为准。
+
 ## 已实现
 
 **定位与卫星**
