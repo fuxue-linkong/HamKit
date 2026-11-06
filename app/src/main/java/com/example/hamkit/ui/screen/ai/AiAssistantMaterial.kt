@@ -150,6 +150,7 @@ import java.util.Calendar
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.draw.alpha
 
 /** Material 风格实现，与 Miuix 版共用 [AiAssistantViewModel]。 */
 @Composable
@@ -338,6 +339,7 @@ fun AiAssistantScreenMaterial(bottomInnerPadding: Dp = 0.dp) {
                 activeModelId = state.activeModelId,
                 onSwitchModel = viewModel::switchModel,
                 onOpenSettings = { navigator.push(Route.AiSettings) },
+                onReload = viewModel::reloadConfig,
             )
         }
     }
@@ -665,6 +667,7 @@ private fun ComposerMaterial(
     onStop: () -> Unit,
     onSwitchModel: (String, String) -> Unit,
     onOpenSettings: () -> Unit,
+    onReload: () -> Unit,
 ) {
     val canSend = (input.isNotBlank() || attachments.any { it.status == AiAttachmentStatus.READY }) &&
         attachments.none { it.status == AiAttachmentStatus.PARSING }
@@ -763,7 +766,11 @@ private fun ComposerMaterial(
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(10.dp))
-                    .clickable { pickerOpen = true }
+                    .alpha(if (streaming) 0.5f else 1f)
+                    .clickable {
+                        onReload()
+                        pickerOpen = true
+                    }
                     .padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -875,7 +882,14 @@ private fun ModelPickerPopupMaterial(
                     singleLine = true,
                 )
                 Spacer(Modifier.height(6.dp))
-                if (filtered.isEmpty()) {
+                if (profiles.isEmpty()) {
+                    Text(
+                        stringResource(R.string.ai_model_empty),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 16.dp),
+                    )
+                } else if (filtered.isEmpty()) {
                     Text(
                         stringResource(R.string.ai_model_no_match),
                         style = MaterialTheme.typography.bodySmall,

@@ -255,15 +255,8 @@ fun AiSettingsScreenMiuix(onBack: () -> Unit = {}) {
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Button(
-                    onClick = { viewModel.save() },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColorsPrimary(),
-                ) {
-                    Text(stringResource(R.string.ai_settings_save))
-                }
-                Button(
                     onClick = viewModel::testConnection,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth(),
                     enabled = !state.testing,
                 ) {
                     Text(if (state.testing) "测试中…" else stringResource(R.string.ai_settings_test))
@@ -280,9 +273,12 @@ fun AiSettingsScreenMiuix(onBack: () -> Unit = {}) {
 private fun StatusCardMiuix(state: com.example.hamkit.ui.viewmodel.AiSettingsUiState) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp)) {
+            val activeProfile = state.profiles.firstOrNull { it.id == state.activeProfileId }
+            val selectedEntry = state.editingModels.firstOrNull { it.id == state.editingModelId }
             Row {
                 Text(
-                    "${state.config.preset.label} · ${state.config.model}",
+                    "${activeProfile?.name ?: state.config.preset.label} · " +
+                        (selectedEntry?.label ?: stringResource(R.string.ai_model_none_selected)),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f),
@@ -680,6 +676,14 @@ private fun ModelConfigCardMiuix(
                 )
             }
 
+            if (state.editingModels.isEmpty()) {
+                Text(
+                    stringResource(R.string.ai_model_empty_hint),
+                    fontSize = 11.sp,
+                    color = colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(vertical = 8.dp),
+                )
+            }
             state.editingModels.forEach { entry ->
                 val selected = entry.id == state.editingModelId
                 Column(
@@ -787,9 +791,16 @@ private fun ModelConfigCardMiuix(
                     modifier = Modifier
                         .weight(1f)
                         .height(44.dp),
+                    enabled = !state.saving,
                     colors = ButtonDefaults.buttonColorsPrimary(),
                 ) {
-                    Text(stringResource(R.string.ai_model_save))
+                    Text(
+                        if (state.saving) {
+                            stringResource(R.string.ai_model_saving)
+                        } else {
+                            stringResource(R.string.ai_model_save)
+                        },
+                    )
                 }
             }
 

@@ -217,16 +217,10 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
                 }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(
-                    onClick = { viewModel.save() },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text(stringResource(R.string.ai_settings_save))
-                }
+            Row {
                 Button(
                     onClick = viewModel::testConnection,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth(),
                     enabled = !state.testing,
                 ) {
                     Text(if (state.testing) "测试中…" else stringResource(R.string.ai_settings_test))
@@ -369,8 +363,9 @@ private fun ActiveModelCardMaterial(state: AiSettingsUiState, onSwitch: () -> Un
                     )
                 }
                 Spacer(Modifier.height(4.dp))
+                val selectedEntry = state.editingModels.firstOrNull { it.id == state.editingModelId }
                 Text(
-                    "${state.config.protocol.label} · ${state.config.model}",
+                    selectedEntry?.label ?: stringResource(R.string.ai_model_none_selected),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -566,6 +561,14 @@ private fun ModelConfigCardMaterial(
                 )
             }
 
+            if (state.editingModels.isEmpty()) {
+                Text(
+                    stringResource(R.string.ai_model_empty_hint),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 8.dp),
+                )
+            }
             state.editingModels.forEach { entry ->
                 val selected = entry.id == state.editingModelId
                 Column(
@@ -667,8 +670,15 @@ private fun ModelConfigCardMaterial(
                     modifier = Modifier
                         .weight(1f)
                         .height(44.dp),
+                    enabled = !state.saving,
                 ) {
-                    Text(stringResource(R.string.ai_model_save))
+                    Text(
+                        if (state.saving) {
+                            stringResource(R.string.ai_model_saving)
+                        } else {
+                            stringResource(R.string.ai_model_save)
+                        },
+                    )
                 }
             }
 

@@ -47,6 +47,8 @@ data class AiSettingsUiState(
     val editingModels: List<AiModelEntry> = emptyList(),
     /** 正在编辑的模型条目 id。 */
     val editingModelId: String? = null,
+    /** 保存中（按钮禁用/显示保存中）。 */
+    val saving: Boolean = false,
 ) {
     val hasKey: Boolean get() = keyMasked != null
 }
@@ -216,7 +218,7 @@ class AiSettingsViewModel(application: Application) : AndroidViewModel(applicati
                     probe = null,
                     models = emptyList(),
                     error = null,
-                    notice = "已切换到「${target.name}」",
+                    notice = "已保存当前修改，并切换到「${target.name}」",
                 )
             }
         }
@@ -236,7 +238,7 @@ class AiSettingsViewModel(application: Application) : AndroidViewModel(applicati
                 keyMasked = null,
                 editingModels = profileStore.active().models,
                 editingModelId = profileStore.active().currentEntry?.id,
-                notice = "已新建「$name」，请填写 Key",
+                notice = "已保存当前修改，新建「$name」，请填写 Key",
                 probe = null,
                 models = emptyList(),
                 error = null,
@@ -337,6 +339,7 @@ class AiSettingsViewModel(application: Application) : AndroidViewModel(applicati
 
     /** 保存配置；URL 不合法时返回 false 并通过 [AiSettingsUiState.error] 提示。 */
     fun save(onSaved: (Boolean) -> Unit = {}) {
+        if (_uiState.value.saving) return
         val config = _uiState.value.config.normalized()
         val reason = AiNetworkPolicy.validate(config.baseUrl, config.allowCleartext)
         if (reason != null) {
@@ -355,22 +358,33 @@ class AiSettingsViewModel(application: Application) : AndroidViewModel(applicati
             onSaved(false)
             return
         }
+        _uiState.update { it.copy(saving = true, error = null) }
         viewModelScope.launch {
-            withContext(Dispatchers.IO) {
-                configStore.save(config)
-                persistCurrentProfile()
+            try {
+                withContext(Dispatchers.IO) {
+                    configStore.save(config)
+                    persistCurrentProfile()
+                }
+                val profiles = withContext(Dispatchers.IO) { profileStore.list() }
+                val active = profileStore.active(profiles)
+                _uiState.update {
+                    it.copy(
+                        config = config,
+                        profiles = profiles,
+                        editingModels = active.models,
+                        editingModelId = active.currentEntry?.id,
+                        saving = false,
+                        notice = "设置已保存",
+                        error = null,
+                    )
+                }
+                onSaved(true)
+            } catch (t: Throwable) {
+                _uiState.update {
+                    it.copy(saving = false, error = t.message ?: "保存失败")
+                }
+                onSaved(false)
             }
-            _uiState.update {
-                it.copy(
-                    config = config,
-                    profiles = profileStore.list(),
-                    editingModels = profileStore.active().models,
-                    editingModelId = profileStore.active().currentEntry?.id,
-                    notice = "设置已保存",
-                    error = null,
-                )
-            }
-            onSaved(true)
         }
     }
 
