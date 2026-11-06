@@ -682,7 +682,7 @@ private fun ModelConfigCardMiuix(
 
             state.editingModels.forEach { entry ->
                 val selected = entry.id == state.editingModelId
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(10.dp))
@@ -693,39 +693,44 @@ private fun ModelConfigCardMiuix(
                         )
                         .clickable { onModelSelect(entry.id) }
                         .padding(horizontal = 8.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("≡", fontSize = 12.sp, color = colorScheme.onSurfaceVariantSummary)
-                    Spacer(Modifier.width(6.dp))
-                    TextField(
-                        value = entry.modelId,
-                        onValueChange = { onModelChange(entry.id, it, entry.displayName.orEmpty()) },
-                        modifier = Modifier.weight(1.2f),
-                        maxLines = 1,
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    TextField(
-                        value = entry.displayName.orEmpty(),
-                        onValueChange = { onModelChange(entry.id, entry.modelId, it) },
-                        modifier = Modifier.weight(1f),
-                        maxLines = 1,
-                    )
-                    Box(
-                        modifier = Modifier
-                            .size(28.dp)
-                            .clip(CircleShape)
-                            .clickable { onModelDelete(entry.id) },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            Icons.Rounded.Close,
-                            contentDescription = stringResource(R.string.ai_model_delete),
-                            tint = colorScheme.onSurfaceVariantSummary,
-                            modifier = Modifier.size(14.dp),
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("≡", fontSize = 12.sp, color = colorScheme.onSurfaceVariantSummary)
+                        Spacer(Modifier.width(6.dp))
+                        TextField(
+                            value = entry.modelId,
+                            onValueChange = { onModelChange(entry.id, it, entry.displayName.orEmpty()) },
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .clickable { onModelDelete(entry.id) },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                Icons.Rounded.Close,
+                                contentDescription = stringResource(R.string.ai_model_delete),
+                                tint = colorScheme.onSurfaceVariantSummary,
+                                modifier = Modifier.size(14.dp),
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Row {
+                        Spacer(Modifier.width(24.dp))
+                        TextField(
+                            value = entry.displayName.orEmpty(),
+                            onValueChange = { onModelChange(entry.id, entry.modelId, it) },
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
                         )
                     }
                 }
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(8.dp))
             }
 
             TextButton(
@@ -773,11 +778,15 @@ private fun ModelConfigCardMiuix(
                 TextButton(
                     text = stringResource(R.string.ai_model_cancel),
                     onClick = onCancel,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp),
                 )
                 Button(
                     onClick = onSave,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp),
                     colors = ButtonDefaults.buttonColorsPrimary(),
                 ) {
                     Text(stringResource(R.string.ai_model_save))
@@ -788,6 +797,7 @@ private fun ModelConfigCardMiuix(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
                     .dashedBorder(colorScheme.onSurface.copy(alpha = 0.22f))
                     .clickable(onClick = onAddProvider)
                     .padding(vertical = 14.dp),

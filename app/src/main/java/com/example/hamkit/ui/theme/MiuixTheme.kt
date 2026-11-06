@@ -15,6 +15,8 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.ThemeColorSpec
 import top.yukonga.miuix.kmp.theme.ThemeController
 import top.yukonga.miuix.kmp.theme.ThemePaletteStyle
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.material3.ripple
 
 @Composable
 fun MiuixHamKitTheme(
@@ -66,6 +68,10 @@ fun MiuixHamKitTheme(
             }
             CompositionLocalProvider(
                 LocalContentColor provides MiuixTheme.colorScheme.onBackground,
+                // 全局按压指示：淡主色，替换默认灰色水波纹
+                LocalIndication provides ripple(
+                    color = MiuixTheme.colorScheme.primary.copy(alpha = 0.10f),
+                ),
             ) {
                 content()
             }
