@@ -130,6 +130,13 @@ enum SstvDecodeOutcome {
     case failure(String)
 }
 
+/// 音频文件导入结果：比 [SstvDecodeOutcome] 多带一条提示
+/// （目前只有「录音超过 5 分钟、只解码了前 5 分钟」这一种）。
+enum SstvFileDecodeOutcome {
+    case success(SstvImage, note: String?)
+    case failure(String)
+}
+
 final class SstvStore: ObservableObject {
 
     static let shared = SstvStore()
@@ -155,45 +162,106 @@ final class SstvStore: ObservableObject {
         SstvBridge.shared.modes()
     }
 
-    /// 解码音频文件（WAV/MP3/M4A 等，AVAudioFile 支持的格式）。
-    /// 自动重采样到内核采样率；返回与实时接收相同的保存结果。
-    func decodeFile(url: URL) -> SstvDecodeOutcome {
-        let accessed = url.startAccessingSecurityScopedResource()
-        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+    /// 导入文件最长读取时长（秒）。与 Android 侧 `SstvWavReader.MAX_SECONDS` 对齐：
+    /// 一帧 SSTV 最长 114 秒，语音备忘录随手录下的十几分钟再继续解码只是白占内存。
+    static let maxFileSeconds: Double = 300
 
-        guard let data = Self.pcm16(from: url, targetRate: Double(SstvBridge.shared.sampleRate)) else {
-            return .failure("无法读取音频文件")
+    /// 解码音频文件（WAV/MP3/M4A 等 AVAudioFile 支持的格式）。
+    /// 自动重采样到内核采样率；返回与实时接收相同的保存结果。
+    ///
+    /// URL 一般来自 `AudioFilePicker`（`asCopy` 复制到沙盒的副本），解完即删；
+    /// 同时兼容 security-scoped URL，方便以后从分享扩展等处直接传原始文件进来。
+    func decodeFile(url: URL) -> SstvFileDecodeOutcome {
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer {
+            if accessed { url.stopAccessingSecurityScopedResource() }
+            Self.removeTemporaryCopyIfNeeded(url)
         }
-        return decode(data: data)
+
+        switch Self.pcm16(from: url, targetRate: Double(SstvBridge.shared.sampleRate), maxSeconds: Self.maxFileSeconds) {
+        case .failure(let reason):
+            return .failure(reason)
+        case .success(let audio):
+            switch decode(data: audio.pcm) {
+            case .success(let image):
+                let note = audio.truncated
+                    ? "录音超过 \(Int(Self.maxFileSeconds / 60)) 分钟，只解码了前 \(Int(Self.maxFileSeconds / 60)) 分钟"
+                    : nil
+                return .success(image, note: note)
+            case .failure(let message):
+                return .failure(message)
+            }
+        }
+    }
+
+    private struct ReadAudio {
+        let pcm: Data
+        let truncated: Bool
+    }
+
+    private enum AudioReadResult {
+        case success(ReadAudio)
+        case failure(String)
     }
 
     /// 用 AVAudioFile + AVAudioConverter 读成目标采样率、单声道、PCM16。
-    private static func pcm16(from url: URL, targetRate: Double) -> Data? {
-        guard let file = try? AVAudioFile(forReading: url) else { return nil }
-        let sourceFormat = file.processingFormat
-        let frameCount = AVAudioFrameCount(file.length)
-        guard frameCount > 0,
-              let sourceBuffer = AVAudioPCMBuffer(pcmFormat: sourceFormat, frameCapacity: frameCount),
-              (try? file.read(into: sourceBuffer)) != nil else {
-            return nil
+    ///
+    /// 每一步失败都带上具体原因：导入失败时用户看到的应当是「AVAudioFile 打不开
+    /// （什么错）」「重采样失败（什么错）」，而不是笼统的「无法读取音频文件」。
+    private static func pcm16(
+        from url: URL,
+        targetRate: Double,
+        maxSeconds: Double
+    ) -> AudioReadResult {
+        let file: AVAudioFile
+        do {
+            file = try AVAudioFile(forReading: url)
+        } catch {
+            return .failure("无法打开音频文件（\(error.localizedDescription)）")
         }
 
-        guard let targetFormat = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: targetRate,
-            channels: 1,
-            interleaved: false
-        ) else { return nil }
+        let sourceFormat = file.processingFormat
+        let sourceRate = sourceFormat.sampleRate
+        guard sourceRate > 0, sourceFormat.channelCount > 0 else {
+            return .failure("音频格式不受支持（采样率或声道数非法）")
+        }
 
-        var output: AVAudioPCMBuffer?
-        if abs(sourceFormat.sampleRate - targetRate) < 1 && sourceFormat.channelCount == 1 {
+        let totalFrames = file.length
+        guard totalFrames > 0 else { return .failure("音频文件里没有音频数据") }
+
+        // 只读前 maxSeconds 秒：长录音不整段进内存（300 秒单声道约 57 MB）
+        let capFrames = min(Double(totalFrames), maxSeconds * sourceRate)
+        let frameCount = AVAudioFrameCount(capFrames)
+        guard frameCount > 0,
+              let sourceBuffer = AVAudioPCMBuffer(pcmFormat: sourceFormat, frameCapacity: frameCount) else {
+            return .failure("音频文件过大，无法载入内存")
+        }
+        do {
+            try file.read(into: sourceBuffer, frameCount: frameCount)
+        } catch {
+            return .failure("读取音频数据失败（\(error.localizedDescription)）")
+        }
+        guard sourceBuffer.frameLength > 0 else {
+            return .failure("音频文件里没有可用的采样")
+        }
+        let truncated = Double(totalFrames) > capFrames
+
+        let output: AVAudioPCMBuffer
+        if abs(sourceRate - targetRate) < 1 && sourceFormat.channelCount == 1 {
             output = sourceBuffer
         } else {
-            guard let converter = AVAudioConverter(from: sourceFormat, to: targetFormat) else { return nil }
-            let ratio = targetRate / sourceFormat.sampleRate
-            let capacity = AVAudioFrameCount(Double(frameCount) * ratio + 1024)
+            guard let targetFormat = AVAudioFormat(
+                commonFormat: .pcmFormatFloat32,
+                sampleRate: targetRate,
+                channels: 1,
+                interleaved: false
+            ), let converter = AVAudioConverter(from: sourceFormat, to: targetFormat) else {
+                return .failure("系统无法把这段音频转换为 \(Int(targetRate)) Hz 单声道")
+            }
+            let ratio = targetRate / sourceRate
+            let capacity = AVAudioFrameCount(Double(sourceBuffer.frameLength) * ratio) + 1024
             guard let converted = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else {
-                return nil
+                return .failure("重采样后的音频超出内存上限")
             }
             var error: NSError?
             var supplied = false
@@ -206,19 +274,30 @@ final class SstvStore: ObservableObject {
                 status.pointee = .haveData
                 return sourceBuffer
             }
-            if error != nil { return nil }
+            if let error {
+                return .failure("音频重采样失败（\(error.localizedDescription)）")
+            }
             output = converted
         }
 
-        guard let buffer = output,
-              let channel = buffer.floatChannelData?[0] else { return nil }
-        var data = Data(capacity: Int(buffer.frameLength) * 2)
-        for i in 0..<Int(buffer.frameLength) {
+        guard let channel = output.floatChannelData?[0], output.frameLength > 0 else {
+            return .failure("音频重采样没有输出数据")
+        }
+        var data = Data(capacity: Int(output.frameLength) * 2)
+        for i in 0..<Int(output.frameLength) {
             let clamped = max(-1.0, min(1.0, channel[i]))
             let v = Int16(clamped * 32767.0)
             withUnsafeBytes(of: v.littleEndian) { data.append(contentsOf: $0) }
         }
-        return data
+        return .success(ReadAudio(pcm: data, truncated: truncated))
+    }
+
+    /// 删掉选择器复制到沙盒临时目录的副本；用户原文件（非 tmp）绝不动。
+    private static func removeTemporaryCopyIfNeeded(_ url: URL) {
+        let tmp = FileManager.default.temporaryDirectory.standardizedFileURL.path
+        let path = url.standardizedFileURL.path
+        guard path.hasPrefix(tmp) else { return }
+        try? FileManager.default.removeItem(at: url)
     }
 
     /// 边收边预览：解码当前缓冲但**不落盘**。
@@ -343,6 +422,11 @@ struct SstvMainView: View {
     @State private var lastImage: UIImage?
     @State private var showAudioImporter = false
     @State private var previewTimer: Timer?
+    /// 文件导入的独立状态：它显示在「音频文件」这一节里，
+    /// 用户点完按钮就在原地看到进度/结果，而不是去上面找「接收」节的文字。
+    @State private var importStatus: String?
+    @State private var importFailed = false
+    @State private var isImporting = false
 
     var body: some View {
         List {
@@ -398,8 +482,21 @@ struct SstvMainView: View {
                 Button {
                     showAudioImporter = true
                 } label: {
-                    Label("从音频文件解码", systemImage: "doc.badge.plus")
+                    Label(isImporting ? "正在读取…" : "从音频文件解码", systemImage: "doc.badge.plus")
                 }
+                .disabled(isImporting)
+
+                if let importStatus {
+                    HStack(spacing: 6) {
+                        if isImporting {
+                            ProgressView()
+                        }
+                        Text(importStatus)
+                            .font(.footnote)
+                            .foregroundStyle(importFailed ? Color.red : Color.secondary)
+                    }
+                }
+
                 Text("支持 WAV / M4A / MP3 等；自动重采样到 SSTV 解码采样率。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -441,22 +538,47 @@ struct SstvMainView: View {
             previewTimer = nil
             audio.cancel()
         }
-        .fileImporter(
-            isPresented: $showAudioImporter,
-            allowedContentTypes: [.audio],
-            allowsMultipleSelection: false
-        ) { result in
-            guard case .success(let urls) = result, let url = urls.first else { return }
-            status = "正在读取音频文件…"
+        // 用 UIKit 的文档选择器而不是 SwiftUI 的 `.fileImporter`：
+        // 后者在部分真机 / 新系统上「点文件没反应」（选择器不关、回调不触发），
+        // 而且回调失败时旧代码直接 return，用户会以为按钮坏了。详见 AudioFilePicker。
+        .sheet(isPresented: $showAudioImporter) {
+            AudioFilePicker(
+                onPick: { result in
+                    showAudioImporter = false
+                    handlePickedAudio(result)
+                },
+                onCancel: { showAudioImporter = false }
+            )
+        }
+    }
+
+    /// 处理文件选择结果。
+    ///
+    /// 失败（包括「选择器本身报错」）也必须写进 [importStatus]：
+    /// 用户点了文件却什么都没发生，是最难排查、也最让人以为 App 卡死的情况。
+    private func handlePickedAudio(_ result: Result<URL, Error>) {
+        switch result {
+        case .failure(let error):
+            importFailed = true
+            importStatus = "无法选择文件：\(error.localizedDescription)"
+
+        case .success(let url):
+            importFailed = false
+            isImporting = true
+            importStatus = "正在读取音频文件…"
             DispatchQueue.global(qos: .userInitiated).async {
                 let decoded = store.decodeFile(url: url)
                 DispatchQueue.main.async {
+                    isImporting = false
                     switch decoded {
-                    case .success(let image):
-                        status = "解码成功：\(image.modeName) \(image.width)×\(image.height)"
+                    case .success(let image, let note):
+                        var text = "解码成功：\(image.modeName) \(image.width)×\(image.height)"
+                        if let note { text += "（\(note)）" }
+                        importStatus = text
                         lastImage = store.image(for: image)
-                    case .failure(let error):
-                        status = "解码失败：\(error)"
+                    case .failure(let message):
+                        importFailed = true
+                        importStatus = "解码失败：\(message)"
                     }
                 }
             }
