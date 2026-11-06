@@ -112,8 +112,10 @@ data class AiChatUiState(
     val sessions: List<AiSessionSummary> = emptyList(),
     /** 已配置的模型列表。 */
     val profiles: List<AiModelProfile> = emptyList(),
-    /** 当前使用的模型 id。 */
+    /** 当前使用的提供商（profile）id。 */
     val activeProfileId: String = AiModelProfile.DEFAULT_ID,
+    /** 当前使用的模型条目 id。 */
+    val activeModelId: String? = null,
     /** 等待用户确认的副作用操作。 */
     val pendingConfirm: AiConfirmRequest? = null,
 )
@@ -359,6 +361,7 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
                     hasKey = hasKey,
                     profiles = profiles,
                     activeProfileId = active.id,
+                    activeModelId = active.currentEntry?.id,
                 )
             }
         }
@@ -382,6 +385,35 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
                     hasKey = hasKey,
                     profiles = profiles,
                     activeProfileId = id,
+                    activeModelId = target.currentEntry?.id,
+                    error = null,
+                )
+            }
+        }
+    }
+
+    /** 切换到指定提供商的指定模型。 */
+    fun switchModel(profileId: String, modelId: String) {
+        if (_uiState.value.isStreaming) {
+            _uiState.update { it.copy(error = "生成中不能切换模型") }
+            return
+        }
+        viewModelScope.launch {
+            val legacy = withContext(Dispatchers.IO) { configStore.load() }
+            val profiles = withContext(Dispatchers.IO) { profileStore.list() }
+            val target = profiles.firstOrNull { it.id == profileId } ?: return@launch
+            val entry = target.models.firstOrNull { it.id == modelId } ?: return@launch
+            val updated = target.copy(selectedModelId = entry.id)
+            withContext(Dispatchers.IO) { profileStore.upsert(updated) }
+            val nextProfiles = profiles.map { if (it.id == updated.id) updated else it }
+            val hasKey = withContext(Dispatchers.IO) { keyStoreFor(updated.id).hasKey() }
+            _uiState.update {
+                it.copy(
+                    config = updated.applyTo(legacy),
+                    hasKey = hasKey,
+                    profiles = nextProfiles,
+                    activeProfileId = updated.id,
+                    activeModelId = entry.id,
                     error = null,
                 )
             }
@@ -575,6 +607,7 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
                 sessions = sessions,
                 profiles = profileStore.list(),
                 activeProfileId = profile.id,
+                activeModelId = profile.currentEntry?.id,
             )
         }
     }

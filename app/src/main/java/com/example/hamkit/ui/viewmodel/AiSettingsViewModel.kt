@@ -7,6 +7,7 @@ import com.example.hamkit.data.ai.AiClientFactory
 import com.example.hamkit.data.ai.AiConfig
 import com.example.hamkit.data.ai.AiConfigStore
 import com.example.hamkit.data.ai.AiKeyStore
+import com.example.hamkit.data.ai.AiModelEntry
 import com.example.hamkit.data.ai.AiModelProfile
 import com.example.hamkit.data.ai.AiProfileStore
 import com.example.hamkit.data.ai.AiErrorKind
@@ -42,6 +43,10 @@ data class AiSettingsUiState(
     val profiles: List<AiModelProfile> = emptyList(),
     /** 当前编辑/使用的模型 id。 */
     val activeProfileId: String = AiModelProfile.DEFAULT_ID,
+    /** 正在编辑的模型条目（保存前只改内存）。 */
+    val editingModels: List<AiModelEntry> = emptyList(),
+    /** 正在编辑的模型条目 id。 */
+    val editingModelId: String? = null,
 ) {
     val hasKey: Boolean get() = keyMasked != null
 }
@@ -73,6 +78,8 @@ class AiSettingsViewModel(application: Application) : AndroidViewModel(applicati
                     keyMasked = masked,
                     profiles = profileStore.list(),
                     activeProfileId = profile.id,
+                    editingModels = profile.models,
+                    editingModelId = profile.currentEntry?.id,
                 )
             }
         }
@@ -85,7 +92,73 @@ class AiSettingsViewModel(application: Application) : AndroidViewModel(applicati
     private fun persistCurrentProfile() {
         val state = _uiState.value
         val current = state.profiles.firstOrNull { it.id == state.activeProfileId } ?: return
-        profileStore.upsert(AiModelProfile.fromConfig(current.id, current.name, state.config))
+        val models = state.editingModels.filter { it.modelId.isNotBlank() }
+            .ifEmpty { current.models }
+        val selected = state.editingModelId?.takeIf { id -> models.any { it.id == id } }
+            ?: models.firstOrNull()?.id
+        profileStore.upsert(
+            current.copy(
+                preset = state.config.preset,
+                protocol = state.config.protocol,
+                baseUrl = state.config.baseUrl,
+                models = models,
+                selectedModelId = selected,
+                temperature = state.config.temperature,
+                maxOutputTokens = state.config.maxOutputTokens,
+            ),
+        )
+    }
+
+    fun addModel() {
+        val entry = AiModelEntry(
+            id = "m_" + UUID.randomUUID().toString().take(8),
+            modelId = "",
+        )
+        _uiState.update {
+            it.copy(
+                editingModels = it.editingModels + entry,
+                editingModelId = entry.id,
+                error = null,
+            )
+        }
+    }
+
+    fun updateModel(entryId: String, modelId: String, displayName: String) {
+        _uiState.update {
+            it.copy(
+                editingModels = it.editingModels.map { entry ->
+                    if (entry.id == entryId) {
+                        entry.copy(modelId = modelId, displayName = displayName)
+                    } else {
+                        entry
+                    }
+                },
+            )
+        }
+    }
+
+    fun deleteModel(entryId: String) {
+        val state = _uiState.value
+        if (state.editingModels.size <= 1) {
+            _uiState.update { it.copy(error = "至少保留一个模型") }
+            return
+        }
+        val remaining = state.editingModels.filterNot { it.id == entryId }
+        _uiState.update {
+            it.copy(
+                editingModels = remaining,
+                editingModelId = if (state.editingModelId == entryId) {
+                    remaining.first().id
+                } else {
+                    state.editingModelId
+                },
+                error = null,
+            )
+        }
+    }
+
+    fun selectModel(entryId: String) {
+        _uiState.update { it.copy(editingModelId = entryId) }
     }
 
     /** 取消编辑：重新载入当前 profile 的已保存值。 */
@@ -102,6 +175,8 @@ class AiSettingsViewModel(application: Application) : AndroidViewModel(applicati
                     keyMasked = masked,
                     profiles = profiles,
                     activeProfileId = active.id,
+                    editingModels = active.models,
+                    editingModelId = active.currentEntry?.id,
                     probe = null,
                     models = emptyList(),
                     error = null,
@@ -136,6 +211,8 @@ class AiSettingsViewModel(application: Application) : AndroidViewModel(applicati
                     keyMasked = masked,
                     activeProfileId = id,
                     profiles = profiles,
+                    editingModels = target.models,
+                    editingModelId = target.currentEntry?.id,
                     probe = null,
                     models = emptyList(),
                     error = null,
@@ -157,6 +234,8 @@ class AiSettingsViewModel(application: Application) : AndroidViewModel(applicati
                 profiles = profileStore.list(),
                 activeProfileId = id,
                 keyMasked = null,
+                editingModels = profileStore.active().models,
+                editingModelId = profileStore.active().currentEntry?.id,
                 notice = "已新建「$name」，请填写 Key",
                 probe = null,
                 models = emptyList(),
@@ -180,6 +259,8 @@ class AiSettingsViewModel(application: Application) : AndroidViewModel(applicati
                     activeProfileId = active.id,
                     config = active.applyTo(it.config),
                     keyMasked = masked,
+                    editingModels = active.models,
+                    editingModelId = active.currentEntry?.id,
                     notice = "已删除模型",
                     error = null,
                 )
@@ -263,8 +344,14 @@ class AiSettingsViewModel(application: Application) : AndroidViewModel(applicati
             onSaved(false)
             return
         }
-        if (config.model.isBlank() || config.baseUrl.isBlank()) {
-            _uiState.update { it.copy(config = config, error = "Base URL 与模型不能为空") }
+        if (config.baseUrl.isBlank()) {
+            _uiState.update { it.copy(config = config, error = "Base URL 不能为空") }
+            onSaved(false)
+            return
+        }
+        val models = _uiState.value.editingModels.filter { it.modelId.isNotBlank() }
+        if (models.isEmpty()) {
+            _uiState.update { it.copy(config = config, error = "至少填写一个模型 ID") }
             onSaved(false)
             return
         }
@@ -277,6 +364,8 @@ class AiSettingsViewModel(application: Application) : AndroidViewModel(applicati
                 it.copy(
                     config = config,
                     profiles = profileStore.list(),
+                    editingModels = profileStore.active().models,
+                    editingModelId = profileStore.active().currentEntry?.id,
                     notice = "设置已保存",
                     error = null,
                 )

@@ -61,6 +61,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.rounded.Close
 
 /** Material 风格实现，与 Miuix 版共用 [AiSettingsViewModel]。 */
 @Composable
@@ -118,7 +120,10 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
                 onPreset = viewModel::selectPreset,
                 onProtocol = viewModel::selectProtocol,
                 onBaseUrl = viewModel::setBaseUrl,
-                onModel = viewModel::setModel,
+                onModelChange = viewModel::updateModel,
+                onModelDelete = viewModel::deleteModel,
+                onModelAdd = viewModel::addModel,
+                onModelSelect = viewModel::selectModel,
                 onFetchModels = viewModel::fetchModels,
                 onSaveKey = {
                     viewModel.saveKey(keyInput)
@@ -126,6 +131,7 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
                 },
                 onSave = { viewModel.save() },
                 onCancel = viewModel::resetToSaved,
+                onAddProvider = viewModel::addProfile,
             )
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -303,7 +309,7 @@ private fun ModelListCardMaterial(
                     Column(Modifier.weight(1f)) {
                         Text(profile.name, style = MaterialTheme.typography.bodyMedium)
                         Text(
-                            "${profile.protocol.label} · ${profile.model}",
+                            "${profile.protocol.label} · ${profile.currentModelId}",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -385,13 +391,18 @@ private fun ModelConfigCardMaterial(
     onPreset: (AiPreset) -> Unit,
     onProtocol: (AiProtocol) -> Unit,
     onBaseUrl: (String) -> Unit,
-    onModel: (String) -> Unit,
+    onModelChange: (String, String, String) -> Unit,
+    onModelDelete: (String) -> Unit,
+    onModelAdd: () -> Unit,
+    onModelSelect: (String) -> Unit,
     onFetchModels: () -> Unit,
     onSaveKey: () -> Unit,
     onSave: () -> Unit,
     onCancel: () -> Unit,
+    onAddProvider: () -> Unit,
 ) {
     var customApi by remember { mutableStateOf(false) }
+    val activeName = state.profiles.firstOrNull { it.id == state.activeProfileId }?.name.orEmpty()
     Card(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -489,20 +500,11 @@ private fun ModelConfigCardMaterial(
                 Spacer(Modifier.height(12.dp))
             }
 
-            val activeName = state.profiles.firstOrNull { it.id == state.activeProfileId }?.name.orEmpty()
             OutlinedTextField(
                 value = activeName,
                 onValueChange = onNameChange,
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text(stringResource(R.string.ai_model_name)) },
-                singleLine = true,
-            )
-            Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
-                value = state.config.model,
-                onValueChange = onModel,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text(stringResource(R.string.ai_model_id)) },
                 singleLine = true,
             )
 
@@ -524,48 +526,70 @@ private fun ModelConfigCardMaterial(
                     )
                 }
             }
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .dashedBorderMaterial(MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
-                    .padding(14.dp),
-            ) {
-                if (state.models.isEmpty()) {
-                    Text(
-                        stringResource(R.string.ai_model_catalog_empty),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+            Text(
+                stringResource(R.string.ai_model_catalog_empty),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 6.dp),
+            )
+
+            state.editingModels.forEach { entry ->
+                val selected = entry.id == state.editingModelId
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(
+                            if (selected) {
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.06f)
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                            },
+                            RoundedCornerShape(10.dp),
+                        )
+                        .clickable { onModelSelect(entry.id) }
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("≡", style = MaterialTheme.typography.labelSmall)
+                    Spacer(Modifier.width(6.dp))
+                    OutlinedTextField(
+                        value = entry.modelId,
+                        onValueChange = { onModelChange(entry.id, it, entry.displayName.orEmpty()) },
+                        modifier = Modifier.weight(1.2f),
+                        placeholder = { Text(stringResource(R.string.ai_model_id)) },
+                        singleLine = true,
                     )
-                } else {
-                    Row(
-                        modifier = Modifier.horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        state.models.forEach { model ->
-                            FilterChip(
-                                selected = model == state.config.model,
-                                onClick = { onModel(model) },
-                                label = { Text(model) },
-                            )
-                        }
+                    Spacer(Modifier.width(6.dp))
+                    OutlinedTextField(
+                        value = entry.displayName.orEmpty(),
+                        onValueChange = { onModelChange(entry.id, entry.modelId, it) },
+                        modifier = Modifier.weight(1f),
+                        placeholder = { Text(stringResource(R.string.ai_model_display_name)) },
+                        singleLine = true,
+                    )
+                    IconButton(onClick = { onModelDelete(entry.id) }) {
+                        Icon(
+                            Icons.Rounded.Close,
+                            contentDescription = stringResource(R.string.ai_model_delete),
+                            modifier = Modifier.size(16.dp),
+                        )
                     }
                 }
-                state.modelsError?.let {
-                    Text(
-                        it,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
+                Spacer(Modifier.height(6.dp))
             }
 
-            Spacer(Modifier.height(12.dp))
+            TextButton(onClick = onModelAdd) {
+                Text(stringResource(R.string.ai_model_new))
+            }
+
+            Spacer(Modifier.height(6.dp))
             Text(
                 stringResource(R.string.ai_settings_key_hint),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(4.dp))
             Text(
                 state.keyMasked?.let { "已保存：$it" } ?: stringResource(R.string.ai_settings_not_saved),
                 style = MaterialTheme.typography.labelSmall,
@@ -598,6 +622,22 @@ private fun ModelConfigCardMaterial(
                 Button(onClick = onSave, modifier = Modifier.weight(1f)) {
                     Text(stringResource(R.string.ai_model_save))
                 }
+            }
+
+            Spacer(Modifier.height(12.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .dashedBorderMaterial(MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+                    .clickable(onClick = onAddProvider)
+                    .padding(vertical = 14.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    stringResource(R.string.ai_model_provider_add),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
             }
         }
     }
@@ -640,7 +680,7 @@ private fun ModelPickerDialogMaterial(
                             Column(Modifier.weight(1f)) {
                                 Text(profile.name, style = MaterialTheme.typography.bodyMedium)
                                 Text(
-                                    "${profile.protocol.label} · ${profile.model}",
+                                    "${profile.protocol.label} · ${profile.currentModelId}",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
