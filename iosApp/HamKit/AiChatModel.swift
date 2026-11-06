@@ -138,13 +138,14 @@ final class AiChatModel: ObservableObject {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isStreaming else { return }
 
-        let settings = AiSettingsStore.shared.settings
-        if settings.baseUrl.isEmpty || settings.model.isEmpty {
+        let store = AiSettingsStore.shared
+        let profile = store.activeProfile
+        if profile.baseUrl.isEmpty || profile.currentModelId.isEmpty {
             errorText = "请先在「AI 设置」里填写服务商与模型"
             return
         }
-        if AiSettingsStore.shared.apiKey.isEmpty {
-            errorText = "请先在「AI 设置」里填写 API Key"
+        if store.apiKey.isEmpty {
+            errorText = "请先在「AI 设置」里为「\(profile.name)」填写 API Key"
             return
         }
 
@@ -152,7 +153,7 @@ final class AiChatModel: ObservableObject {
         messages.append(ChatMessageVM(role: .user, text: trimmed))
         kotlinMessages.append(AiBridge.shared.userMessage(text: trimmed))
 
-        startTurn(settings: settings)
+        startTurn(settings: store.settings)
     }
 
     private func startTurn(settings: AiSettings) {
@@ -280,7 +281,7 @@ final class AiChatModel: ObservableObject {
     }
 
     private func persistIfNeeded() {
-        guard AiSettingsStore.shared.settings.saveHistory, !kotlinMessages.isEmpty else { return }
+        guard AiSettingsStore.shared.global.saveHistory, !kotlinMessages.isEmpty else { return }
         AiHistoryStore.shared.save(id: sessionId, messages: kotlinMessages)
     }
 
@@ -380,7 +381,7 @@ private final class ConfirmingToolHost: NSObject, AiToolHost {
     func execute(call: AiToolCall, callback: @escaping (AiToolResult) -> Void) {
         let spec = box.specs().first { $0.name == call.name }
         let needsConfirm = spec?.risk.name == "SIDE_EFFECT" &&
-            AiSettingsStore.shared.settings.confirmSideEffects
+            AiSettingsStore.shared.global.confirmSideEffects
 
         guard needsConfirm, let model = model else {
             box.execute(call: call, callback: callback)

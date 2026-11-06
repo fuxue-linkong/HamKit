@@ -14,6 +14,7 @@ struct AiAssistantView: View {
     @State private var input = ""
     @State private var showHistory = false
     @State private var showSettings = false
+    @State private var showModelPicker = false
     @State private var shareURL: URL?
     @FocusState private var inputFocused: Bool
 
@@ -73,9 +74,31 @@ struct AiAssistantView: View {
                 AiHistoryView()
             }
         }
+        .sheet(isPresented: $showModelPicker) {
+            AiModelSwitchView(
+                store: settingsStore,
+                isStreaming: chat.isStreaming,
+                onManage: {
+                    showModelPicker = false
+                    // 等当前 sheet 完成收起再呈现设置，避免 presentation 冲突。
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        showSettings = true
+                    }
+                }
+            )
+        }
         .sheet(isPresented: $showSettings) {
             NavigationStack {
-                AiSettingsView()
+                AiSettingsView(isModal: true)
+            }
+        }
+        .onAppear {
+            // CI 截图用：直接弹出模型切换面板（正常启动不会命中）
+            if ProcessInfo.processInfo.arguments.contains("-smokeAIModels") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { showModelPicker = true }
+            }
+            if ProcessInfo.processInfo.arguments.contains("-smokeAISettingsSheet") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { showSettings = true }
             }
         }
         .sheet(item: Binding(
@@ -185,37 +208,78 @@ struct AiAssistantView: View {
 
     // MARK: - 输入栏
 
+    /// 单容器输入栏：文本在上、附件/模型切换/发送在下一行（对齐 miuix 最新版）。
     private var inputBar: some View {
-        HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 4) {
             TextField("问点什么…", text: $input, axis: .vertical)
-                .lineLimit(1...5)
+                .lineLimit(1...6)
                 .textFieldStyle(.plain)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 9)
-                .background(Color.secondary.opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .focused($inputFocused)
                 .disabled(chat.isStreaming)
+                .padding(.horizontal, 12)
+                .padding(.top, 10)
 
-            Button {
-                if chat.isStreaming {
-                    chat.stop()
-                } else {
-                    let text = input
-                    input = ""
-                    chat.send(text)
+            HStack(spacing: 8) {
+                Button {
+                    showModelPicker = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 10))
+                        Text(modelLabel)
+                            .font(.caption)
+                            .lineLimit(1)
+                            .frame(maxWidth: 190, alignment: .leading)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 9, weight: .semibold))
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Color.secondary.opacity(0.10))
+                    .clipShape(Capsule())
                 }
-            } label: {
-                Image(systemName: chat.isStreaming ? "stop.circle.fill" : "arrow.up.circle.fill")
-                    .font(.system(size: 30))
-                    .foregroundStyle(canSend ? Color.accentColor : Color.secondary.opacity(0.5))
+                .buttonStyle(.plain)
+                .accessibilityLabel("切换模型")
+
+                Spacer()
+
+                Button {
+                    if chat.isStreaming {
+                        chat.stop()
+                    } else {
+                        let text = input
+                        input = ""
+                        chat.send(text)
+                    }
+                } label: {
+                    Image(systemName: chat.isStreaming ? "stop.circle.fill" : "arrow.up.circle.fill")
+                        .font(.system(size: 30))
+                        .foregroundStyle(canSend || chat.isStreaming ? Color.accentColor : Color.secondary.opacity(0.5))
+                }
+                .disabled(!canSend && !chat.isStreaming)
+                .accessibilityLabel(chat.isStreaming ? "停止生成" : "发送")
             }
-            .disabled(!canSend && !chat.isStreaming)
-            .accessibilityLabel(chat.isStreaming ? "停止生成" : "发送")
+            .padding(.horizontal, 8)
+            .padding(.bottom, 8)
         }
+        .background(Color.secondary.opacity(0.10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(
+                    inputFocused ? Color.accentColor : Color.secondary.opacity(0.18),
+                    lineWidth: 1
+                )
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(.bar)
+    }
+
+    private var modelLabel: String {
+        let model = settingsStore.activeProfile.currentModelId
+        return model.isEmpty ? "选择模型" : model
     }
 
     private var canSend: Bool {
@@ -456,6 +520,115 @@ struct AiHistoryView: View {
                 pendingDelete = nil
             }
             Button("取消", role: .cancel) { pendingDelete = nil }
+        }
+    }
+}
+
+// MARK: - 模型切换
+
+/// 按提供商分组、可搜索的模型切换面板（对齐 miuix 最新版）。
+///
+/// 生成中仍可打开面板查看，但不能切换；底部提供「管理模型…」跳设置页。
+private struct AiModelSwitchView: View {
+
+    @ObservedObject var store: AiSettingsStore
+    let isStreaming: Bool
+    let onManage: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var query = ""
+
+    private struct ModelGroup: Identifiable {
+        let profile: AiProfile
+        let entries: [AiModelEntry]
+        var id: String { profile.id }
+    }
+
+    private var groups: [ModelGroup] {
+        store.profiles.compactMap { profile in
+            let entries = profile.models.filter { entry in
+                query.isEmpty ||
+                    profile.name.localizedCaseInsensitiveContains(query) ||
+                    entry.modelId.localizedCaseInsensitiveContains(query) ||
+                    (entry.displayName ?? "").localizedCaseInsensitiveContains(query)
+            }
+            return entries.isEmpty ? nil : ModelGroup(profile: profile, entries: entries)
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if groups.isEmpty {
+                    Text("没有匹配的模型")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(groups) { group in
+                    Section(group.profile.name) {
+                        ForEach(group.entries) { entry in
+                            Button {
+                                switchTo(profileId: group.profile.id, modelId: entry.id)
+                            } label: {
+                                row(entry, profile: group.profile)
+                            }
+                            .disabled(isStreaming)
+                        }
+                    }
+                }
+
+                Section {
+                    Button {
+                        onManage()
+                        dismiss()
+                    } label: {
+                        Label("管理模型…", systemImage: "gearshape")
+                    }
+                }
+
+                if isStreaming {
+                    Section {
+                        Label("生成中不能切换模型", systemImage: "exclamationmark.triangle")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                }
+            }
+            .searchable(text: $query, prompt: "搜索模型…")
+            .navigationTitle("模型")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("关闭") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func row(_ entry: AiModelEntry, profile: AiProfile) -> some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.label)
+                    .foregroundStyle(.primary)
+                if entry.label != entry.modelId {
+                    Text(entry.modelId)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            if store.activeProfileId == profile.id,
+               profile.currentEntry?.id == entry.id {
+                Image(systemName: "checkmark")
+                    .foregroundStyle(Color.accentColor)
+            }
+        }
+    }
+
+    private func switchTo(profileId: String, modelId: String) {
+        guard !isStreaming else { return }
+        if store.switchModel(profileId: profileId, modelId: modelId) {
+            dismiss()
         }
     }
 }
