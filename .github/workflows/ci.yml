@@ -320,126 +320,10 @@ jobs:
             echo "❌ CI build failed, download build-reports artifact for details." >> "$GITHUB_STEP_SUMMARY"
           fi
 
-  # ─────────────────────────────────────────────────────────────
-  # 手环端 Vela 快应用：构建 rpk
-  #
-  # 独立 job 而非并入上面的 Gradle job：两边工具链完全不同（Node/aiot vs JDK/Gradle），
-  # 且手环构建失败不应该连累 APK 发布。
-  #
-  # 签名很重要：手环与手机通过 system.interconnect 通信时系统会校验两端签名，
-  # rpk 必须与 APK 用同一个 keystore 签，否则手环装上去也连不上手机。
-  # 配了 KEYSTORE_BASE64 就产出 release 签名的 rpk，否则退回 toolkit 默认测试证书
-  # （能装、能看 UI，但连不上 App）。
-  # ─────────────────────────────────────────────────────────────
-  build-wearable:
-    name: Build Wearable RPK
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    if: ${{ github.event_name != 'push' || github.event.head_commit.author.name != 'github-actions[bot]' }}
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: wearable/package-lock.json
-
-      - name: Install dependencies
-        working-directory: wearable
-        run: npm ci --no-audit --no-fund
-
-      # 用与 APK 相同的 release keystore 生成 rpk 签名（未配置 secrets 时跳过）
-      - name: Prepare rpk signature from release keystore
-        id: sign
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "::notice title=rpk 使用测试证书::未配置 KEYSTORE_BASE64，本次 rpk 无法与 App 互联"
-            echo "signed=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          mkdir -p signing
-          echo "$KEYSTORE_BASE64" | tr -d '\n\r ' | base64 -d > signing/release.keystore
-          chmod +x scripts/prepare-wearable-sign.sh
-          KEYSTORE_PATH="$PWD/signing/release.keystore" \
-            KEYSTORE_PASSWORD="$KEYSTORE_PASSWORD" \
-            KEY_ALIAS="$KEY_ALIAS" \
-            KEY_PASSWORD="$KEY_PASSWORD" \
-            OUT_DIR=wearable/sign/release \
-            ./scripts/prepare-wearable-sign.sh
-          echo "signed=true" >> "$GITHUB_OUTPUT"
-
-      - name: Build rpk (release, signed with app keystore)
-        if: steps.sign.outputs.signed == 'true'
-        working-directory: wearable
-        run: npm run release
-
-      - name: Build rpk (debug, toolkit test certificate)
-        if: steps.sign.outputs.signed != 'true'
-        working-directory: wearable
-        run: npm run build
-
-      # 守住两条不能回归的约束：包名必须是 App 的 applicationId，页面都要打进包里
-      - name: Inspect rpk
-        working-directory: wearable
-        run: |
-          set -euo pipefail
-          ls -l dist
-          RPK=$(ls dist/*.rpk | head -1)
-          echo "rpk: $RPK"
-          unzip -l "$RPK"
-          unzip -p "$RPK" manifest.json > /tmp/manifest.json
-          python3 - <<'PY'
-          import json
-          m = json.load(open('/tmp/manifest.json'))
-          assert m['package'] == 'com.example.hamkit', f"package 必须是 App 包名，实际 {m['package']}"
-          features = {f['name'] for f in m['features']}
-          for need in ('system.interconnect', 'system.vibrator'):
-              assert need in features, f"缺少 feature: {need}"
-          print('package =', m['package'], '| versionName =', m['versionName'])
-          PY
-          # 注意：不要写成 `unzip -l | grep -q`，grep -q 提前退出会让 unzip 收到 SIGPIPE，
-          # 配合 pipefail 会把成功判成失败。先取回整份清单再判断。
-          LISTING=$(unzip -l "$RPK")
-          for page in pages/index/index.js pages/alert/index.js; do
-            case "$LISTING" in
-              *"$page"*) ;;
-              *) echo "::error::rpk 缺少页面 $page"; exit 1 ;;
-            esac
-          done
-          echo "rpk 校验通过"
-
-      - name: Upload rpk
-        uses: actions/upload-artifact@v4
-        with:
-          name: wearable-rpk-${{ github.run_id }}
-          path: wearable/dist/*.rpk
-          retention-days: 14
-          if-no-files-found: error
-
-      - name: Publish wearable summary
-        if: always()
-        run: |
-          echo "### 手环 rpk" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Item | Value |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|------|-------|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Signing | ${{ steps.sign.outputs.signed == 'true' && 'release keystore（可与 App 互联）' || 'toolkit 测试证书（仅 UI 预览）' }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Artifact | \`wearable-rpk-${{ github.run_id }}\` |" >> "$GITHUB_STEP_SUMMARY"
-
   # 状态通知：汇总构建结果
   notify:
     name: Status Notification
-    needs: [test-and-build, build-wearable]
+    needs: [test-and-build]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -453,19 +337,17 @@ jobs:
           echo "| Job | Status |" >> "$GITHUB_STEP_SUMMARY"
           echo "|------|------|" >> "$GITHUB_STEP_SUMMARY"
           echo "| Test & Build Release | ${{ needs.test-and-build.result }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Build Wearable RPK | ${{ needs.build-wearable.result }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
           # cancelled 不属于「构建失败」：常见于新 push 顶掉旧 run（concurrency 取消），
           # 此时上游 job 的实质步骤往往已全部成功，若判成失败会让整个 workflow 假红。
           # 真正的失败只可能是 failure，其余（success / skipped / cancelled）都视为未失败。
           result="${{ needs.test-and-build.result }}"
-          wearable="${{ needs.build-wearable.result }}"
-          if [ "$result" = "failure" ] || [ "$wearable" = "failure" ]; then
+          if [ "$result" = "failure" ]; then
             echo "❌ Overall: failure" >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
-          if [ "$result" = "cancelled" ] || [ "$wearable" = "cancelled" ]; then
+          if [ "$result" = "cancelled" ]; then
             echo "⚠️ Overall: cancelled (被新的推送取消，非构建失败)" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "✅ Overall: success" >> "$GITHUB_STEP_SUMMARY"

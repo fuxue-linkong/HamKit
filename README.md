@@ -101,12 +101,14 @@
 卫星过境（AOS）前 **60 秒**，把提醒推到小米手环：全屏 `AOS 00:59` 倒计时 + 卫星名 + 长振动，
 **上滑关闭**并回执给手机。
 
-- 手环端是独立 Vela 快应用，源码在 [`wearable/`](wearable/README.md)，用 [AstroBox](https://astrobox.online/) 安装
+- 手环端是独立 Vela 快应用，源码与构建在独立分支
+  [`wearable-app`](https://github.com/fuxue-linkong/HamKit/tree/wearable-app)（该分支根目录即工程，
+  推代码即自动出 rpk），用 [AstroBox](https://astrobox.online/) 安装
 - 手机端通过小米穿戴开放能力 `xms-wearable-lib`（`app/libs/xms-wearable-lib_1.4_release.aar`，
   取自 open-vela 官方示例仓库）与手环通信
-- rpk 的包名与签名必须与 APK 一致，脚本：[`scripts/prepare-wearable-sign.sh`](scripts/prepare-wearable-sign.sh)
-- 开关位置：设置 → 日程提醒 → **同步到手环**
-- 手环应用不在前台时，自动退化为手环系统通知兜底
+- rpk 的包名与签名必须与 APK 一致（`com.example.hamkit` + 同一 keystore），否则手环拒连
+- 开关位置：设置 → **手环提醒**
+- 快应用不在前台时，自动 `launchWearApp` 拉起；仍不可达则退化为手环系统通知兜底
 
 ## 应用截图
 

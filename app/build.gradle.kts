@@ -294,8 +294,9 @@ dependencies {
     // WorkManager: 用于日程提醒的每日刷新周期任务
     implementation(libs.androidx.work.runtime.ktx)
 
-    // 小米穿戴开放能力（手环快应用互联）：本地 AAR，来自 open-vela 官方示例仓库
-    // wearable/interconnect_image_demo/android_program/libs/xms-wearable-lib_1.4_release.aar
+    // 小米穿戴开放能力（手环快应用互联）：本地 AAR，取自 open-vela 官方示例仓库
+    // packages_apps/wearable/interconnect_image_demo/android_program/libs/ 下的同名文件。
+    // 手环端快应用源码不在本仓库，见独立分支 wearable-app。
     // 用本地文件依赖而不是 maven：该库没有公开发布坐标。
     implementation(files("libs/xms-wearable-lib_1.4_release.aar"))
 
