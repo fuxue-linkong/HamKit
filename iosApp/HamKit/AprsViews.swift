@@ -283,8 +283,7 @@ struct AprsMapView: View {
                         Image(systemName: "scope")
                             .font(.system(size: 15, weight: .semibold))
                             .padding(10)
-                            .background(.thinMaterial)
-                            .clipShape(Circle())
+                            .liquidGlassCircle(interactive: true)
                     }
                     .padding()
                 }

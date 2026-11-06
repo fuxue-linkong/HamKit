@@ -82,7 +82,7 @@ iosApp/ (SwiftUI)                         shared/ (Kotlin Multiplatform)
 | APRS | `AprsClient.swift`、`AprsViews.swift` |
 | QSO | `QsoStore.swift`、`QsoViews.swift` |
 | AI 助手 | `AiChatModel.swift`、`AiTransport.swift`、`AiFacade.swift`、`AiViews.swift`、`AiSettingsView.swift`、`AiSettingsStore.swift` |
-| 设置 / 主题 / 合规 | `SettingsView.swift`、`ToolsView.swift`、`MiuixTheme.swift`、`PrivacyConsentView.swift` |
+| 设置 / 主题 / 合规 | `SettingsView.swift`、`ToolsView.swift`、`MiuixTheme.swift`、`LiquidGlass.swift`、`PrivacyConsentView.swift` |
 | 平台能力 | `LocationProvider.swift`、`Networking.swift`、`AudioSession.swift`、`NotificationManager.swift`、`BackgroundReminderScheduler.swift` |
 | 缓存 | `TleDiskCache.swift`、`TransmitterDiskCache.swift` |
 
@@ -92,7 +92,7 @@ iosApp/ (SwiftUI)                         shared/ (Kotlin Multiplatform)
 
 前置（必须在 macOS 上）：
 
-- macOS 14+ / Xcode 16+
+- macOS 14+ / Xcode 16+（要启用 iOS 26 的 Liquid Glass 需要 Xcode 26+；旧版 Xcode 仍可构建，但会退回半透明材质）
 - JDK **21**（`brew install --cask temurin@21`）
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen)：`brew install xcodegen`
 - 首次构建会下载 Kotlin/Native 编译器与 Apple 平台依赖（约 1–2 GB）
@@ -114,6 +114,25 @@ Xcode 的 Run Script 会执行 `./gradlew :shared:embedAndSignAppleFrameworkForX
 ./gradlew :shared:linkDebugFrameworkIosSimulatorArm64
 # 产物：shared/build/bin/iosSimulatorArm64/debugFramework/Shared.framework
 ```
+
+### Liquid Glass（iOS 26）
+
+iOS 26 的新外观只对**用 iOS 26 SDK 构建**的应用生效；而且系统只会处理
+`TabView` / `NavigationStack` 等标准容器自带的栏，**UIKit / SwiftUI 不会给自定义视图
+自动注入 Liquid Glass**。本项目的处理方式：
+
+- **标准栏**：交给系统。用 Xcode 26+ 构建后，底部标签栏、导航栏自动获得 Liquid Glass，
+  不需要额外代码；
+- **自定义浮层**：地图信息卡、「回到卫星」「框选全部」等悬浮按钮，显式调用
+  `LiquidGlass.swift` 里的 `.liquidGlass(...)` / `.liquidGlassCircle(...)`；
+- **兼容**：iOS < 26、用旧 SDK（Swift < 6.2）构建，或用户在
+  「设置 → 主题配色 → 液态玻璃」里关掉开关时，自动退回 `.ultraThinMaterial`，
+  旧系统与新系统都能正常显示；
+- **不要**在 `Info.plist` 里加 `UIDesignRequiresCompatibility`——那个键会让 App
+  整体退回 iOS 18 的旧外观，等于主动放弃 Liquid Glass。
+
+用 Xcode 16 构建也能通过编译（原生 API 由 `#if compiler(>=6.2)` 保护），但产物里
+只有材质兜底。CI 会选最新稳定版 Xcode，确保分发的未签名 IPA 带原生玻璃。
 
 ### 高德 Web Key
 

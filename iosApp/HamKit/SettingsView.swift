@@ -310,6 +310,7 @@ struct PermissionsView: View {
 struct ColorPaletteView: View {
 
     @ObservedObject private var theme = ThemeStore.shared
+    @ObservedObject private var glass = LiquidGlassSettingsStore.shared
 
     private let columns = [GridItem(.adaptive(minimum: 68), spacing: 12)]
 
@@ -364,6 +365,19 @@ struct ColorPaletteView: View {
                 Text("主题色")
             } footer: {
                 Text("主题色会应用到按钮、链接、选中态与分类高亮。Android 端的动态取色（Monet）在 iOS 上没有对应 API，因此这里用固定色板。")
+            }
+
+            // 原生 Liquid Glass 只存在于 iOS 26+；用旧 SDK 构建时
+            // LiquidGlass.isAvailable 为 false，不展示无效开关。
+            if LiquidGlass.isAvailable {
+                Section {
+                    Toggle("液态玻璃", isOn: $glass.enabled)
+                        .tint(MiuixTheme.primary)
+                } header: {
+                    Text("液态玻璃")
+                } footer: {
+                    Text("为地图浮层与悬浮按钮启用 iOS 26 原生 Liquid Glass。关闭后改用半透明材质。系统自带的标签栏 / 导航栏由系统外观控制，不受此开关影响。")
+                }
             }
 
             Section {

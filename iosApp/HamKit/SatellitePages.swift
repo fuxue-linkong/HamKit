@@ -292,8 +292,7 @@ struct LocationDetailView: View {
                         Image(systemName: "scope")
                             .font(.system(size: 13, weight: .semibold))
                             .padding(8)
-                            .background(.thinMaterial)
-                            .clipShape(Circle())
+                            .liquidGlassCircle(interactive: true)
                     }
                     .padding(10)
                 }

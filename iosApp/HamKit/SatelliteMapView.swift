@@ -71,8 +71,7 @@ struct SatelliteMapView: View {
                             .foregroundStyle(.secondary)
                     }
                     .padding(10)
-                    .background(.thinMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .liquidGlass(cornerRadius: 10)
                     .padding()
                 }
                 .overlay(alignment: .topTrailing) {
@@ -83,8 +82,7 @@ struct SatelliteMapView: View {
                             .labelStyle(.iconOnly)
                             .font(.system(size: 15, weight: .semibold))
                             .padding(10)
-                            .background(.thinMaterial)
-                            .clipShape(Circle())
+                            .liquidGlassCircle(interactive: true)
                     }
                     .padding()
                 }

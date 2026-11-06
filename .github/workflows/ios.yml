@@ -66,8 +66,25 @@ jobs:
             ~/.gradle/wrapper
           key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}-v1
 
+      - name: Select latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          # iOS 26 Liquid Glass 只有在用 iOS 26 SDK 构建时才会生效；
+          # 旧 Xcode 仍能编译（Swift 侧有 #if compiler 保护），但会退回材质。
+          xcode-version: latest-stable
+
       - name: Show Xcode version
-        run: xcodebuild -version
+        run: xcodebuild -version && xcrun --sdk iphonesimulator --show-sdk-version
+
+      - name: Verify iOS 26+ SDK (Liquid Glass)
+        run: |
+          sdk=$(xcrun --sdk iphoneos --show-sdk-version)
+          major=${sdk%%.*}
+          echo "iOS SDK: $sdk"
+          if [ "$major" -lt 26 ]; then
+            echo "error: 需要 iOS 26+ SDK 才能产出原生 Liquid Glass（当前 $sdk）。请升级 CI 的 Xcode。" >&2
+            exit 1
+          fi
 
       - name: Link Shared.framework (Kotlin/Native)
         run: ./gradlew :shared:linkDebugFrameworkIosSimulatorArm64 --stacktrace --console=plain
