@@ -450,8 +450,34 @@ class AiSettingsViewModel(application: Application) : AndroidViewModel(applicati
             }
             AiModelList.fetch(config, apiKey)
                 .onSuccess { models ->
-                    _uiState.update {
-                        it.copy(fetchingModels = false, models = models, modelsError = null)
+                    _uiState.update { state ->
+                        // 自动填充：先填已有的空条目，再追加新模型（保留已有显示名称与选中）
+                        val working = state.editingModels.toMutableList()
+                        val pending = models.toMutableList()
+                        working.indices
+                            .filter { working[it].modelId.isBlank() }
+                            .forEach { index ->
+                                val next = pending.firstOrNull() ?: return@forEach
+                                working[index] = working[index].copy(modelId = next)
+                                pending.remove(next)
+                            }
+                        val existingIds = working.map { it.modelId }.toSet()
+                        pending.filter { it !in existingIds }.forEach { modelId ->
+                            working += AiModelEntry(
+                                id = "m_" + UUID.randomUUID().toString().take(8),
+                                modelId = modelId,
+                            )
+                        }
+                        val selected = state.editingModelId?.takeIf { id -> working.any { it.id == id } }
+                            ?: working.firstOrNull()?.id
+                        state.copy(
+                            fetchingModels = false,
+                            models = models,
+                            modelsError = null,
+                            editingModels = working,
+                            editingModelId = selected,
+                            notice = "已获取 ${models.size} 个模型",
+                        )
                     }
                 }
                 .onFailure { throwable ->
