@@ -113,6 +113,8 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.Build
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.History
@@ -145,6 +147,9 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.FileDownload
 import androidx.compose.ui.text.style.TextOverflow
 import java.util.Calendar
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 
 /** Material 风格实现，与 Miuix 版共用 [AiAssistantViewModel]。 */
 @Composable
@@ -173,7 +178,6 @@ fun AiAssistantScreenMaterial(bottomInnerPadding: Dp = 0.dp) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var showHistory by remember { mutableStateOf(false) }
-    var showModels by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<AiSessionSummary?>(null) }
     var pendingExport by remember { mutableStateOf<String?>(null) }
     val exportPicker = rememberLauncherForActivityResult(
@@ -203,16 +207,6 @@ fun AiAssistantScreenMaterial(bottomInnerPadding: Dp = 0.dp) {
             TopAppBar(
                 title = { Text(stringResource(R.string.ai_title), fontWeight = FontWeight.SemiBold) },
                 actions = {
-                    IconButton(
-                        onClick = { viewModel.reloadConfig(); showModels = true },
-                        modifier = Modifier.clip(CircleShape),
-                    ) {
-                        Icon(
-                            Icons.Rounded.SwapHoriz,
-                            contentDescription = stringResource(R.string.ai_model_switch),
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    }
                     IconButton(
                         onClick = { viewModel.refreshSessions(); showHistory = true },
                         modifier = Modifier.clip(CircleShape),
@@ -294,17 +288,6 @@ fun AiAssistantScreenMaterial(bottomInnerPadding: Dp = 0.dp) {
                     onDeny = { viewModel.resolveConfirm(false) },
                 )
             }
-            if (showModels) {
-                AiModelPickerMaterial(
-                    profiles = state.profiles,
-                    activeId = state.activeProfileId,
-                    onPick = { id ->
-                        viewModel.switchProfile(id)
-                        showModels = false
-                    },
-                    onDismiss = { showModels = false },
-                )
-            }
             if (showHistory) {
                 AiHistorySheetMaterial(
                     sessions = state.sessions,
@@ -350,6 +333,10 @@ fun AiAssistantScreenMaterial(bottomInnerPadding: Dp = 0.dp) {
                 onRemoveAttachment = viewModel::removeAttachment,
                 onSend = viewModel::send,
                 onStop = viewModel::stop,
+                profiles = state.profiles,
+                activeProfileId = state.activeProfileId,
+                onSwitchProfile = viewModel::switchProfile,
+                onOpenSettings = { navigator.push(Route.AiSettings) },
             )
         }
     }
@@ -667,22 +654,30 @@ private fun ComposerMaterial(
     input: String,
     streaming: Boolean,
     attachments: List<AiAttachment>,
+    profiles: List<AiModelProfile>,
+    activeProfileId: String,
     onInputChange: (String) -> Unit,
     onPickFiles: () -> Unit,
     onRemoveAttachment: (String) -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit,
+    onSwitchProfile: (String) -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val canSend = (input.isNotBlank() || attachments.any { it.status == AiAttachmentStatus.READY }) &&
         attachments.none { it.status == AiAttachmentStatus.PARSING }
     var focused by remember { mutableStateOf(false) }
+    var pickerOpen by remember { mutableStateOf(false) }
+    val active = profiles.firstOrNull { it.id == activeProfileId }
+    val modelLabel = active?.model?.takeIf { it.isNotBlank() } ?: "选择模型"
+
     Column(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 8.dp)
             .background(
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                RoundedCornerShape(24.dp),
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                RoundedCornerShape(26.dp),
             )
             .border(
                 width = 1.dp,
@@ -691,7 +686,7 @@ private fun ComposerMaterial(
                 } else {
                     MaterialTheme.colorScheme.outlineVariant
                 },
-                shape = RoundedCornerShape(24.dp),
+                shape = RoundedCornerShape(26.dp),
             )
             .padding(horizontal = 10.dp, vertical = 8.dp),
     ) {
@@ -744,24 +739,49 @@ private fun ComposerMaterial(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(
-                onClick = onPickFiles,
-                modifier = Modifier.clip(CircleShape),
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f),
+                        CircleShape,
+                    )
+                    .clickable(onClick = onPickFiles),
+                contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     Icons.Rounded.Add,
                     contentDescription = stringResource(R.string.ai_attach_desc),
-                    tint = MaterialTheme.colorScheme.primary,
-                )
-            }
-            if (attachments.isEmpty()) {
-                Text(
-                    stringResource(R.string.ai_attach_hint),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
                 )
             }
             Spacer(Modifier.weight(1f))
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable { pickerOpen = true }
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    modelLabel,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.widthIn(max = 140.dp),
+                )
+                Spacer(Modifier.width(2.dp))
+                Icon(
+                    Icons.Rounded.KeyboardArrowDown,
+                    contentDescription = stringResource(R.string.ai_model_switch),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+            Spacer(Modifier.width(6.dp))
             Box(
                 modifier = Modifier
                     .size(40.dp)
@@ -789,6 +809,130 @@ private fun ComposerMaterial(
                     },
                     modifier = Modifier.size(20.dp),
                 )
+            }
+        }
+
+        if (pickerOpen) {
+            ModelPickerPopupMaterial(
+                profiles = profiles,
+                activeId = activeProfileId,
+                streaming = streaming,
+                onDismiss = { pickerOpen = false },
+                onPick = { id ->
+                    onSwitchProfile(id)
+                    pickerOpen = false
+                },
+                onManage = {
+                    pickerOpen = false
+                    onOpenSettings()
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ModelPickerPopupMaterial(
+    profiles: List<AiModelProfile>,
+    activeId: String,
+    streaming: Boolean,
+    onDismiss: () -> Unit,
+    onPick: (String) -> Unit,
+    onManage: () -> Unit,
+) {
+    var query by remember { mutableStateOf("") }
+    val filtered = profiles.filter { profile ->
+        query.isBlank() ||
+            profile.name.contains(query, ignoreCase = true) ||
+            profile.model.contains(query, ignoreCase = true)
+    }
+    Popup(
+        alignment = Alignment.BottomEnd,
+        offset = IntOffset(0, -60),
+        onDismissRequest = onDismiss,
+        properties = PopupProperties(focusable = true),
+    ) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            tonalElevation = 6.dp,
+            shadowElevation = 8.dp,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ) {
+            Column(Modifier.padding(10.dp).width(320.dp)) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text(stringResource(R.string.ai_model_search)) },
+                    singleLine = true,
+                )
+                Spacer(Modifier.height(6.dp))
+                if (filtered.isEmpty()) {
+                    Text(
+                        stringResource(R.string.ai_model_no_match),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 16.dp),
+                    )
+                } else {
+                    LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                        filtered.groupBy { it.preset.label }.forEach { (label, list) ->
+                            item(key = "header_$label") {
+                                Text(
+                                    label,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
+                                )
+                            }
+                            items(list, key = { it.id }) { profile ->
+                                val current = profile.id == activeId
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(
+                                            if (current) {
+                                                MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+                                            } else {
+                                                Color.Transparent
+                                            },
+                                        )
+                                        .clickable { if (!streaming) onPick(profile.id) }
+                                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        profile.model,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    if (current) {
+                                        Icon(
+                                            Icons.Rounded.Check,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                TextButton(onClick = onManage, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.ai_model_manage))
+                }
+                if (streaming) {
+                    Text(
+                        stringResource(R.string.ai_model_generating),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
             }
         }
     }

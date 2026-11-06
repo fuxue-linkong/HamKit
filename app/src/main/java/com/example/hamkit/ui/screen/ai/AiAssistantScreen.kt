@@ -120,6 +120,8 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.Build
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.ExpandLess
@@ -149,6 +151,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.window.DialogProperties
 import java.util.Calendar
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 
 /**
  * AI 助手主页（底部导航第 2 项）。
@@ -190,7 +195,6 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
         ActivityResultContracts.OpenMultipleDocuments(),
     ) { uris -> if (uris.isNotEmpty()) viewModel.addAttachments(uris) }
     var showHistory by remember { mutableStateOf(false) }
-    var showModels by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<AiSessionSummary?>(null) }
     var pendingExport by remember { mutableStateOf<String?>(null) }
     val exportPicker = rememberLauncherForActivityResult(
@@ -222,16 +226,6 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
             TopAppBar(
                 title = stringResource(R.string.ai_title),
                 actions = {
-                    IconButton(
-                        onClick = { viewModel.reloadConfig(); showModels = true },
-                        modifier = Modifier.clip(CircleShape),
-                    ) {
-                        Icon(
-                            Icons.Rounded.SwapHoriz,
-                            contentDescription = stringResource(R.string.ai_model_switch),
-                            tint = colorScheme.primary,
-                        )
-                    }
                     IconButton(
                         onClick = { viewModel.refreshSessions(); showHistory = true },
                         modifier = Modifier.clip(CircleShape),
@@ -312,17 +306,6 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
                     onDeny = { viewModel.resolveConfirm(false) },
                 )
             }
-            if (showModels) {
-                AiModelPickerMiuix(
-                    profiles = state.profiles,
-                    activeId = state.activeProfileId,
-                    onPick = { id ->
-                        viewModel.switchProfile(id)
-                        showModels = false
-                    },
-                    onDismiss = { showModels = false },
-                )
-            }
             if (showHistory) {
                 AiHistorySheetMiuix(
                     sessions = state.sessions,
@@ -364,6 +347,10 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
                 onRemoveAttachment = viewModel::removeAttachment,
                 onSend = viewModel::send,
                 onStop = viewModel::stop,
+                profiles = state.profiles,
+                activeProfileId = state.activeProfileId,
+                onSwitchProfile = viewModel::switchProfile,
+                onOpenSettings = { navigator.push(Route.AiSettings) },
             )
         }
     }
@@ -715,27 +702,35 @@ private fun ComposerMiuix(
     input: String,
     streaming: Boolean,
     attachments: List<AiAttachment>,
+    profiles: List<AiModelProfile>,
+    activeProfileId: String,
     onInputChange: (String) -> Unit,
     onPickFiles: () -> Unit,
     onRemoveAttachment: (String) -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit,
+    onSwitchProfile: (String) -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val canSend = (input.isNotBlank() || attachments.any { it.status == AiAttachmentStatus.READY }) &&
         attachments.none { it.status == AiAttachmentStatus.PARSING }
     var focused by remember { mutableStateOf(false) }
+    var pickerOpen by remember { mutableStateOf(false) }
+    val active = profiles.firstOrNull { it.id == activeProfileId }
+    val modelLabel = active?.model?.takeIf { it.isNotBlank() } ?: "选择模型"
+
     Column(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 8.dp)
             .background(
-                colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                RoundedCornerShape(24.dp),
+                colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                RoundedCornerShape(26.dp),
             )
             .border(
                 width = 1.dp,
-                color = if (focused) colorScheme.primary else colorScheme.onSurface.copy(alpha = 0.18f),
-                shape = RoundedCornerShape(24.dp),
+                color = if (focused) colorScheme.primary else colorScheme.onSurface.copy(alpha = 0.16f),
+                shape = RoundedCornerShape(26.dp),
             )
             .padding(horizontal = 10.dp, vertical = 8.dp),
     ) {
@@ -788,24 +783,46 @@ private fun ComposerMiuix(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(
-                onClick = onPickFiles,
-                modifier = Modifier.clip(CircleShape),
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(colorScheme.onSurface.copy(alpha = 0.06f), CircleShape)
+                    .clickable(onClick = onPickFiles),
+                contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     Icons.Rounded.Add,
                     contentDescription = stringResource(R.string.ai_attach_desc),
-                    tint = colorScheme.primary,
-                )
-            }
-            if (attachments.isEmpty()) {
-                Text(
-                    stringResource(R.string.ai_attach_hint),
-                    fontSize = 10.sp,
-                    color = colorScheme.onSurfaceVariantSummary,
+                    tint = colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.size(20.dp),
                 )
             }
             Spacer(Modifier.weight(1f))
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable { pickerOpen = true }
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    modelLabel,
+                    fontSize = 12.sp,
+                    color = colorScheme.onSurfaceVariantSummary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.widthIn(max = 140.dp),
+                )
+                Spacer(Modifier.width(2.dp))
+                Icon(
+                    Icons.Rounded.KeyboardArrowDown,
+                    contentDescription = stringResource(R.string.ai_model_switch),
+                    tint = colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+            Spacer(Modifier.width(6.dp))
             Box(
                 modifier = Modifier
                     .size(40.dp)
@@ -835,6 +852,129 @@ private fun ComposerMiuix(
                     },
                     modifier = Modifier.size(20.dp),
                 )
+            }
+        }
+
+        if (pickerOpen) {
+            ModelPickerPopupMiuix(
+                profiles = profiles,
+                activeId = activeProfileId,
+                streaming = streaming,
+                onDismiss = { pickerOpen = false },
+                onPick = { id ->
+                    onSwitchProfile(id)
+                    pickerOpen = false
+                },
+                onManage = {
+                    pickerOpen = false
+                    onOpenSettings()
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ModelPickerPopupMiuix(
+    profiles: List<AiModelProfile>,
+    activeId: String,
+    streaming: Boolean,
+    onDismiss: () -> Unit,
+    onPick: (String) -> Unit,
+    onManage: () -> Unit,
+) {
+    var query by remember { mutableStateOf("") }
+    val filtered = profiles.filter { profile ->
+        query.isBlank() ||
+            profile.name.contains(query, ignoreCase = true) ||
+            profile.model.contains(query, ignoreCase = true)
+    }
+    Popup(
+        alignment = Alignment.BottomEnd,
+        offset = IntOffset(0, -60),
+        onDismissRequest = onDismiss,
+        properties = PopupProperties(focusable = true),
+    ) {
+        Card(modifier = Modifier.width(320.dp)) {
+            Column(Modifier.padding(10.dp)) {
+                TextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    maxLines = 1,
+                )
+                Spacer(Modifier.height(6.dp))
+                if (filtered.isEmpty()) {
+                    Text(
+                        stringResource(R.string.ai_model_no_match),
+                        fontSize = 12.sp,
+                        color = colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.padding(vertical = 16.dp),
+                    )
+                } else {
+                    LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                        filtered.groupBy { it.preset.label }.forEach { (label, list) ->
+                            item(key = "header_$label") {
+                                Text(
+                                    label,
+                                    fontSize = 10.sp,
+                                    color = colorScheme.onSurfaceVariantSummary,
+                                    modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
+                                )
+                            }
+                            items(list, key = { it.id }) { profile ->
+                                val current = profile.id == activeId
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(
+                                            if (current) colorScheme.primary.copy(alpha = 0.08f)
+                                            else Color.Transparent,
+                                        )
+                                        .clickable {
+                                            if (streaming) {
+                                                // 生成中不切换；由面板保持打开，交给发送态提示
+                                            } else {
+                                                onPick(profile.id)
+                                            }
+                                        }
+                                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        profile.model,
+                                        fontSize = 13.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    if (current) {
+                                        Icon(
+                                            Icons.Rounded.Check,
+                                            contentDescription = null,
+                                            tint = colorScheme.primary,
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                TextButton(
+                    text = stringResource(R.string.ai_model_manage),
+                    onClick = onManage,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (streaming) {
+                    Text(
+                        stringResource(R.string.ai_model_generating),
+                        fontSize = 10.sp,
+                        color = colorScheme.error,
+                    )
+                }
             }
         }
     }

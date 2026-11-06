@@ -186,4 +186,8 @@
     <string name="ai_model_advanced">高级</string>
     <string name="ai_model_catalog">模型目录</string>
     <string name="ai_model_notice_key">当前模型还没有配置 API Key。</string>
+    <string name="ai_model_search">搜索模型…</string>
+    <string name="ai_model_manage">管理模型…</string>
+    <string name="ai_model_no_match">没有匹配的模型</string>
+    <string name="ai_model_generating">生成中不能切换模型</string>
 </resources>
