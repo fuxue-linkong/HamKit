@@ -549,4 +549,7 @@
     <string name="ai_model_generating">Cannot switch while generating</string>
     <string name="ai_model_provider_add">Add model provider</string>
     <string name="ai_model_display_name">Display name</string>
+    <string name="ai_model_none_selected">No model selected</string>
+    <string name="ai_model_saving">Saving…</string>
+    <string name="ai_model_empty_hint">No models yet. Tap "New model" below.</string>
 </resources>

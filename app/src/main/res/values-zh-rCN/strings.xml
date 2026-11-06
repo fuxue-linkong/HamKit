@@ -192,4 +192,7 @@
     <string name="ai_model_generating">生成中不能切换模型</string>
     <string name="ai_model_provider_add">添加模型提供商</string>
     <string name="ai_model_display_name">显示名称</string>
+    <string name="ai_model_none_selected">未选择模型</string>
+    <string name="ai_model_saving">保存中…</string>
+    <string name="ai_model_empty_hint">还没有模型，点下方「添加模型」。</string>
 </resources>

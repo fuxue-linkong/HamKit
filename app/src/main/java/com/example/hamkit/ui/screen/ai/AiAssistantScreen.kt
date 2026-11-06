@@ -154,6 +154,7 @@ import java.util.Calendar
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.draw.alpha
 
 /**
  * AI 助手主页（底部导航第 2 项）。
@@ -352,6 +353,7 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
                 activeModelId = state.activeModelId,
                 onSwitchModel = viewModel::switchModel,
                 onOpenSettings = { navigator.push(Route.AiSettings) },
+                onReload = viewModel::reloadConfig,
             )
         }
     }
@@ -713,6 +715,7 @@ private fun ComposerMiuix(
     onStop: () -> Unit,
     onSwitchModel: (String, String) -> Unit,
     onOpenSettings: () -> Unit,
+    onReload: () -> Unit,
 ) {
     val canSend = (input.isNotBlank() || attachments.any { it.status == AiAttachmentStatus.READY }) &&
         attachments.none { it.status == AiAttachmentStatus.PARSING }
@@ -804,7 +807,11 @@ private fun ComposerMiuix(
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(10.dp))
-                    .clickable { pickerOpen = true }
+                    .alpha(if (streaming) 0.5f else 1f)
+                    .clickable {
+                        onReload()
+                        pickerOpen = true
+                    }
                     .padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -912,7 +919,14 @@ private fun ModelPickerPopupMiuix(
                     maxLines = 1,
                 )
                 Spacer(Modifier.height(6.dp))
-                if (filtered.isEmpty()) {
+                if (profiles.isEmpty()) {
+                    Text(
+                        stringResource(R.string.ai_model_empty),
+                        fontSize = 12.sp,
+                        color = colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.padding(vertical = 16.dp),
+                    )
+                } else if (filtered.isEmpty()) {
                     Text(
                         stringResource(R.string.ai_model_no_match),
                         fontSize = 12.sp,
