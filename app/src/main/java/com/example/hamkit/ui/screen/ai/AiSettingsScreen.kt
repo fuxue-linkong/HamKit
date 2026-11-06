@@ -640,12 +640,45 @@ private fun ModelConfigCardMiuix(
                     enabled = !state.fetchingModels,
                 )
             }
-            Text(
-                stringResource(R.string.ai_model_catalog_empty),
-                fontSize = 10.sp,
-                color = colorScheme.onSurfaceVariantSummary,
-                modifier = Modifier.padding(bottom = 6.dp),
-            )
+            if (state.models.isEmpty()) {
+                Text(
+                    stringResource(R.string.ai_model_catalog_empty),
+                    fontSize = 10.sp,
+                    color = colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(bottom = 6.dp),
+                )
+            } else {
+                Row(
+                    modifier = Modifier
+                        .horizontalScroll(rememberScrollState())
+                        .padding(bottom = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    state.models.forEach { model ->
+                        ChipMiuix(
+                            text = model,
+                            selected = state.editingModels.any { it.modelId == model },
+                            onClick = {
+                                val entryId = state.editingModelId
+                                val entry = state.editingModels.firstOrNull { it.id == entryId }
+                                if (entryId != null) {
+                                    onModelChange(entryId, model, entry?.displayName.orEmpty())
+                                } else {
+                                    onModelAdd()
+                                }
+                            },
+                        )
+                    }
+                }
+            }
+            state.modelsError?.let {
+                Text(
+                    it,
+                    fontSize = 10.sp,
+                    color = colorScheme.error,
+                    modifier = Modifier.padding(bottom = 6.dp),
+                )
+            }
 
             state.editingModels.forEach { entry ->
                 val selected = entry.id == state.editingModelId
