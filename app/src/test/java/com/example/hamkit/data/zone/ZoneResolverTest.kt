@@ -125,6 +125,55 @@ class ZoneResolverTest {
     }
 
     @Test
+    fun `diaoyu islands resolve to china zones`() {
+        // 钓鱼岛主岛、赤尾屿都应按中国归属取 CQ24/ITU44，而不是被
+        // 「日本/韩国 122–146°E」大框吞成 CQ25/ITU45。
+        val main = ZoneResolver.resolve(25.75, 123.47)
+        assertEquals(24, main.cqZone)
+        assertEquals(44, main.ituZone)
+
+        val chiwei = ZoneResolver.resolve(25.92, 124.33)
+        assertEquals(24, chiwei.cqZone)
+        assertEquals(44, chiwei.ituZone)
+
+        // 覆盖框不得外溢到邻近的日本岛屿：石垣岛仍是 CQ25/ITU45。
+        val ishigaki = ZoneResolver.resolve(24.34, 124.16)
+        assertEquals(25, ishigaki.cqZone)
+        assertEquals(45, ishigaki.ituZone)
+    }
+
+    @Test
+    fun `scarborough shoal resolves to china zones`() {
+        // 黄岩岛应按三沙市归属取 CQ24/ITU44，而不是被「东南亚」大框算成 CQ26/ITU49。
+        val info = ZoneResolver.resolve(15.15, 117.75)
+        assertEquals(24, info.cqZone)
+        assertEquals(44, info.ituZone)
+
+        // 框外仍是原来的东南亚兜底，确认没有扩大化。
+        assertEquals(26, ZoneResolver.resolve(15.15, 118.5).cqZone)
+        assertEquals(26, ZoneResolver.resolve(15.15, 117.0).cqZone)
+        assertEquals(26, ZoneResolver.resolve(14.6, 117.75).cqZone)
+    }
+
+    @Test
+    fun `hainan and paracel islands resolve to china zones`() {
+        // 海南岛南部（三亚）此前被「东南亚」大框吞成 CQ26/ITU49，应按海南省取 CQ24/ITU44。
+        val sanya = ZoneResolver.resolve(18.25, 109.5)
+        assertEquals(24, sanya.cqZone)
+        assertEquals(44, sanya.ituZone)
+
+        // 西沙群岛（永兴岛）同样按三沙市归属取 CQ24/ITU44。
+        val woody = ZoneResolver.resolve(16.83, 112.33)
+        assertEquals(24, woody.cqZone)
+        assertEquals(44, woody.ituZone)
+
+        // 框外不误伤越南海岸、雷州半岛与北部湾。
+        assertEquals(26, ZoneResolver.resolve(16.05, 108.2).cqZone)
+        assertEquals(24, ZoneResolver.resolve(20.3, 110.2).cqZone)
+        assertEquals(24, ZoneResolver.resolve(20.04, 110.3).cqZone)
+    }
+
+    @Test
     fun `no mans land at boundaries`() {
         val boundaryLongitudes = listOf(-180.0, -170.0, -100.0, -30.0, 0.0, 40.0, 100.0, 180.0)
         val boundaryLatitudes = listOf(-85.0, -50.0, 0.0, 30.0, 55.0, 70.0, 85.0)
