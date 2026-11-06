@@ -229,7 +229,7 @@ struct AiAssistantView: View {
                         Text(modelLabel)
                             .font(.caption)
                             .lineLimit(1)
-                            .frame(maxWidth: 190, alignment: .leading)
+                            .frame(maxWidth: 120, alignment: .leading)
                         Image(systemName: "chevron.down")
                             .font(.system(size: 9, weight: .semibold))
                     }

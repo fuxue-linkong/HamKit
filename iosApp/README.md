@@ -2,7 +2,7 @@
 
 SwiftUI 外壳 + Kotlin Multiplatform 内核。业务算法（SGP4/SDP4、TLE、CW、FT8、SSTV、HF Fax、APRS 报文、QSO、AI 引擎）全部在仓库根目录的 `:shared` 里，Android 与 iOS 跑同一份代码；Swift 侧只负责界面与平台能力（定位、音频、通知、网络、地图、Keychain）。
 
-> 状态：**测试版**（`ios` 分支，2026-11-07 同步 miuix 的 AI 模型配置改造）。
+> 状态：**测试版**（`ios` 分支，2026-11-07 同步 miuix 的 AI 模型配置改造，含模型目录 chips 与设置页两行模型行）。
 > 功能已对齐 Android 的主要模块，没有 App Store / TestFlight（项目无收入，买不起开发者账号），
 > 以**未签名 IPA** 分发，需自行用 Apple ID 重签。
 

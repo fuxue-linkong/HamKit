@@ -270,16 +270,21 @@ struct AiSettingsView: View {
                     .foregroundStyle(.secondary)
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
+                    HStack(spacing: 8) {
                         ForEach(catalog, id: \.self) { model in
+                            let active = profile.wrappedValue.models.contains { $0.modelId == model }
                             Button(model) {
-                                addModel(model, to: profile)
+                                pickCatalogModel(model, in: profile)
                             }
                             .font(.caption2)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 5)
-                            .background(Color.secondary.opacity(0.12))
-                            .foregroundStyle(.primary)
+                            .background(
+                                active
+                                    ? Color.accentColor
+                                    : Color.secondary.opacity(0.12)
+                            )
+                            .foregroundStyle(active ? Color.white : Color.primary)
                             .clipShape(Capsule())
                         }
                     }
@@ -301,13 +306,24 @@ struct AiSettingsView: View {
                 addProvider()
             } label: {
                 Label("添加模型提供商", systemImage: "plus.circle")
+                    .font(.callout)
+                    .foregroundStyle(Color.accentColor)
                     .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(
+                                style: StrokeStyle(lineWidth: 1, dash: [6, 6])
+                            )
+                            .foregroundStyle(Color.secondary.opacity(0.35))
+                    )
             }
+            .buttonStyle(.plain)
             .padding(.vertical, 2)
         } header: {
             Text("模型")
         } footer: {
-            Text("一个提供商下可保存多个模型；列表里打勾的是当前使用的模型。")
+            Text("一个提供商下可保存多个模型；高亮的是当前使用的模型。")
         }
     }
 
@@ -327,33 +343,55 @@ struct AiSettingsView: View {
         .buttonStyle(.plain)
     }
 
+    /// 两行结构对齐 miuix 最新版：第一行「≡ + 模型 ID + 删除」，第二行缩进填显示名称。
     private func modelRow(_ entry: AiModelEntry, profile: Binding<AiProfile>) -> some View {
         let selected = profile.wrappedValue.selectedModelId == entry.id
-        return HStack(spacing: 8) {
-            VStack(spacing: 4) {
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text("≡")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
                 TextField("模型 ID", text: modelIdBinding(entry.id, profile: profile))
                     .font(.callout.monospaced())
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                Button {
+                    removeModel(entry.id, from: profile)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 32, height: 32)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("删除模型")
+            }
+            HStack(spacing: 0) {
+                Spacer()
+                    .frame(width: 24)
                 TextField("显示名称（可选）", text: displayNameBinding(entry.id, profile: profile))
                     .font(.caption)
             }
-            if selected {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(Color.accentColor)
-            }
-            Button {
-                removeModel(entry.id, from: profile)
-            } label: {
-                Image(systemName: "xmark.circle")
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.borderless)
         }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(
+            selected
+                ? Color.accentColor.opacity(0.08)
+                : Color.secondary.opacity(0.06)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .contentShape(Rectangle())
-        .onTapGesture {
-            profile.wrappedValue.selectedModelId = entry.id
-        }
+        // 用 simultaneousGesture 而不是 onTapGesture：避免抢走 TextField 的点击焦点。
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                // 删除按钮也会触发这个手势；条目已不在列表时不要再回写选中项。
+                guard profile.wrappedValue.models.contains(where: { $0.id == entry.id }) else { return }
+                profile.wrappedValue.selectedModelId = entry.id
+            }
+        )
     }
 
     // MARK: - API Key
@@ -638,10 +676,18 @@ struct AiSettingsView: View {
         errorMessage = nil
     }
 
-    private func addModel(_ modelId: String, to profile: Binding<AiProfile>) {
+    /// 点模型目录 chip：已存在就选中；当前行还是空 ID 就直接填入；否则新增一行。
+    ///
+    /// 与 miuix 最新版的差异：上游会覆盖当前行；iOS 这边保留多模型列表语义，
+    /// 只有空行才复用，避免误改已经配置好的模型。
+    private func pickCatalogModel(_ modelId: String, in profile: Binding<AiProfile>) {
         var value = profile.wrappedValue
         if let existing = value.models.first(where: { $0.modelId == modelId }) {
             value.selectedModelId = existing.id
+        } else if let selectedId = value.selectedModelId,
+                  let index = value.models.firstIndex(where: { $0.id == selectedId }),
+                  value.models[index].modelId.isEmpty {
+            value.models[index].modelId = modelId
         } else {
             let entry = AiModelEntry(id: "m_" + Self.shortId(), modelId: modelId, displayName: nil)
             value.models.append(entry)
