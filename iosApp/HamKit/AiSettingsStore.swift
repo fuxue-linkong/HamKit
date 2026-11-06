@@ -579,22 +579,26 @@ enum AiModelCatalog {
     }
 
     static func fetch(profile: AiProfile, apiKey: String) async throws -> [String] {
-        guard !profile.baseUrl.isEmpty,
-              let url = URL(string: modelsURL(profile)),
+        // 与 Android `AiModelList.fetch` 一致：先归一化 Base URL（去空白、去尾部 `/`），
+        // 否则手工输入 `https://host/v1/` 会拼出 `.../v1//models`。
+        let normalized = profile.normalized()
+        let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.baseUrl.isEmpty,
+              let url = URL(string: modelsURL(normalized)),
               url.scheme != nil else {
             throw Failure.invalidBaseURL
         }
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.timeoutInterval = 30
-        switch profile.protocolName {
+        switch normalized.protocolName {
         case "ANTHROPIC_MESSAGES":
-            request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+            request.setValue(key, forHTTPHeaderField: "x-api-key")
             request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         case "GEMINI":
-            request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+            request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
         default:
-            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         }
 
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -604,7 +608,7 @@ enum AiModelCatalog {
             let error = AiBridge.shared.httpError(status: Int32(status), body: body)
             throw Failure.http(AiBridge.shared.errorText(error: error))
         }
-        let models = parse(protocolName: profile.protocolName, body: body)
+        let models = parse(protocolName: normalized.protocolName, body: body)
         guard !models.isEmpty else { throw Failure.empty }
         return models
     }

@@ -265,9 +265,16 @@ struct AiSettingsView: View {
                     .foregroundStyle(.red)
             }
             if catalog.isEmpty {
-                Text("还没获取模型；目录外 ID 仍可直接填写。")
+                // 有报错时只留上面那行红字，避免两句几乎一样的话叠在一起。
+                if catalogError == nil {
+                    Text(
+                        catalogKeyAvailable(for: profile.wrappedValue)
+                            ? "还没获取模型；目录外 ID 仍可直接填写。"
+                            : "还没获取模型；先在下方填写 API Key，再点「获取模型列表」。"
+                    )
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                }
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
@@ -736,13 +743,28 @@ struct AiSettingsView: View {
         )
     }
 
+    /// 当前表单里已经有可用的 Key（刚粘贴但还没点「保存 Key」也算）。
+    ///
+    /// 之前这里只认钥匙串：新建提供商后 Key 槽位是空的，点「获取模型列表」
+    /// 会在最底部留一行谁也看不见的提示，看起来就像按钮没反应。
+    private func catalogKeyAvailable(for profile: AiProfile) -> Bool {
+        !keyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || store.keyExists(for: profile.id)
+    }
+
     @MainActor
     private func fetchCatalog(for profile: AiProfile) async {
-        let key = store.apiKey(for: profile.id)
+        if fetchingCatalog { return }
+
+        // 优先用输入框里的 Key：用户「粘贴 Key → 点获取」就够，不必先保存；
+        // 输入框为空时再回落到钥匙串里已保存的那把。
+        let typedKey = keyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let key = typedKey.isEmpty ? store.apiKey(for: profile.id) : typedKey
         guard !key.isEmpty else {
-            errorMessage = "请先保存当前提供商的 API Key"
+            catalogError = "请先在下方「API Key」里填写 Key，再获取模型列表。"
             return
         }
+
         fetchingCatalog = true
         catalogError = nil
         errorMessage = nil
