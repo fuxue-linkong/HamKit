@@ -568,7 +568,7 @@ private fun ModelConfigCardMaterial(
 
             state.editingModels.forEach { entry ->
                 val selected = entry.id == state.editingModelId
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(10.dp))
@@ -582,34 +582,39 @@ private fun ModelConfigCardMaterial(
                         )
                         .clickable { onModelSelect(entry.id) }
                         .padding(horizontal = 8.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("≡", style = MaterialTheme.typography.labelSmall)
-                    Spacer(Modifier.width(6.dp))
-                    OutlinedTextField(
-                        value = entry.modelId,
-                        onValueChange = { onModelChange(entry.id, it, entry.displayName.orEmpty()) },
-                        modifier = Modifier.weight(1.2f),
-                        placeholder = { Text(stringResource(R.string.ai_model_id)) },
-                        singleLine = true,
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    OutlinedTextField(
-                        value = entry.displayName.orEmpty(),
-                        onValueChange = { onModelChange(entry.id, entry.modelId, it) },
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text(stringResource(R.string.ai_model_display_name)) },
-                        singleLine = true,
-                    )
-                    IconButton(onClick = { onModelDelete(entry.id) }) {
-                        Icon(
-                            Icons.Rounded.Close,
-                            contentDescription = stringResource(R.string.ai_model_delete),
-                            modifier = Modifier.size(16.dp),
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("≡", style = MaterialTheme.typography.labelSmall)
+                        Spacer(Modifier.width(6.dp))
+                        OutlinedTextField(
+                            value = entry.modelId,
+                            onValueChange = { onModelChange(entry.id, it, entry.displayName.orEmpty()) },
+                            modifier = Modifier.weight(1f),
+                            placeholder = { Text(stringResource(R.string.ai_model_id)) },
+                            singleLine = true,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        IconButton(onClick = { onModelDelete(entry.id) }) {
+                            Icon(
+                                Icons.Rounded.Close,
+                                contentDescription = stringResource(R.string.ai_model_delete),
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Row {
+                        Spacer(Modifier.width(24.dp))
+                        OutlinedTextField(
+                            value = entry.displayName.orEmpty(),
+                            onValueChange = { onModelChange(entry.id, entry.modelId, it) },
+                            modifier = Modifier.weight(1f),
+                            placeholder = { Text(stringResource(R.string.ai_model_display_name)) },
+                            singleLine = true,
                         )
                     }
                 }
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(8.dp))
             }
 
             TextButton(onClick = onModelAdd) {
@@ -649,10 +654,20 @@ private fun ModelConfigCardMaterial(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                TextButton(onClick = onCancel, modifier = Modifier.weight(1f)) {
+                TextButton(
+                    onClick = onCancel,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp),
+                ) {
                     Text(stringResource(R.string.ai_model_cancel))
                 }
-                Button(onClick = onSave, modifier = Modifier.weight(1f)) {
+                Button(
+                    onClick = onSave,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp),
+                ) {
                     Text(stringResource(R.string.ai_model_save))
                 }
             }
@@ -661,6 +676,7 @@ private fun ModelConfigCardMaterial(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
                     .dashedBorderMaterial(MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
                     .clickable(onClick = onAddProvider)
                     .padding(vertical = 14.dp),

@@ -773,7 +773,7 @@ private fun ComposerMaterial(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.widthIn(max = 140.dp),
+                    modifier = Modifier.widthIn(max = 120.dp),
                 )
                 Spacer(Modifier.width(2.dp))
                 Icon(
@@ -783,7 +783,7 @@ private fun ComposerMaterial(
                     modifier = Modifier.size(16.dp),
                 )
             }
-            Spacer(Modifier.width(6.dp))
+            Spacer(Modifier.width(8.dp))
             Box(
                 modifier = Modifier
                     .size(40.dp)
