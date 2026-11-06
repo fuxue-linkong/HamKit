@@ -62,22 +62,30 @@ class ReminderScheduler(private val context: Context) {
             }
         }
 
-        val intent = createReceiverIntent(item).apply {
-            action = ReminderReceiver.ACTION_TRIGGER_REMINDER
-        }
         val pendingIntent = PendingIntent.getBroadcast(
             context,
             item.catalogNumber,
-            intent,
+            createReceiverIntent(item, ReminderReceiver.CHANNEL_PHONE),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
+        setAlarm(triggerAtMillis, pendingIntent)
+
+        // 手环提醒单独一个闹钟：AOS 前 60 秒触发，与手机通知互不覆盖
+        scheduleWearable(item, settings)
+        return true
+    }
+
+    /**
+     * 注册一个精确闹钟，并在无精确闹钟权限时回退到非精确闹钟。
+     *
+     * Android 12+ 要求 SCHEDULE_EXACT_ALARM 或 USE_EXACT_ALARM 权限；
+     * Android 14+ 新装 App 默认不授予，需先检查 canScheduleExactAlarms。
+     * 未授权时用 setAndAllowWhileIdle 兜底（误差可能达数分钟），
+     * 避免直接抛 SecurityException 导致本次调度被静默丢弃。
+     */
+    private fun setAlarm(triggerAtMillis: Long, pendingIntent: PendingIntent) {
         try {
-            // Android 12+ 要求 SCHEDULE_EXACT_ALARM 或 USE_EXACT_ALARM 权限。
-            // setExactAndAllowWhileIdle 在 Doze 下仍能唤醒，且触发误差很小。
-            // Android 14+ 新装 App 默认不授予精确闹钟权限，需先检查 canScheduleExactAlarms，
-            // 未授权时回退到非精确闹钟（误差可达数分钟到数十分钟），避免直接抛 SecurityException
-            // 导致本次调度被静默丢弃（旧实现 catch 后回退、但每次都先抛异常打日志不是好做法）。
             if (hasExactAlarmCapability()) {
                 alarmManager.setExactAndAllowWhileIdle(
                     AlarmManager.RTC_WAKEUP,
@@ -92,14 +100,78 @@ class ReminderScheduler(private val context: Context) {
                 )
             }
         } catch (_: SecurityException) {
-            // 极少数 OEM 标准实现异常：回退到非精确闹钟保证至少能触发
+            // 极少数 OEM 实现异常：回退到非精确闹钟保证至少能触发
             alarmManager.setAndAllowWhileIdle(
                 AlarmManager.RTC_WAKEUP,
                 triggerAtMillis,
                 pendingIntent
             )
         }
-        return true
+    }
+
+    /**
+     * 调度手环提醒（AOS 前 [WEARABLE_LEAD_MS]）。
+     *
+     * 独立的 requestCode（`catalogNumber + WEARABLE_REQUEST_OFFSET`）保证与
+     * 手机通知的闹钟互不覆盖：两者触发时间不同（提前量不同），必须并存。
+     */
+    private fun scheduleWearable(item: ReminderItem, settings: ReminderSettings) {
+        if (!settings.wearableEnabled) {
+            cancelWearable(item.catalogNumber)
+            return
+        }
+
+        val triggerAtMillis = item.aosTimeMillis - WEARABLE_LEAD_MS
+        if (triggerAtMillis <= System.currentTimeMillis()) {
+            cancelWearable(item.catalogNumber)
+            return
+        }
+
+        // 仅白天提醒的判定与手机通知保持一致，避免"夜里手环狂震"
+        if (settings.repeatMode == RepeatMode.DAYTIME_ONLY) {
+            val hour = Instant.ofEpochMilli(triggerAtMillis)
+                .atZone(ZoneId.systemDefault())
+                .hour
+            if (hour < 6 || hour >= 22) {
+                cancelWearable(item.catalogNumber)
+                return
+            }
+        }
+
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            item.catalogNumber + WEARABLE_REQUEST_OFFSET,
+            createReceiverIntent(item, ReminderReceiver.CHANNEL_WEARABLE),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        setAlarm(triggerAtMillis, pendingIntent)
+    }
+
+    /** 取消某颗卫星的手环提醒闹钟（不影响手机通知闹钟） */
+    private fun cancelWearable(catalogNumber: Int) {
+        val intent = createReceiverIntent(
+            ReminderItem(
+                catalogNumber = catalogNumber,
+                name = "",
+                aosTimeMillis = 0L,
+                losTimeMillis = 0L,
+                maxElevation = 0.0,
+                aosAzimuth = 0,
+                losAzimuth = 0,
+                modes = emptyList()
+            ),
+            ReminderReceiver.CHANNEL_WEARABLE
+        )
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            catalogNumber + WEARABLE_REQUEST_OFFSET,
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_NO_CREATE
+        )
+        if (pendingIntent != null) {
+            alarmManager.cancel(pendingIntent)
+            pendingIntent.cancel()
+        }
     }
 
     /**
@@ -138,7 +210,7 @@ class ReminderScheduler(private val context: Context) {
     }
 
     /**
-     * 取消指定卫星的提醒。
+     * 取消指定卫星的全部提醒（手机通知 + 手环提醒）。
      */
     fun cancel(catalogNumber: Int) {
         val intent = Intent(context, ReminderReceiver::class.java).apply {
@@ -154,6 +226,7 @@ class ReminderScheduler(private val context: Context) {
             alarmManager.cancel(pendingIntent)
             pendingIntent.cancel()
         }
+        cancelWearable(catalogNumber)
     }
 
     /**
@@ -191,9 +264,11 @@ class ReminderScheduler(private val context: Context) {
         )
     }
 
-    private fun createReceiverIntent(item: ReminderItem): Intent {
+    private fun createReceiverIntent(item: ReminderItem, channel: String): Intent {
         return Intent(context, ReminderReceiver::class.java).apply {
+            action = ReminderReceiver.ACTION_TRIGGER_REMINDER
             // 通过 extra 传递提醒详情，避免 Receiver 再次查 DB
+            putExtra(ReminderReceiver.EXTRA_CHANNEL, channel)
             putExtra(ReminderReceiver.EXTRA_CATALOG, item.catalogNumber)
             putExtra(ReminderReceiver.EXTRA_NAME, item.name)
             putExtra(ReminderReceiver.EXTRA_AOS, item.aosTimeMillis)
@@ -211,5 +286,15 @@ class ReminderScheduler(private val context: Context) {
         // WorkManager 最小周期为 15 分钟，但每日刷新足够（TLE 漂移每日约 1 分钟）
         private const val REPEAT_INTERVAL_HOURS = 24L
         private const val FLEX_PERIOD_HOURS = 1L
+
+        /** 手环提醒的提前量：AOS 前 60 秒（手环上做"还有 1 分钟"的倒计时） */
+        private const val WEARABLE_LEAD_MS = 60L * 1000L
+
+        /**
+         * 手环闹钟的 requestCode 偏移。
+         * 必须避开手机通知（直接用 catalogNumber）与 SSTV 动作按钮（+100000），
+         * 否则 PendingIntent 会被系统判定为同一个而互相覆盖。
+         */
+        private const val WEARABLE_REQUEST_OFFSET = 200_000
     }
 }

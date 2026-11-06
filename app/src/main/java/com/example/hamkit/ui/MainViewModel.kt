@@ -38,6 +38,7 @@ import com.example.hamkit.data.satellite.SatellitePredictCacheStore
 import com.example.hamkit.data.satellite.SatellitePredictor
 import com.example.hamkit.data.satellite.SatelliteStatusTracker
 import com.example.hamkit.data.satellite.SegmentStatus
+import com.example.hamkit.data.wearable.WearableAlertDispatcher
 import com.example.hamkit.data.satellite.SatelliteStatusSegmenter
 import com.example.hamkit.data.satellite.SourcedTLE
 import com.example.hamkit.data.satellite.addCategory
@@ -627,8 +628,19 @@ class MainViewModel : ViewModel() {
      * 更新提醒设置并重新调度所有提醒。
      */
     fun updateReminderSettings(settings: ReminderSettings) {
+        val previous = _reminderSettings.value
         reminderStore.saveSettings(settings)
         _reminderSettings.value = settings
+
+        // 手环提醒：开关打开时提前建立连接（手环端的 hello 握手才有对象可接），
+        // 关闭时释放监听并断开，避免常驻持有手环服务连接。
+        // 注意：真正的提醒投递仍由 AOS-60s 的闹钟触发，这里只是把链路点亮。
+        if (settings.wearableEnabled && !previous.wearableEnabled) {
+            WearableAlertDispatcher.get(app).start()
+        } else if (!settings.wearableEnabled && previous.wearableEnabled) {
+            WearableAlertDispatcher.get(app).stop()
+        }
+
         // 声音/振动设置变化时通知渠道不可直接改 importance，
         // 必须 deleteNotificationChannel + 重建才能让新设置立即生效。
         ReminderNotificationHelper(app).recreateChannel(settings)

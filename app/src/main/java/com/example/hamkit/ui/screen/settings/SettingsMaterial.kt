@@ -220,6 +220,18 @@ fun SettingPagerMaterial(
                         )
                     }
                     add {
+                        // 手环提醒：AOS 前 1 分钟推到手环快应用（需手环端已装 rpk）
+                        SegmentedSwitchItem(
+                            title = stringResource(id = R.string.reminder_wearable),
+                            checked = businessState.reminderSettings.wearableEnabled,
+                            onCheckedChange = { enabled ->
+                                actions.onUpdateReminderSettings(
+                                    businessState.reminderSettings.copy(wearableEnabled = enabled)
+                                )
+                            }
+                        )
+                    }
+                    add {
                         SegmentedListItem(
                             onClick = actions.onOpenReminderList,
                             headlineContent = { Text(stringResource(id = R.string.reminder_view_list)) },

@@ -246,6 +246,17 @@ fun SettingPagerMiuix(
                                 )
                             }
                         )
+                        // 手环提醒：AOS 前 1 分钟推到手环快应用（需手环端已装 rpk）
+                        SwitchPreference(
+                            title = stringResource(id = R.string.reminder_wearable),
+                            summary = stringResource(id = R.string.reminder_wearable_desc),
+                            checked = businessState.reminderSettings.wearableEnabled,
+                            onCheckedChange = { enabled ->
+                                actions.onUpdateReminderSettings(
+                                    businessState.reminderSettings.copy(wearableEnabled = enabled)
+                                )
+                            }
+                        )
                         ArrowPreference(
                             title = stringResource(id = R.string.reminder_view_list),
                             summary = if (businessState.reminderItems.isEmpty()) {

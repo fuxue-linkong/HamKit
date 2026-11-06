@@ -10,6 +10,7 @@ import androidx.compose.runtime.Immutable
  * @param repeatMode 重复策略：[RepeatMode.ALWAYS] 每次过境提醒；[RepeatMode.DAYTIME_ONLY] 仅白天（6:00-22:00）提醒
  * @param soundEnabled 通知声音开关
  * @param vibrationEnabled 通知振动开关
+ * @param wearableEnabled 是否把提醒同步到手环（小米手环快应用，AOS 前 1 分钟）
  */
 @Immutable
 data class ReminderSettings(
@@ -17,7 +18,8 @@ data class ReminderSettings(
     val leadMinutes: Int = 10,
     val repeatMode: RepeatMode = RepeatMode.ALWAYS,
     val soundEnabled: Boolean = true,
-    val vibrationEnabled: Boolean = true
+    val vibrationEnabled: Boolean = true,
+    val wearableEnabled: Boolean = false
 )
 
 /**

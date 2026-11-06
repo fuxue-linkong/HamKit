@@ -74,3 +74,15 @@
 # WorkManager 内部通过反射实例化的其他类
 -keep class androidx.work.impl.** { *; }
 -dontwarn androidx.work.impl.**
+
+# ──────────────────────────────────────────────────────────────────────────
+# 小手环互联（xms-wearable-lib）
+#
+# AAR 自带 consumer proguard 规则会保留 com.xiaomi.xms.wearable.**，
+# 但 SDK 会回调我们实现的 OnMessageReceivedListener / OnServiceConnectionListener，
+# 这两个是我们自己的类、被 SDK 以接口方式调用，R8 不会感知到引用，
+# 需要显式保留，否则 release 包上手环消息收不到（debug 分包下正常，极易漏测）。
+# ──────────────────────────────────────────────────────────────────────────
+-keep class com.example.hamkit.data.wearable.** { *; }
+-dontwarn com.xiaomi.xms.wearable.**
+

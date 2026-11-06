@@ -257,6 +257,8 @@
     <string name="reminder_repeat_daytime" translatable="false">仅白天过境提醒（6:00-22:00）</string>
     <string name="reminder_sound" translatable="false">通知声音</string>
     <string name="reminder_vibration" translatable="false">通知振动</string>
+    <string name="reminder_wearable" translatable="false">同步到手环</string>
+    <string name="reminder_wearable_desc" translatable="false">AOS 前 1 分钟在手环上弹出倒计时（需在手环端安装配套快应用）</string>
     <string name="reminder_view_list" translatable="false">查看提醒列表</string>
     <string name="reminder_list_title" translatable="false">提醒列表</string>
     <string name="reminder_list_empty" translatable="false">暂无提醒。在卫星管理页为卫星开启「过境提醒」后将自动添加。</string>
