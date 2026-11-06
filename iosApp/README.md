@@ -108,6 +108,12 @@ Xcode 的 Run Script 会执行 `./gradlew :shared:embedAndSignAppleFrameworkForX
 `/usr/bin:/bin:/usr/sbin:/sbin`，终端里 `export JAVA_HOME` 传不进去，缺 JDK 时 Swift 只会报
 `Unable to resolve module dependency: 'Shared'`，很难定位。
 
+真机 / Release 还要多看一眼 Run Destination：`Shared.framework` 是按
+`$(CONFIGURATION)/$(SDK_NAME)` 分开生成的（`shared/build/xcode-frameworks/...`）。
+刚切到真机、或还没为这个 SDK 构建过时，Xcode 的实时索引会对所有 `import Shared` 报
+`Unable to resolve module dependency: 'Shared'`——先在该 destination 上 Build 一次，
+Run Script 会生成对应 SDK 的 framework，报错即消失；只想跑模拟器的话把 destination 切回模拟器即可。
+
 也可以先在命令行验证 framework：
 
 ```bash
