@@ -175,6 +175,20 @@ jobs:
           sleep 22
           xcrun simctl io "$UDID" screenshot ios-screenshot-passes.png
 
+          # 第四张：AI 设置（从助手以 sheet 打开，验证多提供商 / 多模型 / 独立 Key）
+          xcrun simctl terminate "$UDID" click.hamkit.ios || true
+          sleep 2
+          xcrun simctl launch "$UDID" click.hamkit.ios -smokeAISettingsSheet
+          sleep 12
+          xcrun simctl io "$UDID" screenshot ios-ai-settings.png
+
+          # 第五张：模型切换面板（按提供商分组 + 搜索）
+          xcrun simctl terminate "$UDID" click.hamkit.ios || true
+          sleep 2
+          xcrun simctl launch "$UDID" click.hamkit.ios -smokeAIModels
+          sleep 12
+          xcrun simctl io "$UDID" screenshot ios-ai-models.png
+
           xcrun simctl spawn "$UDID" log show --last 2m --style compact \
             --predicate 'process == "HamKit"' > ios-app.log || true
           # 应用崩溃时 simctl 仍会返回成功，这里额外检查进程是否还活着
@@ -191,6 +205,8 @@ jobs:
             ios-screenshot.png
             ios-screenshot-satellite.png
             ios-screenshot-passes.png
+            ios-ai-settings.png
+            ios-ai-models.png
             ios-app.log
           retention-days: 14
           if-no-files-found: warn

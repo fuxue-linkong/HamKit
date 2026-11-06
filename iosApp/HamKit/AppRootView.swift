@@ -78,7 +78,14 @@ struct AppRootView: View {
             model.start()
             // 只有已经同意过隐私政策的用户才主动要定位；
             // 首启时等用户在同意页点「同意并继续」再请求（见上面的 overlay）。
-            if consent.accepted {
+            // AI 截图场景不需要定位，跳过请求以免系统权限弹窗挡住界面；
+            // 卫星相关冒烟仍照常请求。
+            let args = ProcessInfo.processInfo.arguments
+            let aiSmoke = args.contains("-smokeAI")
+                || args.contains("-smokeAISettings")
+                || args.contains("-smokeAISettingsSheet")
+                || args.contains("-smokeAIModels")
+            if consent.accepted && !aiSmoke {
                 location.requestLocation()
             }
             runSmokeScenarioIfNeeded()
@@ -118,6 +125,22 @@ struct AppRootView: View {
         if args.contains(where: { $0.hasPrefix("-smoke") }), !consent.accepted {
             consent.accept(aprsPublic: false)
         }
+        // AI 截图：进入 AI 助手（-smokeAISettings 再进一层设置；
+        // -smokeAIModels 由 AiAssistantView 自己弹出模型切换面板）。
+        if args.contains("-smokeAI")
+            || args.contains("-smokeAISettings")
+            || args.contains("-smokeAISettingsSheet")
+            || args.contains("-smokeAIModels") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [self] in
+                self.homePath.append(Route.aiAssistant)
+                guard args.contains("-smokeAISettings") else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [self] in
+                    self.homePath.append(Route.aiSettings)
+                }
+            }
+            return
+        }
+
         let wantsManage = args.contains("-smokeManage") || args.contains("-smokeDetail")
         guard wantsManage else { return }
         // 给 TLE（业余源 + 全量目录）留出下载与解析时间。
