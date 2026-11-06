@@ -1,0 +1,10 @@
+# 构建产物
+node_modules/
+dist/
+build/
+.temp_wearable/
+
+# 签名私钥绝不入库（证书可以给，私钥不行）
+sign/**/*.pem
+*.log
+.DS_Store

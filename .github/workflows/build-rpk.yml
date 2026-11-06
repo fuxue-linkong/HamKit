@@ -1,0 +1,117 @@
+name: Build Wearable RPK
+
+# 手环端快应用独立仓库分支：任何提交都构建 rpk 并上传 artifact。
+#
+# 签名说明：手环与手机 App 通过 system.interconnect 通信时系统会校验两端签名，
+# rpk 必须与 HamKit APK 用同一个 keystore 签，否则装上去也连不上手机。
+# - 配了 KEYSTORE_BASE64 等 secrets → 产出 release 签名的 rpk（可联调）
+# - 没配 → 用 aiot-toolkit 自带测试证书出 debug rpk（只能看 UI）
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  build:
+    name: Build rpk
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      # 用与 HamKit APK 相同的 keystore 生成 rpk 签名（未配置 secrets 时跳过）
+      - name: Prepare rpk signature
+        id: sign
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::notice title=rpk 使用测试证书::未配置 KEYSTORE_BASE64，本次 rpk 无法与 App 互联"
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          mkdir -p signing
+          echo "$KEYSTORE_BASE64" | tr -d '\n\r ' | base64 -d > signing/release.keystore
+          OUT_DIR=sign/release ./scripts/prepare-wearable-sign.sh
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Build rpk (release, signed with app keystore)
+        if: steps.sign.outputs.signed == 'true'
+        run: npm run release
+
+      - name: Build rpk (debug, toolkit test certificate)
+        if: steps.sign.outputs.signed != 'true'
+        run: npm run build
+
+      # 守住两条不能回归的约束：包名必须是 App 的 applicationId，页面都要进包
+      - name: Inspect rpk
+        run: |
+          set -euo pipefail
+          ls -l dist
+          RPK=$(ls dist/*.rpk | head -1)
+          echo "rpk: $RPK"
+          unzip -l "$RPK"
+          unzip -p "$RPK" manifest.json > /tmp/manifest.json
+          python3 - <<'PY'
+          import json
+          m = json.load(open('/tmp/manifest.json'))
+          assert m['package'] == 'com.example.hamkit', f"package 必须是 App 包名，实际 {m['package']}"
+          features = {f['name'] for f in m['features']}
+          for need in ('system.interconnect', 'system.vibrator'):
+              assert need in features, f"缺少 feature: {need}"
+          print('package =', m['package'], '| versionName =', m['versionName'])
+          PY
+          # 注意：不要写成 `unzip -l | grep -q`，grep -q 提前退出会让 unzip 收到 SIGPIPE，
+          # 配合 pipefail 会把成功判成失败。先取回整份清单再判断。
+          LISTING=$(unzip -l "$RPK")
+          for page in pages/index/index.js pages/alert/index.js; do
+            case "$LISTING" in
+              *"$page"*) ;;
+              *) echo "::error::rpk 缺少页面 $page"; exit 1 ;;
+            esac
+          done
+          echo "sha256: $(sha256sum "$RPK" | awk '{print $1}')"
+          echo "rpk 校验通过"
+
+      - name: Upload rpk
+        uses: actions/upload-artifact@v4
+        with:
+          name: wearable-rpk-${{ github.sha }}
+          path: dist/*.rpk
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Publish summary
+        if: always()
+        run: |
+          echo "### 手环 rpk" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Item | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Commit | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Signing | ${{ steps.sign.outputs.signed == 'true' && 'release keystore（可与 App 互联）' || 'toolkit 测试证书（仅 UI 预览）' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Artifact | \`wearable-rpk-${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
