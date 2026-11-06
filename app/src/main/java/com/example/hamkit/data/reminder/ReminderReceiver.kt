@@ -3,6 +3,7 @@ package com.example.hamkit.data.reminder
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import com.example.hamkit.data.wearable.WearableAlertDispatcher
 
 /**
  * 接收 [AlarmManager] 触发的提醒广播。
@@ -37,16 +38,28 @@ class ReminderReceiver : BroadcastReceiver() {
         )
 
         val store = ReminderStore(context)
+        // 同一个 Receiver 服务两种闹钟：手机通知（AOS - leadMinutes）与
+        // 手环提醒（AOS - 60s），用 extra 区分，避免再多注册一个 Receiver。
+        val channel = intent.getStringExtra(EXTRA_CHANNEL) ?: CHANNEL_PHONE
+
         // SharedPreferences 读取 + 通知构建/渠道创建属磁盘 IO，转后台线程避免主线程 ANR
         val pendingResult = goAsync()
         Thread {
             try {
                 val settings = store.loadSettings()
-                val helper = ReminderNotificationHelper(context)
 
-                // 渠道可能未创建（首次触发）或被用户修改，重新创建一次保证一致
-                helper.createChannel(settings)
-                helper.showPassReminder(item)
+                if (channel == CHANNEL_WEARABLE) {
+                    // 开关可能在调度后被关掉，这里再确认一次
+                    if (settings.wearableEnabled) {
+                        WearableAlertDispatcher.get(context).dispatch(item)
+                    }
+                } else {
+                    val helper = ReminderNotificationHelper(context)
+
+                    // 渠道可能未创建（首次触发）或被用户修改，重新创建一次保证一致
+                    helper.createChannel(settings)
+                    helper.showPassReminder(item)
+                }
             } finally {
                 pendingResult.finish()
             }
@@ -63,5 +76,10 @@ class ReminderReceiver : BroadcastReceiver() {
         const val EXTRA_AOS_AZ = "aos_az"
         const val EXTRA_LOS_AZ = "los_az"
         const val EXTRA_MODES = "modes"
+        /** 闹钟用途：手机通知 / 手环提醒 */
+        const val EXTRA_CHANNEL = "channel"
+
+        const val CHANNEL_PHONE = "phone"
+        const val CHANNEL_WEARABLE = "wearable"
     }
 }

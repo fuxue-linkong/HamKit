@@ -1,0 +1,110 @@
+<script>
+import interconnect from '@system.interconnect'
+import { parseMessage, isValidAlert, MSG_PASS, makeHello, makeAck } from './common/utils/alert'
+
+/**
+ * 应用入口。
+ *
+ * interconnect 的连接对象在应用内是单例，放在这里而不是页面里：
+ * 页面来回切换（待命页 ↔ 提醒页）不会重建连接，也不会漏掉消息。
+ *
+ * 后台限制：Vela 的后台运行白名单只有 audio / request / geolocation，
+ * interconnect 不在其中，所以应用退到后台就会被停。
+ * 实际表现是「手环端应用开着才收得到推送」，手机端因此同时保留通知兜底。
+ */
+const connect = interconnect.instance()
+
+export default {
+  // 非响应式状态：直接挂在 app 对象上，不改 private，避免无意义的渲染
+  connected: false,
+  lastAlert: null,
+  // 手环与手机的时钟偏移（毫秒），由消息里的 now 反推
+  offset: 0,
+  alertHandler: null,
+
+  onCreate() {
+    this.bindConnect()
+  },
+
+  bindConnect() {
+    connect.onopen = (data) => {
+      this.connected = true
+      console.info('interconnect opened, reconnected=' + (data && data.isReconnected))
+      // 连接建立后握手：手机端会补发最近一条未过期的提醒
+      this.sendHello()
+    }
+
+    connect.onclose = (data) => {
+      this.connected = false
+      console.info('interconnect closed, code=' + (data && data.code))
+    }
+
+    connect.onerror = (data) => {
+      console.info('interconnect error, code=' + (data && data.code))
+    }
+
+    connect.onmessage = (data) => this.handleMessage(data && data.data)
+
+    // 应用可能是在连接已建立之后才启动的，主动查一次当前状态
+    connect.getReadyState({
+      success: (res) => {
+        this.connected = res.status === 1
+        if (this.connected) this.sendHello()
+      },
+      fail: () => {
+        this.connected = false
+      }
+    })
+  },
+
+  handleMessage(payload) {
+    const msg = parseMessage(payload)
+    // 只认卫星提醒；未知类型直接忽略，便于手机端以后扩展（如 ack 回执）
+    if (!msg || msg.t !== MSG_PASS || !isValidAlert(msg)) {
+      console.info('ignore message: ' + JSON.stringify(msg))
+      return
+    }
+
+    this.lastAlert = msg
+    this.offset = typeof msg.now === 'number' ? msg.now - Date.now() : 0
+    console.info('receive pass alert: ' + msg.sat)
+
+    if (this.alertHandler) {
+      this.alertHandler(msg)
+    }
+  },
+
+  /** 页面注册提醒回调；返回注销函数，页面销毁时调用 */
+  setAlertHandler(fn) {
+    this.alertHandler = fn
+    return () => {
+      this.alertHandler = null
+    }
+  },
+
+  isConnected() {
+    return this.connected === true
+  },
+
+  sendHello() {
+    connect.send({
+      data: makeHello(),
+      fail: (data, code) => console.info('send hello failed, code=' + code)
+    })
+  },
+
+  sendAck(id, action) {
+    if (!id) return
+    connect.send({
+      data: makeAck(id, action, Date.now()),
+      fail: (data, code) => console.info('send ack failed, code=' + code)
+    })
+  },
+
+  /** 调试用：塞一条假提醒，模拟收到推送的效果 */
+  injectTestAlert(alert) {
+    this.lastAlert = alert
+    this.offset = 0
+  }
+}
+</script>

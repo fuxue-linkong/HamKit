@@ -28,7 +28,8 @@ class ReminderStore(context: Context) {
             leadMinutes = prefs.getInt(KEY_LEAD_MINUTES, 10),
             repeatMode = RepeatMode.fromName(prefs.getString(KEY_REPEAT_MODE, null)),
             soundEnabled = prefs.getBoolean(KEY_SOUND, true),
-            vibrationEnabled = prefs.getBoolean(KEY_VIBRATION, true)
+            vibrationEnabled = prefs.getBoolean(KEY_VIBRATION, true),
+            wearableEnabled = prefs.getBoolean(KEY_WEARABLE, false)
         )
     }
 
@@ -42,6 +43,7 @@ class ReminderStore(context: Context) {
             .putString(KEY_REPEAT_MODE, settings.repeatMode.name)
             .putBoolean(KEY_SOUND, settings.soundEnabled)
             .putBoolean(KEY_VIBRATION, settings.vibrationEnabled)
+            .putBoolean(KEY_WEARABLE, settings.wearableEnabled)
             .apply()
     }
 
@@ -138,6 +140,8 @@ class ReminderStore(context: Context) {
         private const val KEY_REPEAT_MODE = "repeat_mode"
         private const val KEY_SOUND = "sound"
         private const val KEY_VIBRATION = "vibration"
+        /** 手环提醒开关，默认关闭（需要手环端安装快应用才有意义） */
+        private const val KEY_WEARABLE = "wearable_enabled"
         private const val KEY_ITEMS = "items"
         private const val KEY_ITEM_CATALOG = "catalog"
         private const val KEY_ITEM_NAME = "name"

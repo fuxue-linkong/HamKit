@@ -23,3 +23,17 @@ ui.xml
 /.kotlin
 /.trae
 
+# ── 手环端 Vela 快应用工程（wearable/） ──────────────────────────────
+/wearable/node_modules
+/wearable/dist
+/wearable/build
+/wearable/.npmrc.bak
+# 签名私钥绝不入库（证书可以给，私钥不行）
+/wearable/sign/**/*.pem
+
+# 上面的 `*.png` 是全局忽略，手环应用图标需要显式放行
+!/wearable/src/common/icon.png
+
+
+# aiot-toolkit 构建临时目录（生成在仓库根）
+/.temp_wearable
