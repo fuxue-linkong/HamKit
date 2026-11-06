@@ -1,0 +1,88 @@
+name: Preview Build (APK)
+
+# 生成一个可直接下载的 release APK：push 到 preview 分支 → 构建 → 发到 GitHub Release。
+#
+# 为什么不用 Actions artifact：artifact 下载需要登录态，手机/脚本拿不到；
+# Release asset 在公开仓库可以匿名下载，方便直接装到手机上试。
+#
+# 用途：改了提醒链路这类没法在 CI 里验证的功能时，出一个包给真机测。
+
+on:
+  push:
+    branches: [preview]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: preview-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GRADLE_VERSION: '9.4.1'
+
+jobs:
+  build:
+    name: Build & publish preview APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+
+      - name: Decode release keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::未配置 KEYSTORE_BASE64，无法出可安装的 release 包"
+            exit 1
+          fi
+          mkdir -p signing
+          echo "$KEYSTORE_BASE64" | tr -d '\n\r ' | base64 -d > signing/release.keystore
+          keytool -list -keystore signing/release.keystore -alias "$KEY_ALIAS" -storepass "$KEYSTORE_PASSWORD" > /dev/null
+          echo "keystore ok"
+
+      - name: Build release APK
+        env:
+          KEYSTORE_PATH: ${{ github.workspace }}/signing/release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          AMAP_SDK_KEY: ${{ secrets.AMAP_SDK_KEY }}
+          AMAP_WEB_KEY: ${{ secrets.AMAP_WEB_KEY }}
+        run: gradle assembleRelease --console=plain --no-daemon
+
+      - name: Publish prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          APK=$(find app/build/outputs/apk -name "*.apk" -type f | head -1)
+          if [ -z "$APK" ]; then
+            echo "::error::没有找到 APK"
+            find app/build/outputs -name "*.apk" || true
+            exit 1
+          fi
+          cp "$APK" "HamKit-preview-${GITHUB_SHA::7}.apk"
+          TAG="preview-${GITHUB_SHA::7}"
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" "HamKit-preview-${GITHUB_SHA::7}.apk" \
+            --prerelease \
+            --title "Preview ${GITHUB_SHA::7}" \
+            --notes "自动构建的手环提醒测试包（commit ${GITHUB_SHA}）。安装前请确认与手环 rpk 签名一致。"
+          echo "$TAG"
