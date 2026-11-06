@@ -543,4 +543,8 @@
     <string name="ai_model_advanced">Advanced</string>
     <string name="ai_model_catalog">Model catalog</string>
     <string name="ai_model_notice_key">This model has no API key yet.</string>
+    <string name="ai_model_search">Search models…</string>
+    <string name="ai_model_manage">Manage models…</string>
+    <string name="ai_model_no_match">No matching models</string>
+    <string name="ai_model_generating">Cannot switch while generating</string>
 </resources>
