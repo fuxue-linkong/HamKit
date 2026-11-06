@@ -40,26 +40,56 @@ class ReminderScheduler(private val context: Context) {
             return false
         }
 
-        // 计算触发时间（AOS - leadMinutes），转换为毫秒。
+        val now = System.currentTimeMillis()
+
+        // 两条链路各自独立排期，互相不能拖累。
+        // 历史 bug：手环闹钟写在手机通知的"触发时间已过"早退之后，
+        // 一旦 AOS 落在 leadMinutes 之内（例如 3 分钟后就过境），
+        // 手环闹钟根本没注册，用户看到的就是"到点什么都不弹"。
+        val phoneScheduled = schedulePhone(item, settings, now)
+        val wearableScheduled = scheduleWearable(item, settings, now)
+        return phoneScheduled || wearableScheduled
+    }
+
+    /**
+     * 算实际该在什么时候响。
+     *
+     * - 目标时刻在未来 → 就用它
+     * - 目标时刻已过但**卫星还没过境** → 立刻补发（延后 [IMMEDIATE_DELAY_MS]，
+     *   给 AlarmManager 留一点余量），而不是直接丢弃
+     * - 卫星也已经过境 → null，调用方取消该闹钟
+     */
+    private fun resolveAlarmTime(triggerAtMillis: Long, aosMillis: Long, now: Long): Long? {
+        if (triggerAtMillis > now) return triggerAtMillis
+        if (now < aosMillis) return now + IMMEDIATE_DELAY_MS
+        return null
+    }
+
+    /** 仅白天提醒：按目标触发时刻所在小时判断（对补发场景同样成立） */
+    private fun isWithinDaytimeWindow(settings: ReminderSettings, triggerAtMillis: Long): Boolean {
+        if (settings.repeatMode != RepeatMode.DAYTIME_ONLY) return true
+        val hour = Instant.ofEpochMilli(triggerAtMillis)
+            .atZone(ZoneId.systemDefault())
+            .hour
+        return hour in 6..21
+    }
+
+    /** 手机通知闹钟（AOS - leadMinutes） */
+    private fun schedulePhone(item: ReminderItem, settings: ReminderSettings, now: Long): Boolean {
         // leadMinutes 钳制在 [0, 1440]，防止 SharedPreferences 异常值导致乘法溢出
         val leadMinutesSafe = settings.leadMinutes.coerceIn(0, 1440)
         val triggerAtMillis = item.aosTimeMillis - leadMinutesSafe * 60L * 1000L
-        val now = System.currentTimeMillis()
-        if (triggerAtMillis <= now) {
-            // 触发时间已过去，不调度
-            cancel(item.catalogNumber)
+
+        // 仅白天提醒：检查触发时间的小时是否在 6-22 之间
+        if (!isWithinDaytimeWindow(settings, triggerAtMillis)) {
+            cancelPhone(item.catalogNumber)
             return false
         }
 
-        // 仅白天提醒：检查触发时间的小时是否在 6-22 之间
-        if (settings.repeatMode == RepeatMode.DAYTIME_ONLY) {
-            val hour = Instant.ofEpochMilli(triggerAtMillis)
-                .atZone(ZoneId.systemDefault())
-                .hour
-            if (hour < 6 || hour >= 22) {
-                cancel(item.catalogNumber)
-                return false
-            }
+        val alarmAt = resolveAlarmTime(triggerAtMillis, item.aosTimeMillis, now)
+        if (alarmAt == null) {
+            cancelPhone(item.catalogNumber)
+            return false
         }
 
         val pendingIntent = PendingIntent.getBroadcast(
@@ -68,11 +98,7 @@ class ReminderScheduler(private val context: Context) {
             createReceiverIntent(item, ReminderReceiver.CHANNEL_PHONE),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
-
-        setAlarm(triggerAtMillis, pendingIntent)
-
-        // 手环提醒单独一个闹钟：AOS 前 60 秒触发，与手机通知互不覆盖
-        scheduleWearable(item, settings)
+        setAlarm(alarmAt, pendingIntent)
         return true
     }
 
@@ -115,27 +141,25 @@ class ReminderScheduler(private val context: Context) {
      * 独立的 requestCode（`catalogNumber + WEARABLE_REQUEST_OFFSET`）保证与
      * 手机通知的闹钟互不覆盖：两者触发时间不同（提前量不同），必须并存。
      */
-    private fun scheduleWearable(item: ReminderItem, settings: ReminderSettings) {
+    private fun scheduleWearable(item: ReminderItem, settings: ReminderSettings, now: Long): Boolean {
         if (!settings.wearableEnabled) {
             cancelWearable(item.catalogNumber)
-            return
+            return false
         }
 
         val triggerAtMillis = item.aosTimeMillis - WEARABLE_LEAD_MS
-        if (triggerAtMillis <= System.currentTimeMillis()) {
+
+        // 手环用自己的触发时刻（AOS-60s）判断白天/夜间，不沿用手机通知的提前量
+        if (!isWithinDaytimeWindow(settings, triggerAtMillis)) {
             cancelWearable(item.catalogNumber)
-            return
+            return false
         }
 
-        // 仅白天提醒的判定与手机通知保持一致，避免"夜里手环狂震"
-        if (settings.repeatMode == RepeatMode.DAYTIME_ONLY) {
-            val hour = Instant.ofEpochMilli(triggerAtMillis)
-                .atZone(ZoneId.systemDefault())
-                .hour
-            if (hour < 6 || hour >= 22) {
-                cancelWearable(item.catalogNumber)
-                return
-            }
+        // 与手机通知同款补发逻辑：只有在 AOS 已过时才丢弃
+        val alarmAt = resolveAlarmTime(triggerAtMillis, item.aosTimeMillis, now)
+        if (alarmAt == null) {
+            cancelWearable(item.catalogNumber)
+            return false
         }
 
         val pendingIntent = PendingIntent.getBroadcast(
@@ -144,7 +168,8 @@ class ReminderScheduler(private val context: Context) {
             createReceiverIntent(item, ReminderReceiver.CHANNEL_WEARABLE),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
-        setAlarm(triggerAtMillis, pendingIntent)
+        setAlarm(alarmAt, pendingIntent)
+        return true
     }
 
     /** 取消某颗卫星的手环提醒闹钟（不影响手机通知闹钟） */
@@ -213,6 +238,12 @@ class ReminderScheduler(private val context: Context) {
      * 取消指定卫星的全部提醒（手机通知 + 手环提醒）。
      */
     fun cancel(catalogNumber: Int) {
+        cancelPhone(catalogNumber)
+        cancelWearable(catalogNumber)
+    }
+
+    /** 只取消手机通知闹钟 */
+    private fun cancelPhone(catalogNumber: Int) {
         val intent = Intent(context, ReminderReceiver::class.java).apply {
             action = ReminderReceiver.ACTION_TRIGGER_REMINDER
         }
@@ -226,7 +257,6 @@ class ReminderScheduler(private val context: Context) {
             alarmManager.cancel(pendingIntent)
             pendingIntent.cancel()
         }
-        cancelWearable(catalogNumber)
     }
 
     /**
@@ -289,6 +319,12 @@ class ReminderScheduler(private val context: Context) {
 
         /** 手环提醒的提前量：AOS 前 60 秒（手环上做"还有 1 分钟"的倒计时） */
         private const val WEARABLE_LEAD_MS = 60L * 1000L
+
+        /**
+         * 补发延迟：目标时刻已过但卫星还没过境时，立刻补一条。
+         * 留 1 秒余量，避免 setExact* 传入"过去时间"被系统立即触发成一团。
+         */
+        private const val IMMEDIATE_DELAY_MS = 1_000L
 
         /**
          * 手环闹钟的 requestCode 偏移。

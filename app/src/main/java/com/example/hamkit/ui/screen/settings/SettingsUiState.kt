@@ -3,6 +3,7 @@ package com.example.hamkit.ui.screen.settings
 import androidx.compose.runtime.Immutable
 import com.example.hamkit.data.reminder.ReminderItem
 import com.example.hamkit.data.reminder.ReminderSettings
+import com.example.hamkit.data.wearable.WearableStatus
 import com.example.hamkit.ui.util.LatestVersionInfo
 import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
@@ -42,6 +43,8 @@ data class SettingsUiState(
 data class SettingsBusinessState(
     val reminderSettings: ReminderSettings = ReminderSettings(),
     val reminderItems: List<ReminderItem> = emptyList(),
+    /** 手环链路状态，展示在「手环提醒」分组 */
+    val wearableStatus: WearableStatus = WearableStatus.Disabled,
 )
 
 @Immutable
@@ -56,6 +59,8 @@ data class SettingsScreenActions(
     // 业务相关回调
     val onUpdateReminderSettings: (ReminderSettings) -> Unit = {},
     val onOpenReminderList: () -> Unit = {},
+    /** 发一条测试提醒到手环，验证整条链路 */
+    val onTestWearableAlert: () -> Unit = {},
     // 更新相关回调
     val onCheckUpdateNow: () -> Unit = {},
     val onDownloadAndInstall: () -> Unit = {},

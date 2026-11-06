@@ -12,6 +12,9 @@ import android.util.Log
  */
 interface WearableLink {
 
+    /** 是否已经解析到手环节点（不代表快应用在前台） */
+    val connected: Boolean
+
     /** 建立/刷新与手环的连接（幂等，可重复调用） */
     fun connect()
 
@@ -21,8 +24,8 @@ interface WearableLink {
     /**
      * 发一条消息给手环快应用。
      *
-     * @param json UTF-8 JSON 文本
-     * @param onResult 回调在主线程/调用线程不确定，调用方自行保证线程安全
+     * 实现内部会先尝试把手环应用拉到前台再发送；`onResult(true)` 只代表
+     * "消息已交给穿戴服务"，不代表快应用已经展示（那要靠 ack 回执）。
      */
     fun send(json: String, onResult: (Boolean) -> Unit = {})
 
@@ -34,12 +37,25 @@ interface WearableLink {
      */
     fun sendNotification(title: String, content: String, onResult: (Boolean) -> Unit = {})
 
+    /**
+     * 在前台调用：向手环申请通知 / 设备管理权限。
+     *
+     * 必须在有 UI 的时机调（例如用户在设置页打开开关时），
+     * 后台线程里 `requestPermission` 弹不出授权框。
+     */
+    fun requestPermissions()
+
+    /** 探测手环上是否安装了本 App 的快应用；结果会缓存供 [connected] 之外的状态展示用 */
+    fun probeAppInstalled(onResult: (Boolean) -> Unit)
+
     /** 注册手环上行消息（hello / ack）回调 */
     fun setInboundListener(listener: ((WearableInbound) -> Unit)?)
 }
 
 /** SDK 不可用时的空实现：只打日志，绝不让调用方崩溃 */
 internal class NoopWearableLink : WearableLink {
+
+    override val connected: Boolean = false
 
     override fun connect() {
         Log.i(TAG, "wearable sdk unavailable, skip connect")
@@ -54,6 +70,12 @@ internal class NoopWearableLink : WearableLink {
 
     override fun sendNotification(title: String, content: String, onResult: (Boolean) -> Unit) {
         Log.i(TAG, "wearable sdk unavailable, drop notify: $title")
+        onResult(false)
+    }
+
+    override fun requestPermissions() = Unit
+
+    override fun probeAppInstalled(onResult: (Boolean) -> Unit) {
         onResult(false)
     }
 

@@ -39,6 +39,7 @@ import com.example.hamkit.data.satellite.SatellitePredictor
 import com.example.hamkit.data.satellite.SatelliteStatusTracker
 import com.example.hamkit.data.satellite.SegmentStatus
 import com.example.hamkit.data.wearable.WearableAlertDispatcher
+import com.example.hamkit.data.wearable.WearableStatus
 import com.example.hamkit.data.satellite.SatelliteStatusSegmenter
 import com.example.hamkit.data.satellite.SourcedTLE
 import com.example.hamkit.data.satellite.addCategory
@@ -254,6 +255,35 @@ class MainViewModel : ViewModel() {
      */
     private val _reminderFeedback = mutableStateOf<String?>(null)
     val reminderFeedback: State<String?> = _reminderFeedback
+
+    /**
+     * 手环链路状态：已连接 / 快应用未安装 / 未找到设备 / 上次失败原因。
+     *
+     * 手环提醒横跨「App → 穿戴服务 → 快应用 → 手环屏幕」四段，任何一段断了
+     * 用户看到的都是"什么都没有"，所以把状态暴露出来给设置页展示。
+     */
+    private val _wearableStatus = mutableStateOf<WearableStatus>(WearableStatus.Disabled)
+    val wearableStatus: State<WearableStatus> = _wearableStatus
+
+    init {
+        val dispatcher = WearableAlertDispatcher.get(app)
+        dispatcher.setStatusListener { _wearableStatus.value = it }
+        // 上次退出时如果开着，启动即建立链路（手环端 hello 才有对象可接）
+        if (_reminderSettings.value.wearableEnabled) {
+            dispatcher.start()
+            dispatcher.refreshStatus()
+        }
+    }
+
+    /** 设置页「发送测试提醒」：走与真实提醒完全相同的链路，AOS 设为 15 秒后 */
+    fun sendTestWearableAlert() {
+        WearableAlertDispatcher.get(app).sendTestAlert()
+    }
+
+    /** 设置页进入「手环提醒」分组时刷新一次链路状态 */
+    fun refreshWearableStatus() {
+        WearableAlertDispatcher.get(app).refreshStatus()
+    }
 
     fun consumeReminderFeedback() {
         _reminderFeedback.value = null
@@ -636,9 +666,16 @@ class MainViewModel : ViewModel() {
         // 关闭时释放监听并断开，避免常驻持有手环服务连接。
         // 注意：真正的提醒投递仍由 AOS-60s 的闹钟触发，这里只是把链路点亮。
         if (settings.wearableEnabled && !previous.wearableEnabled) {
-            WearableAlertDispatcher.get(app).start()
+            val dispatcher = WearableAlertDispatcher.get(app)
+            dispatcher.start()
+            // 权限必须趁用户还在设置页（前台）时申请，后台弹不出授权框
+            dispatcher.requestPermissions()
+            dispatcher.refreshStatus()
         } else if (!settings.wearableEnabled && previous.wearableEnabled) {
             WearableAlertDispatcher.get(app).stop()
+        } else if (settings.wearableEnabled) {
+            // 其它提醒设置变化（提前量/白天模式）时链路状态也可能变，顺手刷新
+            WearableAlertDispatcher.get(app).refreshStatus()
         }
 
         // 声音/振动设置变化时通知渠道不可直接改 importance，

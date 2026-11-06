@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Update
+import androidx.compose.material.icons.filled.Watch
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material3.Icon
@@ -220,18 +221,6 @@ fun SettingPagerMaterial(
                         )
                     }
                     add {
-                        // 手环提醒：AOS 前 1 分钟推到手环快应用（需手环端已装 rpk）
-                        SegmentedSwitchItem(
-                            title = stringResource(id = R.string.reminder_wearable),
-                            checked = businessState.reminderSettings.wearableEnabled,
-                            onCheckedChange = { enabled ->
-                                actions.onUpdateReminderSettings(
-                                    businessState.reminderSettings.copy(wearableEnabled = enabled)
-                                )
-                            }
-                        )
-                    }
-                    add {
                         SegmentedListItem(
                             onClick = actions.onOpenReminderList,
                             headlineContent = { Text(stringResource(id = R.string.reminder_view_list)) },
@@ -244,6 +233,43 @@ fun SettingPagerMaterial(
                                     }
                                 )
                             },
+                            trailingContent = {
+                                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null)
+                            }
+                        )
+                    }
+                }
+            )
+
+            // 手环提醒：独立分组（开关 + 链路状态 + 测试入口）
+            SegmentedColumn(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                content = buildList {
+                    add {
+                        SegmentedSwitchItem(
+                            icon = Icons.Filled.Watch,
+                            title = stringResource(id = R.string.wearable_enable),
+                            summary = if (businessState.reminderSettings.wearableEnabled) {
+                                wearableStatusText(businessState.wearableStatus)
+                            } else {
+                                stringResource(id = R.string.wearable_enable_desc)
+                            },
+                            checked = businessState.reminderSettings.wearableEnabled,
+                            onCheckedChange = { enabled ->
+                                actions.onUpdateReminderSettings(
+                                    businessState.reminderSettings.copy(wearableEnabled = enabled)
+                                )
+                            }
+                        )
+                    }
+                    add {
+                        SegmentedListItem(
+                            onClick = actions.onTestWearableAlert,
+                            headlineContent = { Text(stringResource(id = R.string.wearable_test)) },
+                            supportingContent = {
+                                Text(stringResource(id = R.string.wearable_test_desc))
+                            },
+                            leadingContent = { Icon(Icons.Filled.Watch, null) },
                             trailingContent = {
                                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null)
                             }
