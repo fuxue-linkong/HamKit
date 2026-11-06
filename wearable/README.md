@@ -76,6 +76,12 @@ npm run build         # 开发包：dist/*.debug.rpk
 npm run release       # 正式包：dist/*.release.rpk
 ```
 
+也可以不本地构建：推送到 `miuix` 分支后，GitHub Actions 的 **Build Wearable RPK** job
+会产出 artifact `wearable-rpk-<run_id>`。
+
+- 仓库配了 `KEYSTORE_BASE64` 等 secrets → 产出**与 APK 同签名**的 release rpk，可直接联调
+- 没配 → 用 toolkit 测试证书出 debug rpk，只能看 UI，连不上手机 App
+
 ## 3. 装到手环
 
 1. 手环与手机正常配对、连接。
