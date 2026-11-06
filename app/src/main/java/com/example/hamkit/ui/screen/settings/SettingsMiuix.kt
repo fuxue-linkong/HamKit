@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BugReport
+import androidx.compose.material.icons.rounded.Watch
 import androidx.compose.material.icons.rounded.ContactPage
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Download
@@ -246,17 +247,6 @@ fun SettingPagerMiuix(
                                 )
                             }
                         )
-                        // 手环提醒：AOS 前 1 分钟推到手环快应用（需手环端已装 rpk）
-                        SwitchPreference(
-                            title = stringResource(id = R.string.reminder_wearable),
-                            summary = stringResource(id = R.string.reminder_wearable_desc),
-                            checked = businessState.reminderSettings.wearableEnabled,
-                            onCheckedChange = { enabled ->
-                                actions.onUpdateReminderSettings(
-                                    businessState.reminderSettings.copy(wearableEnabled = enabled)
-                                )
-                            }
-                        )
                         ArrowPreference(
                             title = stringResource(id = R.string.reminder_view_list),
                             summary = if (businessState.reminderItems.isEmpty()) {
@@ -265,6 +255,49 @@ fun SettingPagerMiuix(
                                 stringResource(id = R.string.reminder_count) + ": ${businessState.reminderItems.size}"
                             },
                             onClick = actions.onOpenReminderList
+                        )
+                    }
+
+                    // 手环提醒：独立分组（开关 + 链路状态 + 测试入口）
+                    Card(
+                        modifier = Modifier
+                            .padding(top = 12.dp)
+                            .fillMaxWidth(),
+                    ) {
+                        SwitchPreference(
+                            title = stringResource(id = R.string.wearable_enable),
+                            summary = if (businessState.reminderSettings.wearableEnabled) {
+                                wearableStatusText(businessState.wearableStatus)
+                            } else {
+                                stringResource(id = R.string.wearable_enable_desc)
+                            },
+                            startAction = {
+                                Icon(
+                                    Icons.Rounded.Watch,
+                                    modifier = Modifier.padding(end = 6.dp),
+                                    contentDescription = stringResource(id = R.string.wearable_enable),
+                                    tint = colorScheme.onBackground
+                                )
+                            },
+                            checked = businessState.reminderSettings.wearableEnabled,
+                            onCheckedChange = { enabled ->
+                                actions.onUpdateReminderSettings(
+                                    businessState.reminderSettings.copy(wearableEnabled = enabled)
+                                )
+                            }
+                        )
+                        ArrowPreference(
+                            title = stringResource(id = R.string.wearable_test),
+                            summary = stringResource(id = R.string.wearable_test_desc),
+                            startAction = {
+                                Icon(
+                                    Icons.Rounded.Watch,
+                                    modifier = Modifier.padding(end = 6.dp),
+                                    contentDescription = stringResource(id = R.string.wearable_test),
+                                    tint = colorScheme.onBackground
+                                )
+                            },
+                            onClick = actions.onTestWearableAlert
                         )
                     }
 

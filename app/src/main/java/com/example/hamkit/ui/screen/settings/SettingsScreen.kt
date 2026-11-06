@@ -38,6 +38,7 @@ fun SettingPager(
     // MainViewModel 的状态是 Compose State<T>（非 StateFlow），直接用 by 委托即可
     val reminderSettings by mainViewModel.reminderSettings
     val reminderItems by mainViewModel.reminderItems
+    val wearableStatus by mainViewModel.wearableStatus
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -109,6 +110,7 @@ fun SettingPager(
     val businessState = SettingsBusinessState(
         reminderSettings = reminderSettings,
         reminderItems = reminderItems,
+        wearableStatus = wearableStatus,
     )
 
     val actions = SettingsScreenActions(
@@ -121,6 +123,7 @@ fun SettingPager(
         onOpenPrivacy = { navigator.push(Route.PrivacyPolicy) },
         onOpenAiSettings = { navigator.push(Route.AiSettings) },
         onUpdateReminderSettings = mainViewModel::updateReminderSettings,
+        onTestWearableAlert = mainViewModel::sendTestWearableAlert,
         onOpenReminderList = { navigator.push(Route.ReminderList) },
         onCheckUpdateNow = settingsViewModel::checkUpdateNow,
         onDownloadAndInstall = settingsViewModel::downloadAndInstall,
