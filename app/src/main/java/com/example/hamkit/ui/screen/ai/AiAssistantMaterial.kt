@@ -335,7 +335,8 @@ fun AiAssistantScreenMaterial(bottomInnerPadding: Dp = 0.dp) {
                 onStop = viewModel::stop,
                 profiles = state.profiles,
                 activeProfileId = state.activeProfileId,
-                onSwitchProfile = viewModel::switchProfile,
+                activeModelId = state.activeModelId,
+                onSwitchModel = viewModel::switchModel,
                 onOpenSettings = { navigator.push(Route.AiSettings) },
             )
         }
@@ -656,12 +657,13 @@ private fun ComposerMaterial(
     attachments: List<AiAttachment>,
     profiles: List<AiModelProfile>,
     activeProfileId: String,
+    activeModelId: String?,
     onInputChange: (String) -> Unit,
     onPickFiles: () -> Unit,
     onRemoveAttachment: (String) -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit,
-    onSwitchProfile: (String) -> Unit,
+    onSwitchModel: (String, String) -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     val canSend = (input.isNotBlank() || attachments.any { it.status == AiAttachmentStatus.READY }) &&
@@ -669,7 +671,7 @@ private fun ComposerMaterial(
     var focused by remember { mutableStateOf(false) }
     var pickerOpen by remember { mutableStateOf(false) }
     val active = profiles.firstOrNull { it.id == activeProfileId }
-    val modelLabel = active?.model?.takeIf { it.isNotBlank() } ?: "选择模型"
+    val modelLabel = active?.currentModelId?.takeIf { it.isNotBlank() } ?: "选择模型"
 
     Column(
         modifier = modifier
@@ -815,11 +817,12 @@ private fun ComposerMaterial(
         if (pickerOpen) {
             ModelPickerPopupMaterial(
                 profiles = profiles,
-                activeId = activeProfileId,
+                activeProfileId = activeProfileId,
+                activeModelId = activeModelId,
                 streaming = streaming,
                 onDismiss = { pickerOpen = false },
-                onPick = { id ->
-                    onSwitchProfile(id)
+                onPick = { profileId, modelId ->
+                    onSwitchModel(profileId, modelId)
                     pickerOpen = false
                 },
                 onManage = {
@@ -834,17 +837,22 @@ private fun ComposerMaterial(
 @Composable
 private fun ModelPickerPopupMaterial(
     profiles: List<AiModelProfile>,
-    activeId: String,
+    activeProfileId: String,
+    activeModelId: String?,
     streaming: Boolean,
     onDismiss: () -> Unit,
-    onPick: (String) -> Unit,
+    onPick: (String, String) -> Unit,
     onManage: () -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
-    val filtered = profiles.filter { profile ->
-        query.isBlank() ||
-            profile.name.contains(query, ignoreCase = true) ||
-            profile.model.contains(query, ignoreCase = true)
+    val filtered = profiles.mapNotNull { profile ->
+        val entries = profile.models.filter { entry ->
+            query.isBlank() ||
+                profile.name.contains(query, ignoreCase = true) ||
+                entry.modelId.contains(query, ignoreCase = true) ||
+                entry.displayName?.contains(query, ignoreCase = true) == true
+        }
+        if (entries.isEmpty()) null else profile to entries
     }
     Popup(
         alignment = Alignment.BottomEnd,
@@ -876,17 +884,17 @@ private fun ModelPickerPopupMaterial(
                     )
                 } else {
                     LazyColumn(Modifier.heightIn(max = 360.dp)) {
-                        filtered.groupBy { it.preset.label }.forEach { (label, list) ->
-                            item(key = "header_$label") {
+                        filtered.forEach { (profile, entries) ->
+                            item(key = "provider_${profile.id}") {
                                 Text(
-                                    label,
+                                    profile.name,
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
                                 )
                             }
-                            items(list, key = { it.id }) { profile ->
-                                val current = profile.id == activeId
+                            items(entries, key = { "${profile.id}_${it.id}" }) { entry ->
+                                val current = profile.id == activeProfileId && entry.id == activeModelId
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -898,12 +906,12 @@ private fun ModelPickerPopupMaterial(
                                                 Color.Transparent
                                             },
                                         )
-                                        .clickable { if (!streaming) onPick(profile.id) }
+                                        .clickable { if (!streaming) onPick(profile.id, entry.id) }
                                         .padding(horizontal = 8.dp, vertical = 8.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Text(
-                                        profile.model,
+                                        entry.label,
                                         style = MaterialTheme.typography.bodyMedium,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
@@ -1604,7 +1612,7 @@ private fun AiModelPickerMaterial(
                             Column(Modifier.weight(1f)) {
                                 Text(profile.name, style = MaterialTheme.typography.bodyMedium)
                                 Text(
-                                    "${profile.protocol.label} · ${profile.model}",
+                                    "${profile.protocol.label} · ${profile.currentModelId}",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )

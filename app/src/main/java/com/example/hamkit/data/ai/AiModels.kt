@@ -268,8 +268,18 @@ data class AiProbeResult(
     val toolsSupported: Boolean? = null,
 )
 
+/** 一个提供商下的模型条目。 */
+data class AiModelEntry(
+    val id: String,
+    val modelId: String,
+    val displayName: String? = null,
+) {
+    /** 列表展示名：优先显示名称，否则模型 ID。 */
+    val label: String get() = displayName?.takeIf { it.isNotBlank() } ?: modelId
+}
+
 /**
- * 一组可切换的模型配置（连接参数 + 独立 Key 槽位）。
+ * 一组可切换的模型配置（提供商 + 多个模型 + 独立 Key 槽位）。
  *
  * 全局设置（系统提示词、工具权限、历史等）仍在 [AiConfig] 中，不随模型切换。
  */
@@ -279,17 +289,36 @@ data class AiModelProfile(
     val preset: AiPreset = AiPreset.DEEPSEEK,
     val protocol: AiProtocol = preset.protocol,
     val baseUrl: String = preset.baseUrl,
-    val model: String = preset.defaultModel,
+    val models: List<AiModelEntry> = emptyList(),
+    val selectedModelId: String? = null,
     val temperature: Float = 0.6f,
     val maxOutputTokens: Int = 2048,
 ) {
-    fun normalized(): AiModelProfile = copy(
-        name = name.trim().ifBlank { "未命名" },
-        baseUrl = baseUrl.trim().trimEnd('/'),
-        model = model.trim(),
-        temperature = temperature.coerceIn(0f, 2f),
-        maxOutputTokens = maxOutputTokens.coerceIn(64, 8192),
-    )
+    val currentEntry: AiModelEntry?
+        get() = models.firstOrNull { it.id == selectedModelId } ?: models.firstOrNull()
+
+    val currentModelId: String get() = currentEntry?.modelId.orEmpty()
+
+    fun normalized(): AiModelProfile {
+        val cleaned = models
+            .map {
+                it.copy(
+                    modelId = it.modelId.trim(),
+                    displayName = it.displayName?.trim()?.takeIf { name -> name.isNotEmpty() },
+                )
+            }
+            .filter { it.modelId.isNotEmpty() }
+        val selected = selectedModelId?.takeIf { id -> cleaned.any { it.id == id } }
+            ?: cleaned.firstOrNull()?.id
+        return copy(
+            name = name.trim().ifBlank { "未命名" },
+            baseUrl = baseUrl.trim().trimEnd('/'),
+            models = cleaned,
+            selectedModelId = selected,
+            temperature = temperature.coerceIn(0f, 2f),
+            maxOutputTokens = maxOutputTokens.coerceIn(64, 8192),
+        )
+    }
 
     /** 把本 profile 的连接参数覆盖到全局配置上。 */
     fun applyTo(config: AiConfig): AiConfig {
@@ -298,7 +327,7 @@ data class AiModelProfile(
             preset = value.preset,
             protocol = value.protocol,
             baseUrl = value.baseUrl,
-            model = value.model,
+            model = value.currentModelId,
             temperature = value.temperature,
             maxOutputTokens = value.maxOutputTokens,
         )
@@ -313,7 +342,13 @@ data class AiModelProfile(
             preset = config.preset,
             protocol = config.protocol,
             baseUrl = config.baseUrl,
-            model = config.model,
+            models = listOf(
+                AiModelEntry(
+                    id = "m1",
+                    modelId = config.model.ifBlank { config.preset.defaultModel },
+                ),
+            ),
+            selectedModelId = "m1",
             temperature = config.temperature,
             maxOutputTokens = config.maxOutputTokens,
         )

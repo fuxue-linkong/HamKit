@@ -96,7 +96,16 @@ class AiProfileStore(context: Context) {
                 put("preset", profile.preset.name)
                 put("protocol", profile.protocol.name)
                 put("baseUrl", profile.baseUrl)
-                put("model", profile.model)
+                put("models", JSONArray().apply {
+                    profile.models.forEach { entry ->
+                        put(JSONObject().apply {
+                            put("id", entry.id)
+                            put("modelId", entry.modelId)
+                            entry.displayName?.let { put("displayName", it) }
+                        })
+                    }
+                })
+                profile.selectedModelId?.let { put("selectedModelId", it) }
                 put("temperature", profile.temperature.toDouble())
                 put("maxOutputTokens", profile.maxOutputTokens)
             })
@@ -112,13 +121,37 @@ class AiProfileStore(context: Context) {
         val protocol = runCatching {
             AiProtocol.valueOf(item.optString("protocol", preset.protocol.name))
         }.getOrDefault(preset.protocol)
+        // 兼容旧版：没有 models 时用 model 生成单条
+        val models = item.optJSONArray("models")?.let { array ->
+            buildList {
+                for (index in 0 until array.length()) {
+                    val entry = array.optJSONObject(index) ?: continue
+                    val modelId = entry.optString("modelId").takeIf { it.isNotBlank() } ?: continue
+                    add(
+                        AiModelEntry(
+                            id = entry.optString("id").takeIf { it.isNotBlank() } ?: "m$index",
+                            modelId = modelId,
+                            displayName = entry.optString("displayName").takeIf { it.isNotBlank() },
+                        ),
+                    )
+                }
+            }
+        }.orEmpty().ifEmpty {
+            listOf(
+                AiModelEntry(
+                    id = "m1",
+                    modelId = item.optString("model").takeIf { it.isNotBlank() } ?: preset.defaultModel,
+                ),
+            )
+        }
         return AiModelProfile(
             id = id,
             name = item.optString("name").ifBlank { "未命名" },
             preset = preset,
             protocol = protocol,
             baseUrl = item.optString("baseUrl").takeIf { it.isNotBlank() } ?: preset.baseUrl,
-            model = item.optString("model").takeIf { it.isNotBlank() } ?: preset.defaultModel,
+            models = models,
+            selectedModelId = item.optString("selectedModelId").takeIf { it.isNotBlank() },
             temperature = item.optDouble("temperature", 0.6).toFloat(),
             maxOutputTokens = item.optInt("maxOutputTokens", 2048),
         ).normalized()

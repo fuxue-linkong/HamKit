@@ -547,4 +547,6 @@
     <string name="ai_model_manage">Manage models…</string>
     <string name="ai_model_no_match">No matching models</string>
     <string name="ai_model_generating">Cannot switch while generating</string>
+    <string name="ai_model_provider_add">Add model provider</string>
+    <string name="ai_model_display_name">Display name</string>
 </resources>
