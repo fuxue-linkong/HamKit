@@ -20,6 +20,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,11 +37,21 @@ import com.example.hamkit.R
  *
  * 不依赖网络、不启用 JavaScript；内容随 APK 一起发布，保证首启同意时也能阅读全文。
  */
+/** 支持的协议文档（离线 assets）。 */
+enum class PrivacyDocument(val zhAsset: String, val enAsset: String) {
+    PRIVACY_POLICY("privacy_policy_zh.html", "privacy_policy_en.html"),
+    USER_AGREEMENT("user_agreement_zh.html", "user_agreement_en.html"),
+}
+
 @Composable
-fun PrivacyPolicyScreen(onBack: () -> Unit) {
+fun PrivacyPolicyScreen(
+    onBack: () -> Unit,
+    document: PrivacyDocument = PrivacyDocument.PRIVACY_POLICY,
+) {
     BackHandler(onBack = onBack)
+    var current by remember(document) { mutableStateOf(document) }
     val context = LocalContext.current
-    val html = remember(context) { PrivacyPolicyAssets.load(context) }
+    val html = remember(context, current) { PrivacyPolicyAssets.load(context, current) }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -55,8 +68,19 @@ fun PrivacyPolicyScreen(onBack: () -> Unit) {
                     Text(stringResource(R.string.back))
                 }
                 Spacer(Modifier.weight(1f))
+                TextButton(onClick = { current = PrivacyDocument.PRIVACY_POLICY }) {
+                    Text(stringResource(R.string.privacy_policy_title))
+                }
+                TextButton(onClick = { current = PrivacyDocument.USER_AGREEMENT }) {
+                    Text(stringResource(R.string.user_agreement_title))
+                }
                 Text(
-                    text = stringResource(R.string.privacy_policy_title),
+                    text = stringResource(
+                        when (current) {
+                            PrivacyDocument.PRIVACY_POLICY -> R.string.privacy_policy_title
+                            else -> R.string.user_agreement_title
+                        },
+                    ),
                     style = MaterialTheme.typography.titleMedium,
                 )
                 Spacer(Modifier.weight(1f))
@@ -103,17 +127,13 @@ fun PrivacyPolicyScreen(onBack: () -> Unit) {
 
 private object PrivacyPolicyAssets {
 
-    fun load(context: android.content.Context): String {
+    fun load(context: android.content.Context, document: PrivacyDocument): String {
         val language = context.resources.configuration.locales[0].language
-        val preferred = if (language.startsWith("zh")) {
-            "privacy_policy_zh.html"
-        } else {
-            "privacy_policy_en.html"
-        }
+        val preferred = if (language.startsWith("zh")) document.zhAsset else document.enAsset
         return runCatching {
             context.assets.open(preferred).bufferedReader().use { it.readText() }
         }.getOrElse {
-            context.assets.open("privacy_policy_zh.html").bufferedReader().use { it.readText() }
+            context.assets.open(document.zhAsset).bufferedReader().use { it.readText() }
         }
     }
 }

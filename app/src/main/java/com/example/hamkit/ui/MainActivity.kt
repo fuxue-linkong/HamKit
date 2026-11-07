@@ -68,6 +68,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import com.example.hamkit.R
 import com.example.hamkit.HamKitApplication
 import com.example.hamkit.data.privacy.AmapPrivacyInitializer
+import com.example.hamkit.data.onboarding.OnboardingStore
 import com.example.hamkit.data.privacy.PrivacyConsentStore
 import com.example.hamkit.data.sstv.SstvLaunchIntent
 import com.example.hamkit.data.sstv.SstvLaunchRequest
@@ -84,6 +85,7 @@ import com.example.hamkit.ui.screen.about.AboutScreen
 import com.example.hamkit.ui.screen.colorpalette.ColorPaletteScreen
 import com.example.hamkit.ui.screen.home.HomePager
 import com.example.hamkit.ui.screen.location.LocationDetailScreen
+import com.example.hamkit.ui.screen.onboarding.OnboardingScreen
 import com.example.hamkit.ui.screen.permission.PermissionScreen
 import com.example.hamkit.ui.screen.privacy.PrivacyConsentScreen
 import com.example.hamkit.ui.screen.privacy.PrivacyPolicyScreen
@@ -155,22 +157,12 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val context = LocalContext.current
-            var consentGranted by remember {
-                mutableStateOf(PrivacyConsentStore.isAccepted(context))
-            }
+            var onboarded by remember { mutableStateOf(OnboardingStore.isDone(context)) }
 
-            // 首启隐私闸门：同意前不创建业务 ViewModel、不请求权限、不初始化高德 SDK。
-            if (!consentGranted) {
-                PrivacyConsentScreen(
-                    onAgree = { aprsPublic ->
-                        PrivacyConsentStore.accept(
-                            context = context,
-                            location = true,
-                            aprsPublic = aprsPublic,
-                        )
-                        AmapPrivacyInitializer.initialize(context)
-                        consentGranted = true
-                    },
+            // 首启引导闸门：欢迎/功能/权限/协议完成后才创建业务 ViewModel、请求定位/通知。
+            if (!onboarded) {
+                OnboardingScreen(
+                    onFinish = { onboarded = true },
                     onDecline = { (context as? Activity)?.finishAffinity() },
                 )
                 return@setContent

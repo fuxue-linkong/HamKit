@@ -52,16 +52,28 @@ fun PrivacyConsentScreen(
     BackHandler(onBack = onDecline)
 
     var policyAccepted by remember { mutableStateOf(false) }
+    var userAgreementAccepted by remember { mutableStateOf(false) }
     var locationAccepted by remember { mutableStateOf(false) }
     var aprsPublicAccepted by remember { mutableStateOf(false) }
     var showPolicy by remember { mutableStateOf(false) }
+    var showUserAgreement by remember { mutableStateOf(false) }
 
     val dark = isSystemInDarkTheme()
-    if (showPolicy) {
+    if (showPolicy || showUserAgreement) {
         MaterialTheme(
             colorScheme = if (dark) darkColorScheme() else lightColorScheme(),
         ) {
-            PrivacyPolicyScreen(onBack = { showPolicy = false })
+            PrivacyPolicyScreen(
+                onBack = {
+                    showPolicy = false
+                    showUserAgreement = false
+                },
+                document = if (showUserAgreement) {
+                    PrivacyDocument.USER_AGREEMENT
+                } else {
+                    PrivacyDocument.PRIVACY_POLICY
+                },
+            )
         }
         return
     }
@@ -118,6 +130,11 @@ fun PrivacyConsentScreen(
                     text = stringResource(R.string.privacy_consent_policy_checkbox),
                 )
                 ConsentCheckbox(
+                    checked = userAgreementAccepted,
+                    onCheckedChange = { userAgreementAccepted = it },
+                    text = stringResource(R.string.privacy_consent_user_checkbox),
+                )
+                ConsentCheckbox(
                     checked = locationAccepted,
                     onCheckedChange = { locationAccepted = it },
                     text = stringResource(R.string.privacy_consent_location_checkbox),
@@ -135,11 +152,17 @@ fun PrivacyConsentScreen(
                 ) {
                     Text(stringResource(R.string.privacy_consent_view_policy))
                 }
+                TextButton(
+                    onClick = { showUserAgreement = true },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.privacy_consent_view_user_agreement))
+                }
 
                 Spacer(Modifier.height(8.dp))
                 Button(
                     onClick = { onAgree(aprsPublicAccepted) },
-                    enabled = policyAccepted && locationAccepted,
+                    enabled = policyAccepted && userAgreementAccepted && locationAccepted,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(stringResource(R.string.privacy_consent_agree))
