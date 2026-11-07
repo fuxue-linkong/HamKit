@@ -1148,7 +1148,7 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
     private companion object {
         const val STREAM_FLUSH_INTERVAL_MS = 48L
         const val MAX_CONTEXT_MESSAGES = 24
-        const val MAX_TOOL_ROUNDS = 4
+        const val MAX_TOOL_ROUNDS = 6
 
         const val MAX_ATTACHMENTS = 5
         const val MAX_ATTACHMENT_TEXT_CHARS = 8_000

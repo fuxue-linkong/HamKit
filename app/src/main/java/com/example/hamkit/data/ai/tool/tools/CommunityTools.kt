@@ -19,6 +19,7 @@ import com.example.hamkit.data.ai.tool.optLongOrNullArg
 import com.example.hamkit.data.ft8.Ft8Band
 import com.example.hamkit.data.ft8.Ft8QsoRecord
 import java.time.Instant
+import com.example.hamkit.data.ai.tool.QsoSummary
 
 /** FT8 活动：本次会话最近的解码与 QSO。 */
 object GetFt8ActivityTool : AiTool {
@@ -157,6 +158,8 @@ object SearchQsoLogTool : AiTool {
         parameters = toolSchema(
             JSONObject()
                 .put("callsign", stringProperty("按呼号过滤，可省略"))
+                .put("band", stringProperty("按波段过滤，如 2m（可省略）"))
+                .put("mode", stringProperty("按模式过滤，如 FM/FT8（可省略）"))
                 .put("days", integerProperty("最近多少天", 1, 365))
                 .put("max", integerProperty("最多返回条数", 1, 100)),
         ),
@@ -171,10 +174,21 @@ object SearchQsoLogTool : AiTool {
         val days = (args.optIntOrNullArg("days") ?: 30).coerceIn(1, 365)
         val max = (args.optIntOrNullArg("max") ?: 20).coerceIn(1, 100)
         val cutoff = System.currentTimeMillis() - days * 24L * 60L * 60L * 1000L
+        val bandArg = args.optStringOrNullArg("band")
+        val bandFilter = if (bandArg != null) {
+            parseBand(bandArg) ?: return errorOutcome("无法识别波段：$bandArg")
+        } else {
+            null
+        }
+        val modeFilter = args.optStringOrNullArg("mode")
+            ?.trim()
+            ?.uppercase()
+            ?.takeIf { it.isNotEmpty() }
 
         val filtered = records
             .filter { record ->
                 (callsign == null || record.callsign.contains(callsign, ignoreCase = true)) &&
+                    matchesQsoFilter(record, bandFilter, modeFilter) &&
                     record.qsoTime >= cutoff
             }
             .sortedByDescending { it.qsoTime }
@@ -184,6 +198,8 @@ object SearchQsoLogTool : AiTool {
             put("total", filtered.size)
             put("returned", page.size)
             put("days", days)
+            bandFilter?.let { put("band", it.displayName) }
+            modeFilter?.let { put("mode", it) }
             put("truncated", filtered.size > page.size)
             put("records", JSONArray().apply {
                 page.forEach { record ->
@@ -244,6 +260,11 @@ internal fun parseQsoTime(iso: String?, epochMs: Long?): Long =
         ?: iso?.trim()?.takeIf { it.isNotEmpty() }
             ?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() }
         ?: System.currentTimeMillis()
+
+/** QSO 过滤：波段/模式为空表示不过滤。 */
+internal fun matchesQsoFilter(record: QsoSummary, band: Ft8Band?, mode: String?): Boolean =
+    (band == null || record.band == band.displayName) &&
+        (mode == null || record.mode.equals(mode, ignoreCase = true))
 
 /** 单条 QSO 参数 → 记录；失败返回 null 并给出原因。 */
 internal fun buildQsoRecord(args: JSONObject): Pair<Ft8QsoRecord?, String?> {
