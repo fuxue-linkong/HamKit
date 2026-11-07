@@ -179,11 +179,11 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
 
     fun attachFacade(value: AiAppFacade) {
         facade = value
-        McpController.attach(getApplication(), { facade })
+        McpController.setFacade(getApplication(), value)
     }
 
     fun detachFacade() {
-        McpController.detach()
+        // 保留 MCP 已绑定的 facade，避免切到设置页后 tools/call 变成 not ready
         facade = null
     }
 
