@@ -36,6 +36,9 @@ class AddQsoLogToolTest {
         assertTrue(parseQsoTime(null, null) > 0)
         assertTrue(parseQsoTime(null, 0L) > 0)
         assertEquals(1234L, parseQsoTime(null, 1234L))
-        assertEquals(1794027598452L, parseQsoTime("2026-11-07T04:19:58.452Z", null))
+        assertEquals(
+            java.time.Instant.parse("2026-11-07T04:19:58.452Z").toEpochMilli(),
+            parseQsoTime("2026-11-07T04:19:58.452Z", null),
+        )
     }
 }
