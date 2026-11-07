@@ -10,6 +10,7 @@ import com.example.hamkit.data.ai.AiKeyStore
 import com.example.hamkit.data.ai.AiModelEntry
 import com.example.hamkit.data.ai.AiModelProfile
 import com.example.hamkit.data.ai.AiProfileStore
+import com.example.hamkit.data.mcp.McpController
 import com.example.hamkit.data.ai.AiErrorKind
 import com.example.hamkit.data.ai.AiModelList
 import com.example.hamkit.data.ai.AiModelListException
@@ -24,6 +25,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.net.Inet4Address
+import java.net.NetworkInterface
 import java.util.UUID
 import kotlinx.coroutines.withContext
 
@@ -49,6 +52,12 @@ data class AiSettingsUiState(
     val editingModelId: String? = null,
     /** 保存中（按钮禁用/显示保存中）。 */
     val saving: Boolean = false,
+    val mcpEnabled: Boolean = false,
+    val mcpPort: Int = 8765,
+    val mcpToken: String = "",
+    val mcpAddress: String = "",
+    val mcpRunning: Boolean = false,
+    val mcpError: String? = null,
 ) {
     val hasKey: Boolean get() = keyMasked != null
 }
@@ -84,8 +93,62 @@ class AiSettingsViewModel(application: Application) : AndroidViewModel(applicati
                     editingModelId = profile.currentEntry?.id,
                 )
             }
+            loadMcp()
         }
     }
+
+    private fun loadMcp() {
+        val enabled = McpController.enabled(getApplication())
+        val port = McpController.port(getApplication())
+        val token = McpController.token(getApplication())
+        val ip = wifiIpAddress()
+        _uiState.update {
+            it.copy(
+                mcpEnabled = enabled,
+                mcpPort = port,
+                mcpToken = token,
+                mcpAddress = ip?.let { host -> "http://$host:$port/mcp" } ?: "",
+                mcpRunning = McpController.isRunning(),
+            )
+        }
+    }
+
+    fun setMcpEnabled(enabled: Boolean) {
+        val running = McpController.setEnabled(getApplication(), enabled)
+        loadMcp()
+        _uiState.update {
+            it.copy(
+                mcpError = if (enabled && !running) "启动失败：端口可能被占用或 AI 页尚未打开" else null,
+            )
+        }
+    }
+
+    fun setMcpPort(port: Int) {
+        val value = port.coerceIn(1024, 65535)
+        val running = McpController.setPort(getApplication(), value)
+        loadMcp()
+        _uiState.update {
+            it.copy(mcpError = if (_uiState.value.mcpEnabled && !running) "端口被占用，请换一个" else null)
+        }
+    }
+
+    fun resetMcpToken() {
+        McpController.resetToken(getApplication())
+        loadMcp()
+    }
+
+    fun refreshMcp() = loadMcp()
+
+    private fun wifiIpAddress(): String? = runCatching {
+        NetworkInterface.getNetworkInterfaces().toList()
+            .flatMap { it.inetAddresses.toList() }
+            .firstOrNull { address ->
+                address is Inet4Address &&
+                    !address.isLoopbackAddress &&
+                    !address.isLinkLocalAddress
+            }
+            ?.hostAddress
+    }.getOrNull()
 
     private fun keyStoreFor(profileId: String): AiKeyStore =
         AiKeyStore(getApplication(), if (profileId == AiModelProfile.DEFAULT_ID) "" else profileId)

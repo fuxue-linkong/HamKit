@@ -24,6 +24,7 @@ import com.example.hamkit.data.ai.AiEvent
 import com.example.hamkit.data.ai.AiKeyStore
 import com.example.hamkit.data.ai.AiModelProfile
 import com.example.hamkit.data.ai.AiProfileStore
+import com.example.hamkit.data.mcp.McpController
 import com.example.hamkit.data.ai.AiMessage
 import com.example.hamkit.data.ai.AiNetworkPolicy
 import com.example.hamkit.data.ai.AiPrompts
@@ -178,9 +179,11 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
 
     fun attachFacade(value: AiAppFacade) {
         facade = value
+        McpController.attach(getApplication(), { facade })
     }
 
     fun detachFacade() {
+        McpController.detach()
         facade = null
     }
 

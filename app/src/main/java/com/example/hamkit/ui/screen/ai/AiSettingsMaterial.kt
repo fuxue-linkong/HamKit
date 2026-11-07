@@ -63,6 +63,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialog
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.material3.Switch
 
 /** Material 风格实现，与 Miuix 版共用 [AiSettingsViewModel]。 */
 @Composable
@@ -227,6 +230,12 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
                 }
             }
 
+            McpCardMaterial(
+                state = state,
+                onToggle = viewModel::setMcpEnabled,
+                onPort = viewModel::setMcpPort,
+                onResetToken = viewModel::resetMcpToken,
+            )
             ResultTextMaterial(state)
             Spacer(Modifier.height(24.dp))
         }
@@ -779,4 +788,101 @@ private fun Modifier.dashedBorderMaterial(color: Color, radius: Dp = 12.dp): Mod
         ),
         cornerRadius = CornerRadius(radius.toPx()),
     )
+}
+
+@Composable
+private fun McpCardMaterial(
+    state: AiSettingsUiState,
+    onToggle: (Boolean) -> Unit,
+    onPort: (Int) -> Unit,
+    onResetToken: () -> Unit,
+) {
+    var portInput by remember(state.mcpPort) { mutableStateOf(state.mcpPort.toString()) }
+    val clipboard = LocalClipboardManager.current
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "局域网 MCP",
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f),
+                )
+                Switch(checked = state.mcpEnabled, onCheckedChange = onToggle)
+            }
+            Text(
+                if (state.mcpRunning) "运行中" else "已关闭",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (state.mcpRunning) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+            if (state.mcpRunning) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "地址",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    state.mcpAddress.ifBlank { "请连接 Wi-Fi 后重试" },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Token",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        state.mcpToken,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = { clipboard.setText(AnnotatedString(state.mcpToken)) }) {
+                        Text("复制")
+                    }
+                    TextButton(onClick = onResetToken) { Text("重置") }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "端口",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = portInput,
+                        onValueChange = { portInput = it.filter(Char::isDigit).take(5) },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(onClick = { onPort(portInput.toIntOrNull() ?: state.mcpPort) }) {
+                        Text("应用")
+                    }
+                }
+            }
+            state.mcpError?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "仅只读工具；写操作（QSO/提醒）不开放。仅限可信局域网。",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
 }
