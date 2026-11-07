@@ -15,33 +15,42 @@ object McpController {
     private var server: McpServer? = null
 
     @Volatile
-    private var facadeProvider: (() -> AiAppFacade?)? = null
+    private var facade: AiAppFacade? = null
 
     @Volatile
     private var appContext: Context? = null
 
     fun attach(context: Context, provider: () -> AiAppFacade?) {
         appContext = context.applicationContext
-        facadeProvider = provider
+        // 兼容旧调用：保存后立即取一次当前 facade
+        facade = provider()
         maybeStart()
     }
 
+    /** 直接绑定当前 AI 页的 facade；服务用最新引用执行工具。 */
+    fun setFacade(context: Context, value: AiAppFacade?) {
+        appContext = context.applicationContext
+        facade = value
+        if (value != null) maybeStart()
+    }
+
     fun detach() {
-        stop()
+        // 只解绑执行上下文，不停止服务；关闭开关才会 stop()
+        facade = null
     }
 
     fun isRunning(): Boolean = server != null
 
     fun maybeStart(): Boolean {
         val context = appContext ?: return false
-        val provider = facadeProvider ?: return false
+        val current = facade ?: return false
         val store = McpSettingsStore(context)
         if (!store.enabled) {
             stop()
             return false
         }
         if (server != null) return true
-        val instance = McpServer(store.port, store.ensureToken(), provider)
+        val instance = McpServer(store.port, store.ensureToken()) { current }
         return if (instance.start()) {
             server = instance
             true
