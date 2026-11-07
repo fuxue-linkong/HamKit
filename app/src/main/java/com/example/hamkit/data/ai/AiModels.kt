@@ -83,6 +83,22 @@ enum class AiPreset(
  * [allowCleartext] 默认 false：只允许 https；开启后也只允许私有地址 http
  * （判定见 [AiNetworkPolicy]），并不等于"全局放开"。
  */
+/** 推理等级：OFF 不传思考参数；其余映射到各协议的思考预算。 */
+enum class AiReasoningEffort(
+    val label: String,
+    /** OpenAI 兼容的 reasoning_effort 值；OFF 为 null。 */
+    val apiValue: String?,
+    /** Anthropic budget_tokens。 */
+    val budgetTokens: Int,
+    /** Gemini thinkingBudget（-1 = 动态）。 */
+    val geminiBudget: Int,
+) {
+    OFF("关闭", null, 0, 0),
+    LOW("Low", "low", 1024, 1024),
+    MEDIUM("Medium", "medium", 2048, 2048),
+    HIGH("High", "high", 4096, -1),
+}
+
 data class AiConfig(
     val protocol: AiProtocol = AiProtocol.OPENAI_CHAT,
     val preset: AiPreset = AiPreset.DEEPSEEK,
@@ -101,6 +117,8 @@ data class AiConfig(
     val disabledTools: Set<String> = emptySet(),
     /** 副作用工具（创建提醒等）执行前是否二次确认。 */
     val confirmSideEffects: Boolean = true,
+    /** 推理等级：默认 Medium。 */
+    val reasoningEffort: AiReasoningEffort = AiReasoningEffort.MEDIUM,
 ) {
     fun normalized(): AiConfig = copy(
         baseUrl = baseUrl.trim().trimEnd('/'),
@@ -184,6 +202,8 @@ data class AiRequest(
     val messages: List<AiMessage>,
     /** 启用的工具；为空时不向模型暴露工具能力。 */
     val tools: List<AiToolSpec> = emptyList(),
+    /** 推理等级；OFF 时不向协议发送思考参数。 */
+    val reasoningEffort: AiReasoningEffort = AiReasoningEffort.OFF,
 )
 
 enum class AiStopReason { END_TURN, TOOL_USE, MAX_TOKENS, CONTENT_FILTER, UNKNOWN }

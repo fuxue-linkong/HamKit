@@ -155,6 +155,9 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.draw.alpha
+import androidx.compose.material.icons.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.KeyboardArrowLeft
+import com.example.hamkit.data.ai.AiReasoningEffort
 
 /**
  * AI 助手主页（底部导航第 2 项）。
@@ -351,7 +354,9 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
                 profiles = state.profiles,
                 activeProfileId = state.activeProfileId,
                 activeModelId = state.activeModelId,
+                effort = state.config.reasoningEffort,
                 onSwitchModel = viewModel::switchModel,
+                onEffort = viewModel::setReasoningEffort,
                 onOpenSettings = { navigator.push(Route.AiSettings) },
                 onReload = viewModel::reloadConfig,
             )
@@ -558,6 +563,10 @@ private fun MessageItemMiuix(message: AiChatMessageUi) {
                 }
             }
             Spacer(Modifier.height(6.dp))
+            if (message.reasoning.isNotBlank()) {
+                ReasoningCardMiuix(message)
+                Spacer(Modifier.height(6.dp))
+            }
             if (!message.isStreaming && message.text.isNotBlank()) {
                 MarkdownText(
                     markdown = message.text,
@@ -708,12 +717,14 @@ private fun ComposerMiuix(
     profiles: List<AiModelProfile>,
     activeProfileId: String,
     activeModelId: String?,
+    effort: AiReasoningEffort,
     onInputChange: (String) -> Unit,
     onPickFiles: () -> Unit,
     onRemoveAttachment: (String) -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit,
     onSwitchModel: (String, String) -> Unit,
+    onEffort: (AiReasoningEffort) -> Unit,
     onOpenSettings: () -> Unit,
     onReload: () -> Unit,
 ) {
@@ -722,7 +733,10 @@ private fun ComposerMiuix(
     var focused by remember { mutableStateOf(false) }
     var pickerOpen by remember { mutableStateOf(false) }
     val active = profiles.firstOrNull { it.id == activeProfileId }
-    val modelLabel = active?.currentModelId?.takeIf { it.isNotBlank() } ?: "选择模型"
+    val modelLabel = buildString {
+        append(active?.currentEntry?.label ?: active?.currentModelId?.takeIf { it.isNotBlank() } ?: "选择模型")
+        if (effort != AiReasoningEffort.OFF) append(" ${effort.label}")
+    }
 
     Column(
         modifier = modifier
@@ -821,7 +835,7 @@ private fun ComposerMiuix(
                     color = colorScheme.onSurfaceVariantSummary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.widthIn(max = 120.dp),
+                    modifier = Modifier.widthIn(max = 140.dp),
                 )
                 Spacer(Modifier.width(2.dp))
                 Icon(
@@ -869,12 +883,14 @@ private fun ComposerMiuix(
                 profiles = profiles,
                 activeProfileId = activeProfileId,
                 activeModelId = activeModelId,
+                effort = effort,
                 streaming = streaming,
                 onDismiss = { pickerOpen = false },
                 onPick = { profileId, modelId ->
                     onSwitchModel(profileId, modelId)
                     pickerOpen = false
                 },
+                onEffort = onEffort,
                 onManage = {
                     pickerOpen = false
                     onOpenSettings()
@@ -889,11 +905,14 @@ private fun ModelPickerPopupMiuix(
     profiles: List<AiModelProfile>,
     activeProfileId: String,
     activeModelId: String?,
+    effort: AiReasoningEffort,
     streaming: Boolean,
     onDismiss: () -> Unit,
     onPick: (String, String) -> Unit,
+    onEffort: (AiReasoningEffort) -> Unit,
     onManage: () -> Unit,
 ) {
+    var page by remember { mutableStateOf(0) }
     var query by remember { mutableStateOf("") }
     val filtered = profiles.mapNotNull { profile ->
         val entries = profile.models.filter { entry ->
@@ -904,6 +923,8 @@ private fun ModelPickerPopupMiuix(
         }
         if (entries.isEmpty()) null else profile to entries
     }
+    val activeEntry = profiles.firstOrNull { it.id == activeProfileId }?.currentEntry
+
     Popup(
         alignment = Alignment.BottomEnd,
         offset = IntOffset(0, -56),
@@ -912,113 +933,231 @@ private fun ModelPickerPopupMiuix(
     ) {
         Card(modifier = Modifier.width(260.dp)) {
             Column(Modifier.padding(6.dp)) {
-                BasicTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(36.dp)
-                        .background(
-                            colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                            RoundedCornerShape(8.dp),
-                        )
-                        .padding(horizontal = 8.dp, vertical = 8.dp),
-                    textStyle = TextStyle(fontSize = 12.sp, color = colorScheme.onSurface),
-                    cursorBrush = SolidColor(colorScheme.primary),
-                    singleLine = true,
-                    decorationBox = { inner ->
-                        Box {
-                            if (query.isEmpty()) {
-                                Text(
-                                    stringResource(R.string.ai_model_search),
-                                    fontSize = 12.sp,
-                                    color = colorScheme.onSurfaceVariantSummary,
+                when (page) {
+                    0 -> {
+                        PickerRowMiuix(
+                            label = "模型",
+                            value = activeEntry?.label ?: activeModelId ?: "未选择",
+                        ) { page = 1 }
+                        PickerRowMiuix(label = "推理等级", value = effort.label) { page = 2 }
+                    }
+
+                    1 -> {
+                        PickerBackMiuix("模型") { page = 0 }
+                        BasicTextField(
+                            value = query,
+                            onValueChange = { query = it },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(36.dp)
+                                .background(
+                                    colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                    RoundedCornerShape(8.dp),
                                 )
-                            }
-                            inner()
-                        }
-                    },
-                )
-                Spacer(Modifier.height(4.dp))
-                if (profiles.isEmpty()) {
-                    Text(
-                        stringResource(R.string.ai_model_empty),
-                        fontSize = 11.sp,
-                        color = colorScheme.onSurfaceVariantSummary,
-                        modifier = Modifier.padding(vertical = 12.dp),
-                    )
-                } else if (filtered.isEmpty()) {
-                    Text(
-                        stringResource(R.string.ai_model_no_match),
-                        fontSize = 11.sp,
-                        color = colorScheme.onSurfaceVariantSummary,
-                        modifier = Modifier.padding(vertical = 12.dp),
-                    )
-                } else {
-                    LazyColumn(Modifier.heightIn(max = 220.dp)) {
-                        filtered.forEach { (profile, entries) ->
-                            item(key = "provider_${profile.id}") {
-                                Text(
-                                    profile.name,
-                                    fontSize = 9.sp,
-                                    color = colorScheme.onSurfaceVariantSummary,
-                                    modifier = Modifier.padding(top = 6.dp, bottom = 2.dp),
-                                )
-                            }
-                            items(entries, key = { "${profile.id}_${it.id}" }) { entry ->
-                                val current = profile.id == activeProfileId && entry.id == activeModelId
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(
-                                            if (current) colorScheme.primary.copy(alpha = 0.08f)
-                                            else Color.Transparent,
-                                        )
-                                        .clickable { if (!streaming) onPick(profile.id, entry.id) }
-                                        .padding(horizontal = 6.dp, vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Text(
-                                        entry.label,
-                                        fontSize = 12.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                    if (current) {
-                                        Icon(
-                                            Icons.Rounded.Check,
-                                            contentDescription = null,
-                                            tint = colorScheme.primary,
-                                            modifier = Modifier.size(14.dp),
+                                .padding(horizontal = 8.dp, vertical = 8.dp),
+                            textStyle = TextStyle(fontSize = 12.sp, color = colorScheme.onSurface),
+                            cursorBrush = SolidColor(colorScheme.primary),
+                            singleLine = true,
+                            decorationBox = { inner ->
+                                Box {
+                                    if (query.isEmpty()) {
+                                        Text(
+                                            "搜索模型…",
+                                            fontSize = 12.sp,
+                                            color = colorScheme.onSurfaceVariantSummary,
                                         )
                                     }
+                                    inner()
+                                }
+                            },
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        if (filtered.isEmpty()) {
+                            Text(
+                                "没有匹配的模型",
+                                fontSize = 11.sp,
+                                color = colorScheme.onSurfaceVariantSummary,
+                                modifier = Modifier.padding(vertical = 12.dp),
+                            )
+                        } else {
+                            LazyColumn(Modifier.heightIn(max = 220.dp)) {
+                                filtered.forEach { (profile, entries) ->
+                                    item(key = "p_${profile.id}") {
+                                        Text(
+                                            profile.name,
+                                            fontSize = 9.sp,
+                                            color = colorScheme.onSurfaceVariantSummary,
+                                            modifier = Modifier.padding(top = 6.dp, bottom = 2.dp),
+                                        )
+                                    }
+                                    items(entries, key = { "${profile.id}_${it.id}" }) { entry ->
+                                        val current = profile.id == activeProfileId && entry.id == activeModelId
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(
+                                                    if (current) colorScheme.primary.copy(alpha = 0.08f)
+                                                    else Color.Transparent,
+                                                )
+                                                .clickable { if (!streaming) onPick(profile.id, entry.id) }
+                                                .padding(horizontal = 6.dp, vertical = 5.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Text(
+                                                entry.label,
+                                                fontSize = 12.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f),
+                                            )
+                                            if (current) {
+                                                Icon(
+                                                    Icons.Rounded.Check,
+                                                    contentDescription = null,
+                                                    tint = colorScheme.primary,
+                                                    modifier = Modifier.size(14.dp),
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Text(
+                            "管理模型…",
+                            fontSize = 11.sp,
+                            color = colorScheme.primary,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(onClick = onManage)
+                                .padding(vertical = 6.dp),
+                        )
+                    }
+
+                    else -> {
+                        PickerBackMiuix("推理等级") { page = 0 }
+                        AiReasoningEffort.entries.forEach { item ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .clickable {
+                                        onEffort(item)
+                                        onDismiss()
+                                    }
+                                    .padding(horizontal = 6.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(item.label, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                                if (item == effort) {
+                                    Icon(
+                                        Icons.Rounded.Check,
+                                        contentDescription = null,
+                                        tint = colorScheme.primary,
+                                        modifier = Modifier.size(14.dp),
+                                    )
                                 }
                             }
                         }
                     }
                 }
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    stringResource(R.string.ai_model_manage),
-                    fontSize = 11.sp,
-                    color = colorScheme.primary,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(onClick = onManage)
-                        .padding(vertical = 6.dp),
-                )
-                if (streaming) {
-                    Text(
-                        stringResource(R.string.ai_model_generating),
-                        fontSize = 10.sp,
-                        color = colorScheme.error,
-                        modifier = Modifier.padding(bottom = 4.dp),
-                    )
-                }
             }
+        }
+    }
+}
+
+@Composable
+private fun PickerRowMiuix(label: String, value: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label,
+            fontSize = 11.sp,
+            color = colorScheme.onSurfaceVariantSummary,
+            modifier = Modifier.width(64.dp),
+        )
+        Text(
+            value,
+            fontSize = 12.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(
+            Icons.Rounded.KeyboardArrowRight,
+            contentDescription = null,
+            tint = colorScheme.onSurfaceVariantSummary,
+            modifier = Modifier.size(16.dp),
+        )
+    }
+}
+
+@Composable
+private fun PickerBackMiuix(title: String, onBack: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onBack)
+            .padding(horizontal = 6.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            Icons.Rounded.KeyboardArrowLeft,
+            contentDescription = null,
+            tint = colorScheme.onSurfaceVariantSummary,
+            modifier = Modifier.size(16.dp),
+        )
+        Text(title, fontSize = 11.sp, color = colorScheme.onSurfaceVariantSummary)
+    }
+}
+
+@Composable
+private fun ReasoningCardMiuix(message: AiChatMessageUi) {
+    var expanded by remember(message.id) { mutableStateOf(false) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(colorScheme.surfaceVariant.copy(alpha = 0.35f))
+            .clickable { expanded = !expanded }
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "💡 思考过程",
+                fontSize = 10.sp,
+                color = colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                if (message.reasoningDone) {
+                    if (expanded) "收起" else "展开"
+                } else {
+                    "思考中…"
+                },
+                fontSize = 10.sp,
+                color = colorScheme.onSurfaceVariantSummary,
+            )
+        }
+        if (expanded) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                message.reasoning,
+                fontSize = 11.sp,
+                lineHeight = 16.sp,
+                color = colorScheme.onSurfaceVariantSummary,
+                maxLines = 30,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
