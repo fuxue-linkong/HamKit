@@ -173,5 +173,6 @@ object AiPrompts {
         9. 不要把工具调用写成文本（如 <||DSML||...>），工具调用由 App 处理。
         10. QSO 时间优先用 ISO 8601（如 2026-10-24T02:21:00Z）；没有时间就省略。
         11. 用户一次给多条 QSO 时，用 add_qso_log 的 records 数组一次写入，不要多次调用。
+        12. QSO 的 band 只填一个值（如 2m）；2m 上行/70cm 下行这类组合，把 70cm 写进 comment。
     """.trimIndent()
 }
