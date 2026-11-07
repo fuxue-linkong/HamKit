@@ -29,6 +29,7 @@ import com.example.hamkit.data.ai.AiMessage
 import com.example.hamkit.data.ai.AiNetworkPolicy
 import com.example.hamkit.data.ai.AiPrompts
 import com.example.hamkit.data.ai.AiRequest
+import com.example.hamkit.data.ai.stripDsml
 import com.example.hamkit.data.ai.AiRole
 import com.example.hamkit.data.ai.AiSession
 import com.example.hamkit.data.ai.AiSessionSummary
@@ -681,17 +682,18 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
                     errorText = result.error
                     break
                 }
-                if (result.text.isNotBlank()) finalText.append(result.text)
+                if (result.text.isNotBlank()) finalText.append(stripDsml(result.text))
                 if (result.toolCalls.isEmpty()) break
 
+                val calls = dedupeToolCalls(result.toolCalls)
                 conversation += AiMessage(
                     AiRole.ASSISTANT,
                     buildList {
-                        if (result.text.isNotBlank()) add(AiBlock.Text(result.text))
-                        result.toolCalls.forEach { add(AiBlock.ToolCall(it.id, it.name, it.argsJson)) }
+                        if (result.text.isNotBlank()) add(AiBlock.Text(stripDsml(result.text)))
+                        calls.forEach { add(AiBlock.ToolCall(it.id, it.name, it.argsJson)) }
                     },
                 )
-                registerToolsInUi(result.toolCalls)
+                registerToolsInUi(calls)
 
                 val toolResults = mutableListOf<AiBlock.ToolResult>()
                 // 同一轮内多个只读工具并行；副作用/导航保持串行
@@ -711,14 +713,14 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
                     return call to outcome
                 }
                 val outcomes = if (
-                    result.toolCalls.size > 1 &&
-                    result.toolCalls.all { registry.find(it.name)?.spec?.risk == ToolRisk.READ_ONLY }
+                    calls.size > 1 &&
+                    calls.all { registry.find(it.name)?.spec?.risk == ToolRisk.READ_ONLY }
                 ) {
                     coroutineScope {
-                        result.toolCalls.map { call -> async { runCall(call) } }.awaitAll()
+                        calls.map { call -> async { runCall(call) } }.awaitAll()
                     }
                 } else {
-                    result.toolCalls.map { runCall(it) }
+                    calls.map { runCall(it) }
                 }
                 outcomes.forEach { (call, outcome) ->
                     toolResults += AiBlock.ToolResult(
@@ -894,11 +896,21 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
 
     // ── UI 状态同步 ─────────────────────────────────────────────────────────
 
+    /** 服务商可能返回空/重复的 tool_call id；统一补成唯一 id，避免工具卡互相覆盖。 */
+    private fun dedupeToolCalls(calls: List<AiToolCall>): List<AiToolCall> {
+        val seen = mutableSetOf<String>()
+        return calls.mapIndexed { index, call ->
+            val id = call.id.takeIf { it.isNotBlank() && seen.add(it) }
+                ?: "call_${index}_${call.name}"
+            if (id == call.id) call else call.copy(id = id)
+        }
+    }
+
     private fun updateStreamingText(value: String) {
         _uiState.update { state ->
             state.copy(
                 messages = state.messages.map { message ->
-                    if (message.isStreaming) message.copy(text = value) else message
+                    if (message.isStreaming) message.copy(text = stripDsml(value)) else message
                 },
             )
         }
@@ -982,7 +994,7 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
                 messages = state.messages.map { message ->
                     if (!message.isStreaming) return@map message
                     message.copy(
-                        text = text,
+                        text = stripDsml(text),
                         isStreaming = false,
                         error = error,
                         elapsedMs = elapsedMs,

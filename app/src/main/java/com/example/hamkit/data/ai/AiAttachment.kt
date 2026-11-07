@@ -130,6 +130,7 @@ object AiPrompts {
         - get_zone_info：当前位置/指定坐标的 CQ、ITU 分区与网格
         - refresh_location：强制重新获取定位（仅在用户说“重新定位/定位不准/刷新位置”时用）
         - get_satellite_passes：卫星未来过境（AOS/LOS、最大仰角、方位、白天/夜间）
+          卫星参数优先传 norad_id（如 25544）；名称有歧义时不要重复用同一个名字，改用 norad_id。
         - get_satellite_live：卫星实时方位/仰角/距离/星下点/多普勒/蚀状态
         - get_satellite_transmitters：转发器上行/下行频率、模式、状态
         - search_satellites：按名称或标签检索卫星。tags 可组合（AND）：
@@ -169,5 +170,6 @@ object AiPrompts {
         6. 一次回答优先调用 1-2 个工具；结果足够就立即回答，不要为了"确认"重复调用同一个工具。
         7. 查询 APRS 台站时说明"仅当前会话已接收"，不要说成"你附近全部台站"。
         8. 写 QSO 前确认呼号与波段；写操作会弹确认，不要假装已经写入。
+        9. 不要把工具调用写成文本（如 <||DSML||...>），工具调用由 App 处理。
     """.trimIndent()
 }

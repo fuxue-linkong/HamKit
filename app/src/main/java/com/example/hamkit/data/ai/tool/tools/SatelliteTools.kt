@@ -44,9 +44,16 @@ private sealed interface SatelliteLookup {
  * 不能再像旧实现那样静默取列表第一条（会命中 `OUTPOST MISSION2`）。
  */
 private fun resolveOrError(ctx: AiToolContext, args: JSONObject): SatelliteLookup {
-    val query = args.optStringOrNullArg("satellite")
-        ?: args.optStringOrNullArg("query")
-        ?: return SatelliteLookup.Failed(errorOutcome("缺少卫星名称或 NORAD 编号"))
+    // 模型常把 NORAD 放进 norad_id；优先于名称，避免 "ISS" 这类歧义
+    val norad = args.optIntOrNullArg("norad_id")
+    val query = when {
+        norad != null -> norad.toString()
+        else -> args.optStringOrNullArg("satellite")
+            ?: args.optStringOrNullArg("query")
+            ?: return SatelliteLookup.Failed(
+                errorOutcome("缺少卫星名称或 NORAD 编号（可传 satellite 或 norad_id）"),
+            )
+    }
     val candidates = ctx.facade.satelliteCandidates(query)
     return when {
         candidates.isEmpty() -> SatelliteLookup.Failed(
@@ -213,9 +220,10 @@ object GetSatellitePassesTool : AiTool {
         parameters = toolSchema(
             JSONObject()
                 .put("satellite", stringProperty("卫星名称或 NORAD 编号，如 ISS、25544"))
+                .put("norad_id", integerProperty("NORAD 编号，优先于名称", 1, 999999))
                 .put("hours", integerProperty("预测窗口（小时）", 1, 72))
                 .put("limit", integerProperty("最多返回过境次数", 1, 6)),
-            required = listOf("satellite"),
+            required = emptyList(),
         ),
         category = ToolCategory.SATELLITE,
         longRunning = true,
@@ -307,8 +315,10 @@ object GetSatelliteLiveTool : AiTool {
         title = "卫星实时追踪",
         description = "计算指定卫星当前相对你位置的方位、仰角、距离、星下点、多普勒与蚀状态。",
         parameters = toolSchema(
-            JSONObject().put("satellite", stringProperty("卫星名称或 NORAD 编号")),
-            required = listOf("satellite"),
+            JSONObject()
+                .put("satellite", stringProperty("卫星名称或 NORAD 编号"))
+                .put("norad_id", integerProperty("NORAD 编号，优先于名称", 1, 999999)),
+            required = emptyList(),
         ),
         category = ToolCategory.SATELLITE,
     )
@@ -377,8 +387,10 @@ object GetSatelliteTransmittersTool : AiTool {
         title = "转发器频率",
         description = "返回指定卫星的转发器列表：上行/下行频率、模式、是否倒置、活跃状态。",
         parameters = toolSchema(
-            JSONObject().put("satellite", stringProperty("卫星名称或 NORAD 编号")),
-            required = listOf("satellite"),
+            JSONObject()
+                .put("satellite", stringProperty("卫星名称或 NORAD 编号"))
+                .put("norad_id", integerProperty("NORAD 编号，优先于名称", 1, 999999)),
+            required = emptyList(),
         ),
         category = ToolCategory.SATELLITE,
     )
@@ -426,8 +438,10 @@ object GetAmsatStatusTool : AiTool {
         title = "AMSAT 状态",
         description = "查询卫星最近的 AMSAT 状态报告（Heard / Telemetry Only / Not Heard / Crew Active）。",
         parameters = toolSchema(
-            JSONObject().put("satellite", stringProperty("卫星名称或 NORAD 编号")),
-            required = listOf("satellite"),
+            JSONObject()
+                .put("satellite", stringProperty("卫星名称或 NORAD 编号"))
+                .put("norad_id", integerProperty("NORAD 编号，优先于名称", 1, 999999)),
+            required = emptyList(),
         ),
         category = ToolCategory.SATELLITE,
     )
