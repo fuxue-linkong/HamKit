@@ -111,6 +111,8 @@ data class AiConfig(
     val saveHistory: Boolean = true,
     val historyLimit: Int = 200,
     val allowCleartext: Boolean = false,
+    /** 信任自签 HTTPS（仅对私有地址生效）。 */
+    val allowSelfSigned: Boolean = false,
     /** 自定义系统提示词；空串表示使用 [AiPrompts.DEFAULT_SYSTEM_PROMPT]。 */
     val systemPrompt: String = "",
     /** 被禁用的工具名（模型看不到，也不会调用）。 */
@@ -225,6 +227,8 @@ sealed interface AiEvent {
 
 enum class AiErrorKind {
     AUTH, RATE_LIMIT, INVALID_REQUEST, SERVER, NETWORK, TIMEOUT, PARSE, NO_CONFIG,
+    /** TLS 握手/证书不受信任（常见于 https 访问 http 端口或自签证书）。 */
+    SSL,
 }
 
 data class AiError(
@@ -270,6 +274,8 @@ data class AiError(
         }
 
         fun fromThrowable(t: Throwable): AiError = when (t) {
+            is javax.net.ssl.SSLException ->
+                AiError(AiErrorKind.SSL, t.message ?: "ssl handshake failed")
             is java.net.SocketTimeoutException ->
                 AiError(AiErrorKind.TIMEOUT, t.message ?: "timeout", retryable = true)
             is java.io.IOException ->

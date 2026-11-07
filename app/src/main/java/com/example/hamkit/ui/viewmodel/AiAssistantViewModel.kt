@@ -1101,6 +1101,7 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
         AiErrorKind.TIMEOUT -> str(R.string.ai_err_timeout)
         AiErrorKind.PARSE -> str(R.string.ai_err_parse, error.message)
         AiErrorKind.NO_CONFIG -> error.message
+        AiErrorKind.SSL -> str(R.string.ai_err_ssl)
     }
 
     private fun AiChatMessageUi.toRecord(usage: AiUsage?): AiChatMessage = AiChatMessage(

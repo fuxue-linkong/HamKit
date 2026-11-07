@@ -179,6 +179,13 @@ fun AiSettingsScreenMiuix(onBack: () -> Unit = {}) {
                         onCheckedChange = viewModel::setAllowCleartext,
                     )
                     SwitchPreference(
+                        title = "信任自签证书（仅内网）",
+                        summary = "用于自签 HTTPS / 反向代理；只对私有地址生效，公网仍强制校验。",
+                        startAction = {},
+                        checked = state.config.allowSelfSigned,
+                        onCheckedChange = viewModel::setAllowSelfSigned,
+                    )
+                    SwitchPreference(
                         title = "保存对话历史",
                         summary = stringResource(R.string.ai_settings_history_hint),
                         startAction = {},
@@ -612,6 +619,12 @@ private fun ModelConfigCardMiuix(
                     onValueChange = onBaseUrl,
                     modifier = Modifier.fillMaxWidth(),
                     maxLines = 1,
+                )
+                Text(
+                    stringResource(R.string.ai_url_hint),
+                    fontSize = 10.sp,
+                    color = colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(top = 4.dp),
                 )
                 Spacer(Modifier.height(12.dp))
             }

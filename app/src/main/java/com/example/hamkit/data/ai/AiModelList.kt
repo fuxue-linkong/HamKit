@@ -27,7 +27,7 @@ object AiModelList {
                     .get()
                     .build()
 
-                AiHttp.blocking.newCall(request).execute().use { response ->
+                AiHttp.blocking(cfg.allowSelfSigned).newCall(request).execute().use { response ->
                     val body = response.body?.string().orEmpty()
                     if (!response.isSuccessful) {
                         throw AiModelListException(AiError.fromHttp(response.code, body))
