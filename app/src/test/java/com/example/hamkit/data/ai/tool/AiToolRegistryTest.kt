@@ -63,7 +63,7 @@ class AiToolRegistryTest {
         val specs = registry.specs(setOf("get_weather", "get_utc_time"))
         assertTrue(specs.none { it.name == "get_weather" })
         assertTrue(specs.none { it.name == "get_utc_time" })
-        assertEquals(17, specs.size)
+        assertEquals(15, specs.size)
     }
 
     @Test

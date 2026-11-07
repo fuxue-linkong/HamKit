@@ -2,9 +2,14 @@ package com.example.hamkit.data.ai.tool
 
 import com.example.hamkit.data.mcp.McpProtocol
 import org.junit.Assert.assertFalse
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+@RunWith(RobolectricTestRunner::class)
+@Config(manifest = Config.NONE)
 class McpProtocolTest {
 
     @Test
