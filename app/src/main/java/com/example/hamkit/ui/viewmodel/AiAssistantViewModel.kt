@@ -68,6 +68,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.util.UUID
+import com.example.hamkit.data.ai.AiHttp
 import com.example.hamkit.data.ai.AiReasoningEffort
 
 /** 工具卡状态。 */
@@ -515,7 +516,11 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
 
     fun stop() {
         streamJob?.cancel()
+        // 阻塞读不会随协程取消中断，必须显式取消 OkHttp 请求
+        AiHttp.cancelActive()
         streamJob = null
+        // 立即把按钮从「停止」切回「发送」，finally 里还会做一次收尾
+        _uiState.update { it.copy(isStreaming = false) }
     }
 
     fun retry() {

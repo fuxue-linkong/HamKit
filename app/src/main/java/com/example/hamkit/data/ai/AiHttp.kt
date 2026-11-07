@@ -46,6 +46,19 @@ object AiHttp {
     fun blocking(allowSelfSigned: Boolean): OkHttpClient =
         if (allowSelfSigned) trustAllBlocking else blocking
 
+    /**
+     * 取消当前所有 AI HTTP 请求（用于「停止生成」）。
+     *
+     * OkHttp 的阻塞读不会随协程取消而中断，必须显式 cancelAll，
+     * 让 streamRequest 里的 IOException("Canceled") 转成 CancellationException。
+     */
+    fun cancelActive() {
+        runCatching { streaming.dispatcher.cancelAll() }
+        runCatching { blocking.dispatcher.cancelAll() }
+        runCatching { trustAllStreaming.dispatcher.cancelAll() }
+        runCatching { trustAllBlocking.dispatcher.cancelAll() }
+    }
+
     /** 仅用于内网自签证书；调用方必须保证 allowSelfSigned + 私有地址。 */
     private fun trustAll(base: OkHttpClient): OkHttpClient {
         val manager = object : X509TrustManager {
