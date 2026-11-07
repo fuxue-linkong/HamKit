@@ -104,7 +104,10 @@ fun MarkdownText(
             )
             .build()
     }
-    val document = remember(markdown, parser) { parser.parse(markdown) }
+    val document = remember(markdown, parser) {
+        // 模型偶尔把多个要点写进同一个列表项（"网格- 卫星：…"），这里先拆成多行再解析
+        parser.parse(normalizeInlineBullets(markdown))
+    }
     Column(modifier) {
         document.childNodes().forEach { child ->
             MarkdownBlock(child, colors)
@@ -355,4 +358,20 @@ private fun MarkdownTable(block: Node, colors: MarkdownPalette) {
             }
         }
     }
+}
+
+/**
+ * 把中文行内列表拆成多行：`网格- 卫星：…` → `网格\n- 卫星：…`。
+ *
+ * 只命中"前一个字符是中文/右括号、`-` 后接 1-12 个中文 + 冒号"的模式，
+ * 避免误伤数字范围（2-3）、英文连字符（FM-xxx）与 URL。
+ * 代码块（```）内不处理。
+ */
+internal fun normalizeInlineBullets(markdown: String): String {
+    val pattern = Regex("""(?<=[\u4e00-\u9fff）)])\s*-\s+(?=[\u4e00-\u9fff]{1,12}[：:])""")
+    return markdown.split("```")
+        .mapIndexed { index, part ->
+            if (index % 2 == 1) part else pattern.replace(part, "\n- ")
+        }
+        .joinToString("```")
 }
