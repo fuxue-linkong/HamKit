@@ -94,6 +94,6 @@ class AiNetworkPolicyTest {
         assertEquals("https://api.deepseek.com/v1", config.baseUrl)
         assertEquals("deepseek-chat", config.model)
         assertEquals(2f, config.temperature, 0.001f)
-        assertEquals(8192, config.maxOutputTokens)
+        assertEquals(65536, config.maxOutputTokens)
     }
 }
