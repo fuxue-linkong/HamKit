@@ -688,6 +688,9 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
                     break
                 }
                 if (result.text.isNotBlank()) finalText.append(stripDsml(result.text))
+                if (result.stop == AiStopReason.MAX_TOKENS && result.error == null) {
+                    finalText.append("\n\n> ⚠️ 输出达到长度上限，回复「继续」可接着生成")
+                }
                 if (result.reasoning.isNotBlank()) {
                     finalReasoning.append(result.reasoning)
                     updateStreamingReasoning(finalReasoning.toString())

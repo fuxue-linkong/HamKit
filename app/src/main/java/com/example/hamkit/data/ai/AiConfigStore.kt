@@ -32,7 +32,7 @@ class AiConfigStore(context: Context) {
             baseUrl = baseUrl,
             model = model,
             temperature = prefs.getFloat(KEY_TEMPERATURE, 0.6f),
-            maxOutputTokens = prefs.getInt(KEY_MAX_OUTPUT_TOKENS, 2048),
+            maxOutputTokens = prefs.getInt(KEY_MAX_OUTPUT_TOKENS, 8192),
             stream = prefs.getBoolean(KEY_STREAM, true),
             autoRetry = prefs.getBoolean(KEY_AUTO_RETRY, true),
             saveHistory = prefs.getBoolean(KEY_SAVE_HISTORY, true),
