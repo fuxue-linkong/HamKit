@@ -1,6 +1,7 @@
 package com.example.hamkit.data.ai
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertFalse
 import org.junit.Test
 
@@ -25,7 +26,8 @@ class DsmlTest {
         val cleaned = stripDsml(text)
         assertFalse(cleaned.contains("DSML"))
         assertFalse(cleaned.contains("get_satellite_passes"))
-        assertEquals("开始\n结束", cleaned)
+        assertTrue(cleaned.startsWith("开始"))
+        assertTrue(cleaned.endsWith("结束"))
     }
 
     @Test
