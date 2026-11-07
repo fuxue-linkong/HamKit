@@ -133,7 +133,25 @@
     <string name="ai_err_server">服务商暂时不可用：%1$s</string>
     <string name="ai_err_network">网络不可用：%1$s</string>
     <string name="ai_err_timeout">请求超时，请检查网络后重试</string>
-    <string name="ai_err_ssl">HTTPS 握手失败：该端口可能是 HTTP 服务，请把地址改成 http://；自签 HTTPS 请安装内网 CA 或开启「信任自签证书」</string>
+        <string name="user_agreement_title" translatable="false">用户协议</string>
+    <string name="privacy_consent_user_checkbox" translatable="false">我已阅读并同意《用户协议》</string>
+    <string name="privacy_consent_view_user_agreement" translatable="false">查看《用户协议》</string>
+    <string name="onboarding_welcome_title" translatable="false">欢迎使用 HamKit</string>
+    <string name="onboarding_welcome_desc" translatable="false">卫星过境、FT8/APRS、QSO 日志、SSTV 与业余无线电 AI 助手。</string>
+    <string name="onboarding_features_title" translatable="false">你可以做什么</string>
+    <string name="onboarding_permission_title" translatable="false">必要权限</string>
+    <string name="onboarding_permission_desc" translatable="false">定位用于分区、网格与卫星过境；通知用于过境提醒。两项都可以稍后开启。</string>
+    <string name="onboarding_start" translatable="false">开始</string>
+    <string name="onboarding_next" translatable="false">下一步</string>
+    <string name="onboarding_continue" translatable="false">继续</string>
+    <string name="onboarding_later" translatable="false">稍后设置权限</string>
+    <string name="onboarding_location" translatable="false">定位</string>
+    <string name="onboarding_location_desc" translatable="false">CQ/ITU 分区、Maidenhead 网格与卫星过境。</string>
+    <string name="onboarding_notification" translatable="false">通知</string>
+    <string name="onboarding_notification_desc" translatable="false">过境提醒与后台解码状态。</string>
+    <string name="onboarding_allow" translatable="false">允许</string>
+    <string name="onboarding_granted" translatable="false">已允许</string>
+<string name="ai_err_ssl">HTTPS 握手失败：该端口可能是 HTTP 服务，请把地址改成 http://；自签 HTTPS 请安装内网 CA 或开启「信任自签证书」</string>
     <string name="ai_url_hint">填 http(s)://主机:端口/v1，不要带 /models 或 /chat/completions；8082 这类本地服务通常是 http，请用 http:// 并开启「允许明文」</string>
     <string name="ai_err_parse">响应解析失败：%1$s</string>
     <string name="ai_err_empty">服务商返回了空内容（结束原因 %1$s）。请检查模型名、API 协议与 Base URL 是否匹配。</string>

@@ -11,7 +11,7 @@ import android.content.Context
 object PrivacyConsentStore {
 
     /** 与 assets/privacy_policy_*.html 的“版本”保持一致。 */
-    const val CURRENT_VERSION = 1
+    const val CURRENT_VERSION = 2
 
     private const val PREFS_NAME = "privacy_consent"
     private const val KEY_VERSION = "version"

@@ -143,6 +143,24 @@
     <string name="about_donors_title" translatable="false">捐赠者</string>
 
     <!-- 首次启动隐私同意（与 assets/privacy_policy_*.html 配套） -->
+    <string name="user_agreement_title" translatable="false">User Agreement</string>
+    <string name="privacy_consent_user_checkbox" translatable="false">I have read and agree to the User Agreement</string>
+    <string name="privacy_consent_view_user_agreement" translatable="false">View User Agreement</string>
+    <string name="onboarding_welcome_title" translatable="false">Welcome to HamKit</string>
+    <string name="onboarding_welcome_desc" translatable="false">Satellite passes, FT8/APRS, QSO log, SSTV and an AI assistant for amateur radio.</string>
+    <string name="onboarding_features_title" translatable="false">What you can do</string>
+    <string name="onboarding_permission_title" translatable="false">Permissions</string>
+    <string name="onboarding_permission_desc" translatable="false">Location is used for zones, grids and satellite passes. Notifications are used for pass reminders. Both can be changed later.</string>
+    <string name="onboarding_start" translatable="false">Start</string>
+    <string name="onboarding_next" translatable="false">Next</string>
+    <string name="onboarding_continue" translatable="false">Continue</string>
+    <string name="onboarding_later" translatable="false">Set up later</string>
+    <string name="onboarding_location" translatable="false">Location</string>
+    <string name="onboarding_location_desc" translatable="false">Zones, Maidenhead grid and satellite passes.</string>
+    <string name="onboarding_notification" translatable="false">Notifications</string>
+    <string name="onboarding_notification_desc" translatable="false">Pass reminders and background decoding status.</string>
+    <string name="onboarding_allow" translatable="false">Allow</string>
+    <string name="onboarding_granted" translatable="false">Granted</string>
     <string name="privacy_policy_title" translatable="false">隐私政策</string>
     <string name="privacy_consent_title" translatable="false">隐私政策与个人信息保护</string>
     <string name="privacy_consent_intro" translatable="false">HamKit 需要处理位置、麦克风和音频等信息才能提供分区定位、地图、卫星、APRS、FT8 与 SSTV 等功能。请先阅读并同意下面的说明；不同意将退出应用，我们不会在同意前收集任何个人信息。</string>
