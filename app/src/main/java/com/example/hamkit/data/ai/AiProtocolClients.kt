@@ -322,6 +322,13 @@ object OpenAiChatClient : AiProtocolClient {
                 })
                 put("tool_choice", "auto")
             }
+            if (request.reasoningEffort != AiReasoningEffort.OFF) {
+                if (cfg.preset == AiPreset.DEEPSEEK) {
+                    put("thinking", JSONObject().put("type", "enabled"))
+                } else {
+                    put("reasoning_effort", request.reasoningEffort.apiValue)
+                }
+            }
         }.asBody()
     }
 
@@ -620,7 +627,20 @@ object AnthropicClient : AiProtocolClient {
         }
         return JSONObject().apply {
             put("model", cfg.model)
-            put("max_tokens", cfg.maxOutputTokens)
+            // budget_tokens 必须小于 max_tokens，开启思考时抬高请求内的上限
+            put(
+                "max_tokens",
+                maxOf(cfg.maxOutputTokens, request.reasoningEffort.budgetTokens + 1024),
+            )
+            if (request.reasoningEffort != AiReasoningEffort.OFF) {
+                put(
+                    "thinking",
+                    JSONObject().apply {
+                        put("type", "enabled")
+                        put("budget_tokens", request.reasoningEffort.budgetTokens)
+                    },
+                )
+            }
             if (request.system.isNotBlank()) put("system", request.system)
             put("messages", messages)
             put("temperature", cfg.temperature.coerceIn(0f, 1f).toDouble())
@@ -837,6 +857,15 @@ object GeminiClient : AiProtocolClient {
                 JSONObject().apply {
                     put("temperature", cfg.temperature.toDouble())
                     put("maxOutputTokens", cfg.maxOutputTokens)
+                    if (request.reasoningEffort != AiReasoningEffort.OFF) {
+                        put(
+                            "thinkingConfig",
+                            JSONObject().apply {
+                                put("thinkingBudget", request.reasoningEffort.geminiBudget)
+                                put("includeThoughts", true)
+                            },
+                        )
+                    }
                 },
             )
             if (request.tools.isNotEmpty()) {

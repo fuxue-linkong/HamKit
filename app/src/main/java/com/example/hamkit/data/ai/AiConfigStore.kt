@@ -40,6 +40,11 @@ class AiConfigStore(context: Context) {
             allowCleartext = prefs.getBoolean(KEY_ALLOW_CLEARTEXT, false),
             systemPrompt = prefs.getString(KEY_SYSTEM_PROMPT, "").orEmpty(),
             confirmSideEffects = prefs.getBoolean(KEY_CONFIRM_SIDE_EFFECTS, true),
+            reasoningEffort = runCatching {
+                AiReasoningEffort.valueOf(
+                    prefs.getString(KEY_REASONING_EFFORT, AiReasoningEffort.MEDIUM.name)!!,
+                )
+            }.getOrDefault(AiReasoningEffort.MEDIUM),
             disabledTools = prefs.getString(KEY_DISABLED_TOOLS, "").orEmpty()
                 .split(',')
                 .filter { it.isNotBlank() }
@@ -64,6 +69,7 @@ class AiConfigStore(context: Context) {
             .putString(KEY_SYSTEM_PROMPT, cfg.systemPrompt)
             .putString(KEY_DISABLED_TOOLS, cfg.disabledTools.joinToString(","))
             .putBoolean(KEY_CONFIRM_SIDE_EFFECTS, cfg.confirmSideEffects)
+            .putString(KEY_REASONING_EFFORT, cfg.reasoningEffort.name)
             .apply()
     }
 
@@ -84,6 +90,7 @@ class AiConfigStore(context: Context) {
         private const val KEY_SYSTEM_PROMPT = "system_prompt"
         private const val KEY_DISABLED_TOOLS = "disabled_tools"
         private const val KEY_CONFIRM_SIDE_EFFECTS = "confirm_side_effects"
+        private const val KEY_REASONING_EFFORT = "reasoning_effort"
     }
 }
 

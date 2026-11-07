@@ -68,6 +68,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.util.UUID
+import com.example.hamkit.data.ai.AiReasoningEffort
 
 /** 工具卡状态。 */
 enum class AiToolUiState { RUNNING, SUCCESS, ERROR }
@@ -96,6 +97,9 @@ data class AiChatMessageUi(
     val tools: List<AiToolUi> = emptyList(),
     val cards: List<AiCard> = emptyList(),
     val attachments: List<AiAttachment> = emptyList(),
+    /** 推理过程文本（OFF 时为空）。 */
+    val reasoning: String = "",
+    val reasoningDone: Boolean = false,
 )
 
 /** 对话页状态。 */
@@ -667,6 +671,7 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
         var lastStop: AiStopReason? = null
         var textDeltaCount = 0
         val finalText = StringBuilder()
+        val finalReasoning = StringBuilder()
 
         var cancelled = false
         val toolCache = java.util.concurrent.ConcurrentHashMap<String, ToolOutcome>()
@@ -683,6 +688,10 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
                     break
                 }
                 if (result.text.isNotBlank()) finalText.append(stripDsml(result.text))
+                if (result.reasoning.isNotBlank()) {
+                    finalReasoning.append(result.reasoning)
+                    updateStreamingReasoning(finalReasoning.toString())
+                }
                 if (result.toolCalls.isEmpty()) break
 
                 val calls = dedupeToolCalls(result.toolCalls)
@@ -805,6 +814,7 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
         val stop: AiStopReason?,
         val error: String?,
         val textDeltaCount: Int,
+        val reasoning: String = "",
     )
 
     /** 单轮流式请求：聚合文本与工具参数。 */
@@ -818,8 +828,10 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
             system = _uiState.value.config.systemPrompt.ifBlank { AiPrompts.DEFAULT_SYSTEM_PROMPT },
             messages = messages,
             tools = tools,
+            reasoningEffort = config.reasoningEffort,
         )
         val text = StringBuilder()
+        val reasoning = StringBuilder()
         val calls = LinkedHashMap<Int, PendingCall>()
         var usage: AiUsage? = null
         var stop: AiStopReason? = null
@@ -854,7 +866,7 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
                     is AiEvent.Usage -> usage = AiUsage(event.input, event.output)
                     is AiEvent.Finished -> stop = event.stop
                     is AiEvent.Failed -> error = humanize(event.error)
-                    is AiEvent.ReasoningDelta -> Unit
+                    is AiEvent.ReasoningDelta -> reasoning.append(event.text)
                 }
             }
         } catch (ce: CancellationException) {
@@ -872,7 +884,15 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
                     argsJson = it.args.toString().ifBlank { "{}" },
                 )
             }
-        return StreamResult(text.toString(), toolCalls, usage, stop, error, deltaCount)
+        return StreamResult(
+            text.toString(),
+            toolCalls,
+            usage,
+            stop,
+            error,
+            deltaCount,
+            reasoning.toString(),
+        )
     }
 
     private suspend fun executeTool(activeFacade: AiAppFacade, call: AiToolCall): ToolOutcome {
@@ -904,6 +924,22 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
                 ?: "call_${index}_${call.name}"
             if (id == call.id) call else call.copy(id = id)
         }
+    }
+
+    private fun updateStreamingReasoning(value: String) {
+        _uiState.update { state ->
+            state.copy(
+                messages = state.messages.map { message ->
+                    if (message.isStreaming) message.copy(reasoning = value) else message
+                },
+            )
+        }
+    }
+
+    /** 切换推理等级（OFF/LOW/MEDIUM/HIGH）并持久化。 */
+    fun setReasoningEffort(effort: AiReasoningEffort) {
+        _uiState.update { it.copy(config = it.config.copy(reasoningEffort = effort)) }
+        configStore.save(_uiState.value.config)
     }
 
     private fun updateStreamingText(value: String) {
@@ -995,6 +1031,7 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
                     if (!message.isStreaming) return@map message
                     message.copy(
                         text = stripDsml(text),
+                        reasoningDone = true,
                         isStreaming = false,
                         error = error,
                         elapsedMs = elapsedMs,
@@ -1068,6 +1105,7 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
         role = role,
         text = text,
         createdAt = System.currentTimeMillis(),
+        reasoning = reasoning.takeIf { it.isNotBlank() },
         usage = usage,
         elapsedMs = elapsedMs,
         error = error,
@@ -1086,6 +1124,8 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
         id = id,
         role = role,
         text = text,
+        reasoning = reasoning.orEmpty(),
+        reasoningDone = true,
         error = error,
         elapsedMs = elapsedMs,
         tools = tools.map { tool ->
