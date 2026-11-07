@@ -78,6 +78,16 @@ private fun parseJsonObjects(data: String): List<JSONObject> {
 
 private fun JSONObject.asBody() = toString().toRequestBody(JSON_MEDIA_TYPE)
 
+/**
+ * 请求的输出上限：取用户配置，但保证不小于推理预算，避免思考内容挤占正文。
+ * Anthropic 上层会再钳到 64000。
+ */
+internal fun requestMaxTokens(cfg: AiConfig, effort: AiReasoningEffort): Int {
+    val base = cfg.maxOutputTokens.coerceIn(64, 65_536)
+    val budgetFloor = if (effort == AiReasoningEffort.OFF) 0 else effort.budgetTokens + 1024
+    return maxOf(base, budgetFloor).coerceAtMost(65_536)
+}
+
 /** 流式请求的通用执行骨架：鉴权头由各实现自行加到 [Request.Builder] 上。 */
 private fun streamRequest(
     builder: Request.Builder,
@@ -301,7 +311,7 @@ object OpenAiChatClient : AiProtocolClient {
             put("model", cfg.model)
             put("messages", messages)
             put("temperature", cfg.temperature.toDouble())
-            put("max_tokens", cfg.maxOutputTokens)
+            put("max_tokens", requestMaxTokens(cfg, request.reasoningEffort))
             put("stream", true)
             put("stream_options", JSONObject().put("include_usage", true))
             if (request.tools.isNotEmpty()) {
@@ -630,7 +640,7 @@ object AnthropicClient : AiProtocolClient {
             // budget_tokens 必须小于 max_tokens，开启思考时抬高请求内的上限
             put(
                 "max_tokens",
-                maxOf(cfg.maxOutputTokens, request.reasoningEffort.budgetTokens + 1024),
+                requestMaxTokens(cfg, request.reasoningEffort).coerceAtMost(64_000),
             )
             if (request.reasoningEffort != AiReasoningEffort.OFF) {
                 put(
@@ -856,7 +866,7 @@ object GeminiClient : AiProtocolClient {
                 "generationConfig",
                 JSONObject().apply {
                     put("temperature", cfg.temperature.toDouble())
-                    put("maxOutputTokens", cfg.maxOutputTokens)
+                    put("maxOutputTokens", requestMaxTokens(cfg, request.reasoningEffort))
                     if (request.reasoningEffort != AiReasoningEffort.OFF) {
                         put(
                             "thinkingConfig",

@@ -105,7 +105,7 @@ data class AiConfig(
     val baseUrl: String = AiPreset.DEEPSEEK.baseUrl,
     val model: String = AiPreset.DEEPSEEK.defaultModel,
     val temperature: Float = 0.6f,
-    val maxOutputTokens: Int = 2048,
+    val maxOutputTokens: Int = 8192,
     val stream: Boolean = true,
     val autoRetry: Boolean = true,
     val saveHistory: Boolean = true,
@@ -124,7 +124,7 @@ data class AiConfig(
         baseUrl = baseUrl.trim().trimEnd('/'),
         model = model.trim(),
         temperature = temperature.coerceIn(0f, 2f),
-        maxOutputTokens = maxOutputTokens.coerceIn(64, 8192),
+        maxOutputTokens = maxOutputTokens.coerceIn(64, 65536),
     )
 
     /** 实际请求地址（按协议拼接，Base URL 允许带或不带版本段）。 */
@@ -312,7 +312,7 @@ data class AiModelProfile(
     val models: List<AiModelEntry> = emptyList(),
     val selectedModelId: String? = null,
     val temperature: Float = 0.6f,
-    val maxOutputTokens: Int = 2048,
+    val maxOutputTokens: Int = 8192,
 ) {
     val currentEntry: AiModelEntry?
         get() = models.firstOrNull { it.id == selectedModelId } ?: models.firstOrNull()
