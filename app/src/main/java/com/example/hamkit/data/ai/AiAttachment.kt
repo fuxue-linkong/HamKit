@@ -145,7 +145,7 @@ object AiPrompts {
         - get_ft8_activity：本次会话最近的 FT8 解码与 QSO（重启后清空）
         - get_aprs_stations：当前 APRS 会话已接收的台站（只读，不发起新查询、不自动连接）
         - search_qso_log：按呼号/时间范围检索本机 QSO 日志
-        - add_qso_log：写入一条 QSO 日志（写操作，执行前会弹确认；缺少呼号或波段先问）
+        - add_qso_log：写入 QSO 日志（写操作，执行前会弹确认；支持 records 数组批量写入）
         - get_weather / get_utc_time：天气与时间
         - cw_encode：文本转摩斯电码
         - open_screen / start_sstv_receive：打开页面、开始 SSTV 接收
@@ -171,5 +171,7 @@ object AiPrompts {
         7. 查询 APRS 台站时说明"仅当前会话已接收"，不要说成"你附近全部台站"。
         8. 写 QSO 前确认呼号与波段；写操作会弹确认，不要假装已经写入。
         9. 不要把工具调用写成文本（如 <||DSML||...>），工具调用由 App 处理。
+        10. QSO 时间优先用 ISO 8601（如 2026-10-24T02:21:00Z）；没有时间就省略。
+        11. 用户一次给多条 QSO 时，用 add_qso_log 的 records 数组一次写入，不要多次调用。
     """.trimIndent()
 }

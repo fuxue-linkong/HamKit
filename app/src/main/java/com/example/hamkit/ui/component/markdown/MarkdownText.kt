@@ -368,10 +368,16 @@ private fun MarkdownTable(block: Node, colors: MarkdownPalette) {
  * 代码块（```）内不处理。
  */
 internal fun normalizeInlineBullets(markdown: String): String {
-    val pattern = Regex("""(?<=[\u4e00-\u9fff）)])\s*-\s+(?=[\u4e00-\u9fff]{1,12}[：:])""")
+    val inlineList = Regex("""(?<=[\u4e00-\u9fff）)])\s*-\s+(?=[\u4e00-\u9fff]{1,12}[：:])""")
+    // 行首 "-文字" 补空格，排除 "---" 分隔线
+    val lineStart = Regex("""(?m)^-(?!-)(\S)""")
     return markdown.split("```")
         .mapIndexed { index, part ->
-            if (index % 2 == 1) part else pattern.replace(part, "\n- ")
+            if (index % 2 == 1) {
+                part
+            } else {
+                lineStart.replace(inlineList.replace(part, "\n- "), "- $1")
+            }
         }
         .joinToString("```")
 }
