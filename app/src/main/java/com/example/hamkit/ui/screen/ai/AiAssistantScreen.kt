@@ -906,42 +906,63 @@ private fun ModelPickerPopupMiuix(
     }
     Popup(
         alignment = Alignment.BottomEnd,
-        offset = IntOffset(0, -60),
+        offset = IntOffset(0, -56),
         onDismissRequest = onDismiss,
         properties = PopupProperties(focusable = true),
     ) {
-        Card(modifier = Modifier.width(320.dp)) {
-            Column(Modifier.padding(10.dp)) {
-                TextField(
+        Card(modifier = Modifier.width(260.dp)) {
+            Column(Modifier.padding(6.dp)) {
+                BasicTextField(
                     value = query,
                     onValueChange = { query = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    maxLines = 1,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(36.dp)
+                        .background(
+                            colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                            RoundedCornerShape(8.dp),
+                        )
+                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                    textStyle = TextStyle(fontSize = 12.sp, color = colorScheme.onSurface),
+                    cursorBrush = SolidColor(colorScheme.primary),
+                    singleLine = true,
+                    decorationBox = { inner ->
+                        Box {
+                            if (query.isEmpty()) {
+                                Text(
+                                    stringResource(R.string.ai_model_search),
+                                    fontSize = 12.sp,
+                                    color = colorScheme.onSurfaceVariantSummary,
+                                )
+                            }
+                            inner()
+                        }
+                    },
                 )
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(4.dp))
                 if (profiles.isEmpty()) {
                     Text(
                         stringResource(R.string.ai_model_empty),
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         color = colorScheme.onSurfaceVariantSummary,
-                        modifier = Modifier.padding(vertical = 16.dp),
+                        modifier = Modifier.padding(vertical = 12.dp),
                     )
                 } else if (filtered.isEmpty()) {
                     Text(
                         stringResource(R.string.ai_model_no_match),
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         color = colorScheme.onSurfaceVariantSummary,
-                        modifier = Modifier.padding(vertical = 16.dp),
+                        modifier = Modifier.padding(vertical = 12.dp),
                     )
                 } else {
-                    LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                    LazyColumn(Modifier.heightIn(max = 220.dp)) {
                         filtered.forEach { (profile, entries) ->
                             item(key = "provider_${profile.id}") {
                                 Text(
                                     profile.name,
-                                    fontSize = 10.sp,
+                                    fontSize = 9.sp,
                                     color = colorScheme.onSurfaceVariantSummary,
-                                    modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
+                                    modifier = Modifier.padding(top = 6.dp, bottom = 2.dp),
                                 )
                             }
                             items(entries, key = { "${profile.id}_${it.id}" }) { entry ->
@@ -949,18 +970,18 @@ private fun ModelPickerPopupMiuix(
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clip(RoundedCornerShape(8.dp))
+                                        .clip(RoundedCornerShape(6.dp))
                                         .background(
                                             if (current) colorScheme.primary.copy(alpha = 0.08f)
                                             else Color.Transparent,
                                         )
                                         .clickable { if (!streaming) onPick(profile.id, entry.id) }
-                                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                                        .padding(horizontal = 6.dp, vertical = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Text(
                                         entry.label,
-                                        fontSize = 13.sp,
+                                        fontSize = 12.sp,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                         modifier = Modifier.weight(1f),
@@ -970,7 +991,7 @@ private fun ModelPickerPopupMiuix(
                                             Icons.Rounded.Check,
                                             contentDescription = null,
                                             tint = colorScheme.primary,
-                                            modifier = Modifier.size(16.dp),
+                                            modifier = Modifier.size(14.dp),
                                         )
                                     }
                                 }
@@ -978,17 +999,23 @@ private fun ModelPickerPopupMiuix(
                         }
                     }
                 }
-                Spacer(Modifier.height(4.dp))
-                TextButton(
-                    text = stringResource(R.string.ai_model_manage),
-                    onClick = onManage,
-                    modifier = Modifier.fillMaxWidth(),
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    stringResource(R.string.ai_model_manage),
+                    fontSize = 11.sp,
+                    color = colorScheme.primary,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onManage)
+                        .padding(vertical = 6.dp),
                 )
                 if (streaming) {
                     Text(
                         stringResource(R.string.ai_model_generating),
                         fontSize = 10.sp,
                         color = colorScheme.error,
+                        modifier = Modifier.padding(bottom = 4.dp),
                     )
                 }
             }
