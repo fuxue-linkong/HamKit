@@ -32,7 +32,11 @@ import java.time.Instant
 
 /** 卫星解析结果：成功拿到唯一引用，或失败并带统一错误输出。 */
 private sealed interface SatelliteLookup {
-    data class Found(val ref: AiSatelliteRef) : SatelliteLookup
+    data class Found(
+        val ref: AiSatelliteRef,
+        val autoMatched: Boolean = false,
+        val candidates: List<AiSatelliteRef> = emptyList(),
+    ) : SatelliteLookup
     data class Failed(val outcome: ToolOutcome) : SatelliteLookup
 }
 
@@ -59,13 +63,11 @@ private fun resolveOrError(ctx: AiToolContext, args: JSONObject): SatelliteLooku
         candidates.isEmpty() -> SatelliteLookup.Failed(
             errorOutcome("没有找到卫星 \"$query\"，请给出名称或 NORAD 编号")
         )
-        candidates.size > 1 -> SatelliteLookup.Failed(
-            errorOutcome(
-                "卫星名称 \"$query\" 有歧义，请用 NORAD 编号指定：" +
-                    candidates.take(5).joinToString("、") {
-                        "${it.name} (#${it.catalogNumber})"
-                    }
-            )
+        // 名称歧义时用排序第一的候选，避免模型反复重试；结果里附带候选，可再用 norad_id 纠正
+        candidates.size > 1 -> SatelliteLookup.Found(
+            ref = candidates.first(),
+            autoMatched = true,
+            candidates = candidates.take(8),
         )
         else -> SatelliteLookup.Found(candidates.first())
     }
@@ -230,7 +232,8 @@ object GetSatellitePassesTool : AiTool {
     )
 
     override suspend fun execute(ctx: AiToolContext, args: JSONObject): ToolOutcome {
-        val ref = when (val lookup = resolveOrError(ctx, args)) {
+        val lookup = resolveOrError(ctx, args)
+        val ref = when (lookup) {
             is SatelliteLookup.Found -> lookup.ref
             is SatelliteLookup.Failed -> return lookup.outcome
         }
@@ -287,6 +290,21 @@ object GetSatellitePassesTool : AiTool {
         val inPass = passes.any { it.isCurrentlyVisible }
         val json = JSONObject().apply {
             put("satellite", ref.name)
+            if (lookup is SatelliteLookup.Found && lookup.autoMatched) {
+                put("auto_matched", true)
+                put(
+                    "candidates",
+                    JSONArray().apply {
+                        lookup.candidates.forEach { candidate ->
+                            put(
+                                JSONObject().put("name", candidate.name)
+                                    .put("norad", candidate.catalogNumber),
+                            )
+                        }
+                    },
+                )
+                put("hint", "名称有歧义，已按排序第一处理；需要其它卫星请传 norad_id")
+            }
             put("passes", array)
             if (inPass) {
                 put(

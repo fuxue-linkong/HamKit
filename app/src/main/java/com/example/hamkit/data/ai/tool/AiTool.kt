@@ -240,7 +240,11 @@ fun booleanProperty(description: String): JSONObject =
 const val MAX_TOOL_RESULT_CHARS = 6000
 
 fun truncateToolResult(text: String, max: Int = MAX_TOOL_RESULT_CHARS): String =
-    if (text.length <= max) text else text.take(max) + "\n…（结果已截断）"
+    if (text.length <= max) {
+        text
+    } else {
+        text.take((max - 40).coerceAtLeast(0)) + "\n…（结果已截断）"
+    }
 
 /** 统一把异常转成给模型看的错误 JSON。 */
 fun errorOutcome(message: String): ToolOutcome = ToolOutcome(
