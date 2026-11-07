@@ -74,6 +74,9 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.foundation.layout.size
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.material3.Switch
 
 /**
  * AI 设置页（从「设置」或 AI 页右上角进入）。
@@ -263,6 +266,12 @@ fun AiSettingsScreenMiuix(onBack: () -> Unit = {}) {
                 }
             }
 
+            McpCardMiuix(
+                state = state,
+                onToggle = viewModel::setMcpEnabled,
+                onPort = viewModel::setMcpPort,
+                onResetToken = viewModel::resetMcpToken,
+            )
             ProbeResultMiuix(state)
             Spacer(Modifier.height(24.dp))
         }
@@ -915,4 +924,83 @@ private fun Modifier.dashedBorder(color: Color, radius: Dp = 12.dp): Modifier = 
         ),
         cornerRadius = CornerRadius(radius.toPx()),
     )
+}
+
+@Composable
+private fun McpCardMiuix(
+    state: AiSettingsUiState,
+    onToggle: (Boolean) -> Unit,
+    onPort: (Int) -> Unit,
+    onResetToken: () -> Unit,
+) {
+    var portInput by remember(state.mcpPort) { mutableStateOf(state.mcpPort.toString()) }
+    val clipboard = LocalClipboardManager.current
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "局域网 MCP",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+                Switch(checked = state.mcpEnabled, onCheckedChange = onToggle)
+            }
+            Text(
+                if (state.mcpRunning) "运行中" else "已关闭",
+                fontSize = 10.sp,
+                color = if (state.mcpRunning) colorScheme.primary else colorScheme.onSurfaceVariantSummary,
+            )
+            if (state.mcpRunning) {
+                Spacer(Modifier.height(8.dp))
+                Text("地址", fontSize = 10.sp, color = colorScheme.onSurfaceVariantSummary)
+                Text(
+                    state.mcpAddress.ifBlank { "请连接 Wi-Fi 后重试" },
+                    fontSize = 11.sp,
+                    color = colorScheme.primary,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text("Token", fontSize = 10.sp, color = colorScheme.onSurfaceVariantSummary)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        state.mcpToken,
+                        fontSize = 10.sp,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(
+                        text = "复制",
+                        onClick = { clipboard.setText(AnnotatedString(state.mcpToken)) },
+                    )
+                    TextButton(
+                        text = "重置",
+                        onClick = onResetToken,
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Text("端口", fontSize = 10.sp, color = colorScheme.onSurfaceVariantSummary)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextField(
+                        value = portInput,
+                        onValueChange = { portInput = it.filter(Char::isDigit).take(5) },
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(
+                        text = "应用",
+                        onClick = { onPort(portInput.toIntOrNull() ?: state.mcpPort) },
+                    )
+                }
+            }
+            state.mcpError?.let {
+                Text(it, fontSize = 10.sp, color = colorScheme.error)
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "仅只读工具；写操作（QSO/提醒）不开放。仅限可信局域网。",
+                fontSize = 10.sp,
+                color = colorScheme.onSurfaceVariantSummary,
+            )
+        }
+    }
 }
