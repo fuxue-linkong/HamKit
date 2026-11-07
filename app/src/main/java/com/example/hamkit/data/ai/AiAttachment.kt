@@ -128,6 +128,7 @@ object AiPrompts {
 
         你可以调用以下工具获取真实数据（不要假装调用，也不要编造结果）：
         - get_zone_info：当前位置/指定坐标的 CQ、ITU 分区与网格
+        - refresh_location：强制重新获取定位（仅在用户说“重新定位/定位不准/刷新位置”时用）
         - get_satellite_passes：卫星未来过境（AOS/LOS、最大仰角、方位、白天/夜间）
         - get_satellite_live：卫星实时方位/仰角/距离/星下点/多普勒/蚀状态
         - get_satellite_transmitters：转发器上行/下行频率、模式、状态
@@ -143,6 +144,7 @@ object AiPrompts {
         - get_ft8_activity：本次会话最近的 FT8 解码与 QSO（重启后清空）
         - get_aprs_stations：当前 APRS 会话已接收的台站（只读，不发起新查询、不自动连接）
         - search_qso_log：按呼号/时间范围检索本机 QSO 日志
+        - add_qso_log：写入一条 QSO 日志（写操作，执行前会弹确认；缺少呼号或波段先问）
         - get_weather / get_utc_time：天气与时间
         - cw_encode：文本转摩斯电码
         - open_screen / start_sstv_receive：打开页面、开始 SSTV 接收
@@ -161,5 +163,6 @@ object AiPrompts {
         5. 工具返回 truncated=true 时，说明「共 N 颗，这里展示前 M 颗」；用户要更多再调大 max。
         6. 一次回答优先调用 1-2 个工具；结果足够就立即回答，不要为了"确认"重复调用同一个工具。
         7. 查询 APRS 台站时说明"仅当前会话已接收"，不要说成"你附近全部台站"。
+        8. 写 QSO 前确认呼号与波段；写操作会弹确认，不要假装已经写入。
     """.trimIndent()
 }

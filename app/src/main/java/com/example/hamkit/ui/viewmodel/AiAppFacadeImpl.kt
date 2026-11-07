@@ -1,6 +1,7 @@
 package com.example.hamkit.ui.viewmodel
 
 import com.example.hamkit.data.LocationResult
+import com.example.hamkit.data.ft8.Ft8QsoRecord
 import com.example.hamkit.data.ai.tool.AiAppFacade
 import com.example.hamkit.data.ai.tool.AiNavTarget
 import com.example.hamkit.data.ai.tool.AiSatelliteRef
@@ -181,6 +182,23 @@ class AiAppFacadeImpl(
 
     override fun qsoRecords(): List<QsoSummary> =
         ft8?.uiState?.value?.qsoRecords?.map { it.toSummary() }.orEmpty()
+
+    override suspend fun refreshLocation(timeoutMs: Long): LocationResult? {
+        val before = mainViewModel.locationState.value.lastLocationUpdateTime
+        withContext(Dispatchers.Main) { mainViewModel.refreshLocation() }
+        return withTimeoutOrNull(timeoutMs) {
+            snapshotFlow { mainViewModel.locationState.value }
+                .first { state ->
+                    state.result != null && !state.isLoading &&
+                        state.lastLocationUpdateTime != null &&
+                        (before == null || state.lastLocationUpdateTime > before)
+                }
+                .result
+        } ?: mainViewModel.locationState.value.result
+    }
+
+    override suspend fun addQso(record: Ft8QsoRecord): Long =
+        ft8?.insertQso(record) ?: -1L
 
     private fun com.example.hamkit.data.ft8.Ft8QsoRecord.toSummary(): QsoSummary = QsoSummary(
         callsign = callsign,

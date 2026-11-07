@@ -21,6 +21,12 @@ class AiToolRouterTest {
     }
 
     @Test
+    fun `routes refresh location and qso write`() {
+        assertTrue(AiToolRouter.route("重新定位一下").contains("refresh_location"))
+        assertTrue(AiToolRouter.route("帮我记录一条和 XX9XX 的通联").contains("add_qso_log"))
+    }
+
+    @Test
     fun `routes zone question`() {
         assertTrue(AiToolRouter.route("我在哪个网格？").contains("get_zone_info"))
     }
