@@ -1,6 +1,7 @@
 package com.example.hamkit.data.ai.tool
 
 import com.example.hamkit.data.LocationResult
+import com.example.hamkit.data.ft8.Ft8QsoRecord
 import com.example.hamkit.data.satellite.RadioInfo
 import com.example.hamkit.data.satellite.SatelliteInfo
 import com.example.hamkit.data.satellite.SatelliteStatusQuery
@@ -204,6 +205,12 @@ interface AiAppFacade {
 
     /** QSO 日志全量摘要。 */
     fun qsoRecords(): List<QsoSummary> = emptyList()
+
+    /** 强制重新获取定位（忽略缓存）；失败返回 null。 */
+    suspend fun refreshLocation(timeoutMs: Long = 20_000): LocationResult? = awaitLocation(timeoutMs)
+
+    /** 写入一条 QSO 日志，返回行 id；失败返回 -1。 */
+    suspend fun addQso(record: Ft8QsoRecord): Long = -1L
 }
 
 // ── JSON Schema 构造小工具 ──────────────────────────────────────────────────
@@ -251,6 +258,9 @@ fun JSONObject.optStringOrNullArg(key: String): String? =
 
 fun JSONObject.optDoubleOrNullArg(key: String): Double? =
     if (!has(key) || isNull(key)) null else optDouble(key)
+
+fun JSONObject.optLongOrNullArg(key: String): Long? =
+    if (!has(key) || isNull(key)) null else optLong(key).takeIf { it > 0L }
 
 fun JSONObject.optIntOrNullArg(key: String): Int? =
     if (!has(key) || isNull(key)) null else optInt(key)

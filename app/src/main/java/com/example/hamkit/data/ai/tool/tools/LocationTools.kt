@@ -154,3 +154,42 @@ object CwEncodeTool : AiTool {
         return ToolOutcome(modelText = json.toString(), summary = morse.take(80))
     }
 }
+
+/** 强制重新获取定位（忽略缓存），用于“定位不准/重新定位”场景。 */
+object RefreshLocationTool : AiTool {
+    override val spec = AiToolSpec(
+        name = "refresh_location",
+        title = "重新定位",
+        description = "强制重新获取当前定位（会触发 GPS），返回 CQ/ITU 分区、网格与坐标。" +
+            "仅在用户明确说“重新定位/定位不准/刷新位置”时调用；普通位置问题用 get_zone_info。",
+        parameters = toolSchema(JSONObject()),
+        category = ToolCategory.LOCATION,
+    )
+
+    override suspend fun execute(ctx: AiToolContext, args: JSONObject): ToolOutcome {
+        ctx.reportProgress(null, "重新定位…")
+        val location = ctx.facade.refreshLocation()
+            ?: return errorOutcome("定位失败：请检查定位权限与 GPS 是否开启")
+        val card = ZoneCardData(
+            latitude = location.latitude,
+            longitude = location.longitude,
+            cqZone = location.cqZone,
+            ituZone = location.ituZone,
+            maidenhead = location.maidenhead,
+            address = location.address,
+        )
+        val json = JSONObject().apply {
+            put("lat", location.latitude)
+            put("lon", location.longitude)
+            location.cqZone?.let { put("cq_zone", it) }
+            location.ituZone?.let { put("itu_zone", it) }
+            put("grid", location.maidenhead)
+            if (location.address.isNotBlank()) put("address", location.address)
+        }
+        return ToolOutcome(
+            modelText = json.toString(),
+            card = AiCard.Zone(card),
+            summary = "已重新定位：${location.maidenhead}",
+        )
+    }
+}

@@ -12,6 +12,8 @@ import com.example.hamkit.data.ai.tool.tools.SearchQsoLogTool
 import com.example.hamkit.data.ai.tool.tools.GetUtcTimeTool
 import com.example.hamkit.data.ai.tool.tools.GetWeatherTool
 import com.example.hamkit.data.ai.tool.tools.GetZoneInfoTool
+import com.example.hamkit.data.ai.tool.tools.AddQsoLogTool
+import com.example.hamkit.data.ai.tool.tools.RefreshLocationTool
 import com.example.hamkit.data.ai.tool.tools.OpenScreenTool
 import com.example.hamkit.data.ai.tool.tools.SearchSatellitesTool
 import com.example.hamkit.data.ai.tool.tools.StartSstvReceiveTool
@@ -38,6 +40,7 @@ class AiToolRegistry {
         /** 顺序影响模型看到工具的顺序（定位/卫星在前，动作在后）。 */
         val ALL: List<AiTool> = listOf(
             GetZoneInfoTool,
+            RefreshLocationTool,
             GetSatellitePassesTool,
             GetSatelliteLiveTool,
             GetSatelliteTransmittersTool,
@@ -46,6 +49,7 @@ class AiToolRegistry {
             GetFt8ActivityTool,
             GetAprsStationsTool,
             SearchQsoLogTool,
+            AddQsoLogTool,
             GetUtcTimeTool,
             GetWeatherTool,
             CwEncodeTool,

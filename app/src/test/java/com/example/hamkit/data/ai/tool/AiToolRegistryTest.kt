@@ -28,6 +28,7 @@ class AiToolRegistryTest {
     fun `expected p1 tools are registered`() {
         val expected = setOf(
             "get_zone_info",
+            "refresh_location",
             "get_satellite_passes",
             "get_satellite_live",
             "get_satellite_transmitters",
@@ -36,6 +37,7 @@ class AiToolRegistryTest {
             "get_ft8_activity",
             "get_aprs_stations",
             "search_qso_log",
+            "add_qso_log",
             "get_utc_time",
             "get_weather",
             "cw_encode",
@@ -61,7 +63,7 @@ class AiToolRegistryTest {
         val specs = registry.specs(setOf("get_weather", "get_utc_time"))
         assertTrue(specs.none { it.name == "get_weather" })
         assertTrue(specs.none { it.name == "get_utc_time" })
-        assertEquals(13, specs.size)
+        assertEquals(15, specs.size)
     }
 
     @Test

@@ -67,6 +67,9 @@ class Ft8ViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(config = newConfig) }
     }
 
+    /** 写入一条 QSO 日志（AI 工具调用），返回行 id。 */
+    suspend fun insertQso(record: Ft8QsoRecord): Long = qsoStore.insert(record)
+
     fun setBand(band: Ft8Band) {
         updateSettings { it.copy(band = band) }
     }

@@ -12,6 +12,10 @@ object AiToolRouter {
 
     private val rules: List<Rule> = listOf(
         Rule(
+            Regex("重新定位|刷新定位|重新获取位置|定位不准|更新位置", RegexOption.IGNORE_CASE),
+            setOf("refresh_location"),
+        ),
+        Rule(
             Regex("定位|分区|网格|maidenhead|\\bcq\\b|\\bitu\\b|坐标|经纬|我在哪", RegexOption.IGNORE_CASE),
             setOf("get_zone_info"),
         ),
@@ -30,7 +34,10 @@ object AiToolRouter {
         ),
         Rule(Regex("\\bft8\\b|解码|js8|wspr", RegexOption.IGNORE_CASE), setOf("get_ft8_activity")),
         Rule(Regex("\\baprs\\b|igate|digipeater", RegexOption.IGNORE_CASE), setOf("get_aprs_stations")),
-        Rule(Regex("\\bqso\\b|日志|通联|联络记录|通联记录", RegexOption.IGNORE_CASE), setOf("search_qso_log")),
+        Rule(Regex("记录.*(通联|qso|联络)|记一下|写入.*日志|添加.*qso", RegexOption.IGNORE_CASE),
+            setOf("add_qso_log")),
+        Rule(Regex("\\bqso\\b|日志|通联|联络记录|通联记录", RegexOption.IGNORE_CASE),
+            setOf("search_qso_log", "add_qso_log")),
         Rule(Regex("天气|气温|风力|湿度|下雨", RegexOption.IGNORE_CASE), setOf("get_weather")),
         Rule(Regex("时间|\\butc\\b|几点|星期", RegexOption.IGNORE_CASE), setOf("get_utc_time")),
         Rule(Regex("摩斯|\\bcw\\b|电码", RegexOption.IGNORE_CASE), setOf("cw_encode")),
