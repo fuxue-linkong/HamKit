@@ -863,48 +863,71 @@ private fun ModelPickerPopupMaterial(
     }
     Popup(
         alignment = Alignment.BottomEnd,
-        offset = IntOffset(0, -60),
+        offset = IntOffset(0, -56),
         onDismissRequest = onDismiss,
         properties = PopupProperties(focusable = true),
     ) {
         Surface(
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(14.dp),
             tonalElevation = 6.dp,
             shadowElevation = 8.dp,
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
         ) {
-            Column(Modifier.padding(10.dp).width(320.dp)) {
-                OutlinedTextField(
+            Column(Modifier.padding(6.dp).width(260.dp)) {
+                BasicTextField(
                     value = query,
                     onValueChange = { query = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text(stringResource(R.string.ai_model_search)) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(36.dp)
+                        .background(
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                            RoundedCornerShape(8.dp),
+                        )
+                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                    textStyle = TextStyle(
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    ),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                     singleLine = true,
+                    decorationBox = { inner ->
+                        Box {
+                            if (query.isEmpty()) {
+                                Text(
+                                    stringResource(R.string.ai_model_search),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            inner()
+                        }
+                    },
                 )
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(4.dp))
                 if (profiles.isEmpty()) {
                     Text(
                         stringResource(R.string.ai_model_empty),
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 16.dp),
+                        modifier = Modifier.padding(vertical = 12.dp),
                     )
                 } else if (filtered.isEmpty()) {
                     Text(
                         stringResource(R.string.ai_model_no_match),
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 16.dp),
+                        modifier = Modifier.padding(vertical = 12.dp),
                     )
                 } else {
-                    LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                    LazyColumn(Modifier.heightIn(max = 220.dp)) {
                         filtered.forEach { (profile, entries) ->
                             item(key = "provider_${profile.id}") {
                                 Text(
                                     profile.name,
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
+                                    modifier = Modifier.padding(top = 6.dp, bottom = 2.dp),
                                 )
                             }
                             items(entries, key = { "${profile.id}_${it.id}" }) { entry ->
@@ -912,7 +935,7 @@ private fun ModelPickerPopupMaterial(
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clip(RoundedCornerShape(8.dp))
+                                        .clip(RoundedCornerShape(6.dp))
                                         .background(
                                             if (current) {
                                                 MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
@@ -921,12 +944,12 @@ private fun ModelPickerPopupMaterial(
                                             },
                                         )
                                         .clickable { if (!streaming) onPick(profile.id, entry.id) }
-                                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                                        .padding(horizontal = 6.dp, vertical = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Text(
                                         entry.label,
-                                        style = MaterialTheme.typography.bodyMedium,
+                                        style = MaterialTheme.typography.labelMedium,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                         modifier = Modifier.weight(1f),
@@ -936,7 +959,7 @@ private fun ModelPickerPopupMaterial(
                                             Icons.Rounded.Check,
                                             contentDescription = null,
                                             tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(16.dp),
+                                            modifier = Modifier.size(14.dp),
                                         )
                                     }
                                 }
@@ -944,15 +967,23 @@ private fun ModelPickerPopupMaterial(
                         }
                     }
                 }
-                Spacer(Modifier.height(4.dp))
-                TextButton(onClick = onManage, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(R.string.ai_model_manage))
-                }
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    stringResource(R.string.ai_model_manage),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onManage)
+                        .padding(vertical = 6.dp),
+                )
                 if (streaming) {
                     Text(
                         stringResource(R.string.ai_model_generating),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(bottom = 4.dp),
                     )
                 }
             }
