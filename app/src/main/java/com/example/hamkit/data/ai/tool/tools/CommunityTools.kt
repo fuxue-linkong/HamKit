@@ -18,6 +18,7 @@ import org.json.JSONObject
 import com.example.hamkit.data.ai.tool.optLongOrNullArg
 import com.example.hamkit.data.ft8.Ft8Band
 import com.example.hamkit.data.ft8.Ft8QsoRecord
+import java.time.Instant
 
 /** FT8 活动：本次会话最近的解码与 QSO。 */
 object GetFt8ActivityTool : AiTool {
@@ -220,17 +221,50 @@ internal fun parseBand(raw: String?): Ft8Band? {
     }
 }
 
-/** QSO 时间：非法/0 回退当前时间。 */
-internal fun parseQsoTime(epochMs: Long?): Long =
-    epochMs?.takeIf { it > 0 } ?: System.currentTimeMillis()
+/** QSO 时间：优先 epoch 毫秒，其次 ISO 8601，最后当前时间。 */
+internal fun parseQsoTime(iso: String?, epochMs: Long?): Long =
+    epochMs?.takeIf { it > 0 }
+        ?: iso?.trim()?.takeIf { it.isNotEmpty() }
+            ?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() }
+        ?: System.currentTimeMillis()
 
-/** 写入一条 QSO 日志（写操作，执行前走二次确认）。 */
+/** 单条 QSO 参数 → 记录；失败返回 null 并给出原因。 */
+internal fun buildQsoRecord(args: JSONObject): Pair<Ft8QsoRecord?, String?> {
+    val rawCallsign = args.optStringOrNullArg("callsign")
+        ?: return null to "缺少呼号"
+    val callsign = normalizeCallsign(rawCallsign)
+        ?: return null to "呼号格式不正确：$rawCallsign"
+    val band = parseBand(args.optStringOrNullArg("band"))
+        ?: return null to "无法识别波段，可用：" + Ft8Band.entries.joinToString { it.displayName }
+    val mode = args.optStringOrNullArg("mode")?.trim()?.takeIf { it.isNotEmpty() } ?: "FT8"
+    val qsoTime = parseQsoTime(
+        args.optStringOrNullArg("qso_time"),
+        args.optLongOrNullArg("qso_time_epoch_ms"),
+    )
+    return Ft8QsoRecord(
+        callsign = callsign,
+        grid = args.optStringOrNullArg("grid"),
+        reportSent = args.optStringOrNullArg("report_sent") ?: "-99",
+        reportReceived = args.optStringOrNullArg("report_received") ?: "-99",
+        band = band,
+        freqHz = args.optLongOrNullArg("freq_hz") ?: band.freqHz,
+        mode = mode,
+        qsoTime = qsoTime,
+        isComplete = true,
+        myGrid = args.optStringOrNullArg("my_grid"),
+        comment = args.optStringOrNullArg("comment"),
+    ) to null
+}
+
+/** 写入 QSO 日志（写操作，执行前走二次确认）；支持单条与批量。 */
 object AddQsoLogTool : AiTool {
+    private const val MAX_BATCH = 30
+
     override val spec = AiToolSpec(
         name = "add_qso_log",
         title = "记录 QSO",
-        description = "写入一条 QSO 日志（写操作，执行前会弹确认）。缺少呼号或波段时先问用户；" +
-            "不要编造信号报告。默认波段 40m、模式 FT8。",
+        description = "写入 QSO 日志（写操作，执行前会弹确认）。默认波段 40m、模式 FT8；" +
+            "用户一次给多条时用 records 数组一次写入。缺少呼号或波段时先问用户，不要编造信号报告。",
         parameters = toolSchema(
             JSONObject()
                 .put("callsign", stringProperty("对方呼号，如 XX9XX"))
@@ -242,42 +276,53 @@ object AddQsoLogTool : AiTool {
                 .put("grid", stringProperty("对方网格"))
                 .put("my_grid", stringProperty("本台网格"))
                 .put("comment", stringProperty("备注"))
+                .put("qso_time", stringProperty("通联时间，ISO 8601（如 2026-10-24T02:21:00Z），可省略"))
                 .put(
                     "qso_time_epoch_ms",
                     JSONObject().put("type", "integer")
-                        .put("description", "通联时间（epoch 毫秒），可省略"),
+                        .put("description", "通联时间（epoch 毫秒），可省略；优先于 qso_time"),
+                )
+                .put(
+                    "records",
+                    JSONObject().put("type", "array")
+                        .put("description", "批量写入多条（可选，最多 30 条）；每项字段与单条一致")
+                        .put("items", JSONObject().put("type", "object")),
                 ),
-            required = listOf("callsign"),
+            required = emptyList(),
         ),
         category = ToolCategory.UTILITY,
         risk = ToolRisk.SIDE_EFFECT,
     )
 
     override suspend fun execute(ctx: AiToolContext, args: JSONObject): ToolOutcome {
-        val rawCallsign = args.optStringOrNullArg("callsign")
-            ?: return errorOutcome("缺少 callsign 参数")
-        val callsign = normalizeCallsign(rawCallsign)
-            ?: return errorOutcome("呼号格式不正确：$rawCallsign")
-        val band = parseBand(args.optStringOrNullArg("band"))
-            ?: return errorOutcome(
-                "无法识别波段，可用：" +
-                    Ft8Band.entries.joinToString { it.displayName },
+        val batch = args.optJSONArray("records")
+        if (batch != null && batch.length() > 0) {
+            val limit = minOf(batch.length(), MAX_BATCH)
+            val records = mutableListOf<Ft8QsoRecord>()
+            for (index in 0 until limit) {
+                val item = batch.optJSONObject(index)
+                    ?: return errorOutcome("第 ${index + 1} 条不是对象")
+                val (record, error) = buildQsoRecord(item)
+                if (record == null) return errorOutcome("第 ${index + 1} 条：$error")
+                records += record
+            }
+            ctx.reportProgress(null, "写入 ${records.size} 条 QSO…")
+            val ids = records.map { ctx.facade.addQso(it) }
+            if (ids.any { it <= 0 }) return errorOutcome("部分 QSO 写入失败")
+            val json = JSONObject().apply {
+                put("saved", true)
+                put("count", ids.size)
+                if (batch.length() > MAX_BATCH) put("truncated", true)
+                put("ids", JSONArray().apply { ids.forEach { put(it) } })
+            }
+            return ToolOutcome(
+                modelText = json.toString(),
+                summary = "已记录 ${ids.size} 条 QSO（首条 ${records.first().callsign}）",
             )
-        val mode = args.optStringOrNullArg("mode")?.trim()?.takeIf { it.isNotEmpty() } ?: "FT8"
-        val qsoTime = parseQsoTime(args.optLongOrNullArg("qso_time_epoch_ms"))
-        val record = Ft8QsoRecord(
-            callsign = callsign,
-            grid = args.optStringOrNullArg("grid"),
-            reportSent = args.optStringOrNullArg("report_sent") ?: "-99",
-            reportReceived = args.optStringOrNullArg("report_received") ?: "-99",
-            band = band,
-            freqHz = args.optLongOrNullArg("freq_hz") ?: band.freqHz,
-            mode = mode,
-            qsoTime = qsoTime,
-            isComplete = true,
-            myGrid = args.optStringOrNullArg("my_grid"),
-            comment = args.optStringOrNullArg("comment"),
-        )
+        }
+
+        val (record, error) = buildQsoRecord(args)
+        if (record == null) return errorOutcome(error ?: "参数不正确")
 
         ctx.reportProgress(null, "写入 QSO 日志…")
         val id = ctx.facade.addQso(record)
@@ -286,14 +331,14 @@ object AddQsoLogTool : AiTool {
         val json = JSONObject().apply {
             put("saved", true)
             put("id", id)
-            put("callsign", callsign)
-            put("band", band.displayName)
-            put("mode", mode)
-            put("qso_time", qsoTime)
+            put("callsign", record.callsign)
+            put("band", record.band.displayName)
+            put("mode", record.mode)
+            put("qso_time", record.qsoTime)
         }
         return ToolOutcome(
             modelText = json.toString(),
-            summary = "已记录 QSO 与 $callsign（${band.displayName} $mode）",
+            summary = "已记录 QSO 与 ${record.callsign}（${record.band.displayName} ${record.mode}）",
         )
     }
 }

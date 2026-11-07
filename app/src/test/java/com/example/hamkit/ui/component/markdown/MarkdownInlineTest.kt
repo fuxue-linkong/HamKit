@@ -34,3 +34,13 @@ class MarkdownInlineTest {
         assertEquals(code, normalizeInlineBullets(code))
     }
 }
+
+    @Test
+    fun `adds space after line-start dash`() {
+        assertTrue(normalizeInlineBullets("-把本次会话").startsWith("- 把"))
+    }
+
+    @Test
+    fun `keeps thematic break`() {
+        assertEquals("---", normalizeInlineBullets("---"))
+    }

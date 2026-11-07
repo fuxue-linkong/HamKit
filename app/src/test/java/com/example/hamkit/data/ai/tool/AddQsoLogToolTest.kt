@@ -32,9 +32,10 @@ class AddQsoLogToolTest {
     }
 
     @Test
-    fun `qso time falls back to now`() {
-        assertTrue(parseQsoTime(null) > 0)
-        assertTrue(parseQsoTime(0L) > 0)
-        assertEquals(1234L, parseQsoTime(1234L))
+    fun `qso time parses iso and epoch`() {
+        assertTrue(parseQsoTime(null, null) > 0)
+        assertTrue(parseQsoTime(null, 0L) > 0)
+        assertEquals(1234L, parseQsoTime(null, 1234L))
+        assertEquals(1794027598452L, parseQsoTime("2026-11-07T04:19:58.452Z", null))
     }
 }
