@@ -211,14 +211,31 @@ internal fun normalizeCallsign(raw: String): String? {
     return value.takeIf { Regex("^[A-Z0-9]{3,12}(/[A-Z0-9]{1,3})?$").matches(it) }
 }
 
-/** 波段解析：支持 40m / BAND_40M / 40M；空值默认 40m。 */
+/** 波段解析：支持 40m / BAND_40M / 40M / 2m/70cm；空值默认 40m。 */
 internal fun parseBand(raw: String?): Ft8Band? {
     val value = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return Ft8Band.BAND_40M
-    return Ft8Band.entries.firstOrNull {
-        it.displayName.equals(value, ignoreCase = true) ||
-            it.name.equals(value, ignoreCase = true) ||
-            it.name.removePrefix("BAND_").equals(value, ignoreCase = true)
+    val compact = value.replace(" ", "")
+    fun match(token: String): Ft8Band? = Ft8Band.entries.firstOrNull { band ->
+        band.displayName.equals(token, ignoreCase = true) ||
+            band.name.equals(token, ignoreCase = true) ||
+            band.name.removePrefix("BAND_").equals(token, ignoreCase = true)
     }
+    // 先整体匹配（含 "2 m"）
+    match(compact)?.let { return it }
+    // 组合频段（2m/70cm）取第一个能识别的
+    compact.split('/', '、', ',', '，')
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .forEach { token -> match(token)?.let { return it } }
+    // Ft8Band 没有 70cm；ISS/IO-86 的 FM 常用 2m 上行，映射到 2m
+    if (compact.contains("70cm", ignoreCase = true) ||
+        compact.contains("430", ignoreCase = true) ||
+        compact.contains("435", ignoreCase = true) ||
+        compact.contains("440", ignoreCase = true)
+    ) {
+        return Ft8Band.BAND_2M
+    }
+    return null
 }
 
 /** QSO 时间：优先 epoch 毫秒，其次 ISO 8601，最后当前时间。 */
@@ -234,8 +251,11 @@ internal fun buildQsoRecord(args: JSONObject): Pair<Ft8QsoRecord?, String?> {
         ?: return null to "缺少呼号"
     val callsign = normalizeCallsign(rawCallsign)
         ?: return null to "呼号格式不正确：$rawCallsign"
-    val band = parseBand(args.optStringOrNullArg("band"))
-        ?: return null to "无法识别波段，可用：" + Ft8Band.entries.joinToString { it.displayName }
+    val rawBand = args.optStringOrNullArg("band")
+    val band = parseBand(rawBand)
+        ?: return null to "无法识别波段，可用：" +
+            Ft8Band.entries.joinToString { it.displayName } +
+            "；组合频段请只填主波段（如 2m），另一段写进备注"
     val mode = args.optStringOrNullArg("mode")?.trim()?.takeIf { it.isNotEmpty() } ?: "FT8"
     val qsoTime = parseQsoTime(
         args.optStringOrNullArg("qso_time"),
@@ -252,7 +272,12 @@ internal fun buildQsoRecord(args: JSONObject): Pair<Ft8QsoRecord?, String?> {
         qsoTime = qsoTime,
         isComplete = true,
         myGrid = args.optStringOrNullArg("my_grid"),
-        comment = args.optStringOrNullArg("comment"),
+        comment = buildList {
+            args.optStringOrNullArg("comment")?.takeIf { it.isNotBlank() }?.let(::add)
+            if (!rawBand.isNullOrBlank() && rawBand != band.displayName) {
+                add("波段：$rawBand")
+            }
+        }.joinToString("；").takeIf { it.isNotBlank() },
     ) to null
 }
 
