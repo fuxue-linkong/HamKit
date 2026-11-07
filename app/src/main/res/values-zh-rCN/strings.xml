@@ -133,6 +133,8 @@
     <string name="ai_err_server">服务商暂时不可用：%1$s</string>
     <string name="ai_err_network">网络不可用：%1$s</string>
     <string name="ai_err_timeout">请求超时，请检查网络后重试</string>
+    <string name="ai_err_ssl">HTTPS 握手失败：该端口可能是 HTTP 服务，请把地址改成 http://；自签 HTTPS 请安装内网 CA 或开启「信任自签证书」</string>
+    <string name="ai_url_hint">填 http(s)://主机:端口/v1，不要带 /models 或 /chat/completions；8082 这类本地服务通常是 http，请用 http:// 并开启「允许明文」</string>
     <string name="ai_err_parse">响应解析失败：%1$s</string>
     <string name="ai_err_empty">服务商返回了空内容（结束原因 %1$s）。请检查模型名、API 协议与 Base URL 是否匹配。</string>
     <string name="ai_settings_prompt_hint">留空使用默认提示词（已包含 App 能力、工具清单与附件规则）。</string>

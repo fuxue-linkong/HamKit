@@ -499,6 +499,8 @@
     <string name="ai_err_server">Provider unavailable: %1$s</string>
     <string name="ai_err_network">Network unavailable: %1$s</string>
     <string name="ai_err_timeout">Request timed out, check your network and retry.</string>
+    <string name="ai_err_ssl">HTTPS handshake failed: the port may be HTTP — change the address to http://; for self-signed HTTPS install a CA or enable trust self-signed.</string>
+    <string name="ai_url_hint">Fill http(s)://host:port/v1 — no /models or /chat/completions. Local ports like 8082 are usually http; enable clear-text for them.</string>
     <string name="ai_err_parse">Failed to parse response: %1$s</string>
     <string name="ai_err_empty">Provider returned no text (stop reason: %1$s). Check the model, protocol and base URL.</string>
     <string name="ai_settings_prompt_hint">Leave empty to use the default prompt (app capabilities, tools, attachments).</string>

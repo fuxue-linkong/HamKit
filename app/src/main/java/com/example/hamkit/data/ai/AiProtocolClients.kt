@@ -92,8 +92,9 @@ internal fun requestMaxTokens(cfg: AiConfig, effort: AiReasoningEffort): Int {
 private fun streamRequest(
     builder: Request.Builder,
     parser: StreamParser,
+    allowSelfSigned: Boolean = false,
 ): Flow<AiEvent> = flow {
-    val call = AiHttp.streaming.newCall(builder.build())
+    val call = AiHttp.streaming(allowSelfSigned).newCall(builder.build())
     try {
         val response = call.execute()
         response.use { resp ->
@@ -124,6 +125,7 @@ private fun streamRequest(
 
 private suspend fun probeRequest(
     build: () -> Request,
+    allowSelfSigned: Boolean = false,
     block: (okhttp3.Response) -> AiProbeResult,
 ): AiProbeResult = withContext(Dispatchers.IO) {
     val started = System.currentTimeMillis()
@@ -223,7 +225,7 @@ object OpenAiChatClient : AiProtocolClient {
             .header("Authorization", "Bearer ${apiKey.trim()}")
             .header("Accept", "text/event-stream")
             .post(buildBody(cfg, request))
-        return streamRequest(builder, OpenAiStreamParser())
+        return streamRequest(builder, OpenAiStreamParser(), cfg.allowSelfSigned)
     }
 
     private fun buildBody(cfg: AiConfig, request: AiRequest): okhttp3.RequestBody {
@@ -345,6 +347,7 @@ object OpenAiChatClient : AiProtocolClient {
     override suspend fun probe(config: AiConfig, apiKey: String): AiProbeResult {
         val cfg = config.normalized()
         return probeRequest(
+            allowSelfSigned = cfg.allowSelfSigned,
             build = {
                 Request.Builder()
                     .url(cfg.endpoint())
@@ -563,7 +566,7 @@ object AnthropicClient : AiProtocolClient {
             .header("anthropic-version", "2023-06-01")
             .header("Accept", "text/event-stream")
             .post(buildBody(cfg, request))
-        return streamRequest(builder, AnthropicStreamParser())
+        return streamRequest(builder, AnthropicStreamParser(), cfg.allowSelfSigned)
     }
 
     private fun buildBody(cfg: AiConfig, request: AiRequest): okhttp3.RequestBody {
@@ -672,6 +675,7 @@ object AnthropicClient : AiProtocolClient {
     override suspend fun probe(config: AiConfig, apiKey: String): AiProbeResult {
         val cfg = config.normalized()
         return probeRequest(
+            allowSelfSigned = cfg.allowSelfSigned,
             build = {
                 Request.Builder()
                     .url(cfg.endpoint())
@@ -777,7 +781,7 @@ object GeminiClient : AiProtocolClient {
             .header("x-goog-api-key", apiKey.trim())
             .header("Accept", "text/event-stream")
             .post(buildBody(cfg, request))
-        return streamRequest(builder, GeminiStreamParser())
+        return streamRequest(builder, GeminiStreamParser(), cfg.allowSelfSigned)
     }
 
     private fun buildBody(cfg: AiConfig, request: AiRequest): okhttp3.RequestBody {
@@ -898,6 +902,7 @@ object GeminiClient : AiProtocolClient {
     override suspend fun probe(config: AiConfig, apiKey: String): AiProbeResult {
         val cfg = config.normalized()
         return probeRequest(
+            allowSelfSigned = cfg.allowSelfSigned,
             build = {
                 Request.Builder()
                     .url(cfg.probeEndpoint())

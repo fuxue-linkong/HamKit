@@ -400,6 +400,11 @@ class AiSettingsViewModel(application: Application) : AndroidViewModel(applicati
         _uiState.update { it.copy(config = it.config.copy(allowCleartext = enabled), error = null) }
     }
 
+    /** 信任自签 HTTPS（仅对私有地址生效）。 */
+    fun setAllowSelfSigned(enabled: Boolean) {
+        _uiState.update { it.copy(config = it.config.copy(allowSelfSigned = enabled), error = null) }
+    }
+
     /** 保存配置；URL 不合法时返回 false 并通过 [AiSettingsUiState.error] 提示。 */
     fun save(onSaved: (Boolean) -> Unit = {}) {
         if (_uiState.value.saving) return
@@ -560,6 +565,7 @@ class AiSettingsViewModel(application: Application) : AndroidViewModel(applicati
                 .onFailure { throwable ->
                     val message = (throwable as? AiModelListException)?.error?.let { error ->
                         when (error.kind) {
+                            AiErrorKind.SSL -> "HTTPS 握手失败：该端口可能是 HTTP 服务，请把地址改成 http://；自签 HTTPS 请安装内网 CA 或开启「信任自签证书」"
                             AiErrorKind.AUTH -> "API Key 无效或没有权限"
                             AiErrorKind.RATE_LIMIT -> "请求过于频繁，请稍后再试"
                             AiErrorKind.NETWORK -> "网络不可用：${error.message}"

@@ -152,6 +152,12 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
                         onCheckedChange = viewModel::setAllowCleartext,
                     )
                     SwitchItem(
+                        title = "信任自签证书（仅内网）",
+                        summary = "用于自签 HTTPS / 反向代理；只对私有地址生效，公网仍强制校验。",
+                        checked = state.config.allowSelfSigned,
+                        onCheckedChange = viewModel::setAllowSelfSigned,
+                    )
+                    SwitchItem(
                         title = "保存对话历史",
                         summary = stringResource(R.string.ai_settings_history_hint),
                         checked = state.config.saveHistory,

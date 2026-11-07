@@ -38,6 +38,7 @@ class AiConfigStore(context: Context) {
             saveHistory = prefs.getBoolean(KEY_SAVE_HISTORY, true),
             historyLimit = prefs.getInt(KEY_HISTORY_LIMIT, 200),
             allowCleartext = prefs.getBoolean(KEY_ALLOW_CLEARTEXT, false),
+            allowSelfSigned = prefs.getBoolean(KEY_ALLOW_SELF_SIGNED, false),
             systemPrompt = prefs.getString(KEY_SYSTEM_PROMPT, "").orEmpty(),
             confirmSideEffects = prefs.getBoolean(KEY_CONFIRM_SIDE_EFFECTS, true),
             reasoningEffort = runCatching {
@@ -66,6 +67,7 @@ class AiConfigStore(context: Context) {
             .putBoolean(KEY_SAVE_HISTORY, cfg.saveHistory)
             .putInt(KEY_HISTORY_LIMIT, cfg.historyLimit)
             .putBoolean(KEY_ALLOW_CLEARTEXT, cfg.allowCleartext)
+            .putBoolean(KEY_ALLOW_SELF_SIGNED, cfg.allowSelfSigned)
             .putString(KEY_SYSTEM_PROMPT, cfg.systemPrompt)
             .putString(KEY_DISABLED_TOOLS, cfg.disabledTools.joinToString(","))
             .putBoolean(KEY_CONFIRM_SIDE_EFFECTS, cfg.confirmSideEffects)
@@ -87,6 +89,7 @@ class AiConfigStore(context: Context) {
         private const val KEY_SAVE_HISTORY = "save_history"
         private const val KEY_HISTORY_LIMIT = "history_limit"
         private const val KEY_ALLOW_CLEARTEXT = "allow_cleartext"
+        private const val KEY_ALLOW_SELF_SIGNED = "allow_self_signed"
         private const val KEY_SYSTEM_PROMPT = "system_prompt"
         private const val KEY_DISABLED_TOOLS = "disabled_tools"
         private const val KEY_CONFIRM_SIDE_EFFECTS = "confirm_side_effects"
