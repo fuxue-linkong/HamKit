@@ -58,6 +58,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Dp
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialog
@@ -66,6 +67,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.material3.Switch
+import androidx.compose.ui.text.font.FontWeight
 
 /** Material 风格实现，与 Miuix 版共用 [AiSettingsViewModel]。 */
 @Composable
@@ -420,37 +422,34 @@ private fun ModelConfigCardMaterial(
             Spacer(Modifier.height(10.dp))
 
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        RoundedCornerShape(10.dp),
-                    )
-                    .padding(3.dp),
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 listOf(
                     false to stringResource(R.string.ai_model_preset_tab),
                     true to stringResource(R.string.ai_model_custom_tab),
                 ).forEach { (isCustom, label) ->
+                    val selected = customApi == isCustom
                     Box(
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(8.dp))
                             .background(
-                                if (customApi == isCustom) {
-                                    MaterialTheme.colorScheme.surface
+                                if (selected) {
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
                                 } else {
-                                    Color.Transparent
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
                                 },
                             )
                             .clickable { customApi = isCustom }
-                            .padding(vertical = 8.dp),
+                            .padding(vertical = 9.dp),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
                             label,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (customApi == isCustom) {
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (selected) {
                                 MaterialTheme.colorScheme.primary
                             } else {
                                 MaterialTheme.colorScheme.onSurfaceVariant
@@ -530,37 +529,16 @@ private fun ModelConfigCardMaterial(
                     )
                 }
             }
-            if (state.models.isEmpty()) {
-                Text(
-                    stringResource(R.string.ai_model_catalog_empty),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 6.dp),
-                )
-            } else {
-                Row(
-                    modifier = Modifier
-                        .horizontalScroll(rememberScrollState())
-                        .padding(bottom = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    state.models.forEach { model ->
-                        FilterChip(
-                            selected = state.editingModels.any { it.modelId == model },
-                            onClick = {
-                                val entryId = state.editingModelId
-                                val entry = state.editingModels.firstOrNull { it.id == entryId }
-                                if (entryId != null) {
-                                    onModelChange(entryId, model, entry?.displayName.orEmpty())
-                                } else {
-                                    onModelAdd()
-                                }
-                            },
-                            label = { Text(model) },
-                        )
-                    }
-                }
-            }
+            Text(
+                if (state.models.isEmpty()) {
+                    stringResource(R.string.ai_model_catalog_empty)
+                } else {
+                    "已获取 ${state.models.size} 个模型，已自动加入下方列表"
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 6.dp),
+            )
             state.modelsError?.let {
                 Text(
                     it,
@@ -569,6 +547,7 @@ private fun ModelConfigCardMaterial(
                     modifier = Modifier.padding(bottom = 6.dp),
                 )
             }
+            DividerMaterial()
 
             if (state.editingModels.isEmpty()) {
                 Text(
@@ -586,11 +565,22 @@ private fun ModelConfigCardMaterial(
                         .clip(RoundedCornerShape(10.dp))
                         .background(
                             if (selected) {
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.06f)
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.04f)
                             } else {
                                 MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
                             },
                             RoundedCornerShape(10.dp),
+                        )
+                        .then(
+                            if (selected) {
+                                Modifier.border(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.primary,
+                                    RoundedCornerShape(10.dp),
+                                )
+                            } else {
+                                Modifier
+                            },
                         )
                         .clickable { onModelSelect(entry.id) }
                         .padding(horizontal = 8.dp, vertical = 6.dp),
@@ -615,8 +605,14 @@ private fun ModelConfigCardMaterial(
                         }
                     }
                     Spacer(Modifier.height(4.dp))
-                    Row {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Spacer(Modifier.width(24.dp))
+                        Text(
+                            "显示名称",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.width(52.dp),
+                        )
                         OutlinedTextField(
                             value = entry.displayName.orEmpty(),
                             onValueChange = { onModelChange(entry.id, entry.modelId, it) },
@@ -632,7 +628,7 @@ private fun ModelConfigCardMaterial(
             TextButton(onClick = onModelAdd) {
                 Text(stringResource(R.string.ai_model_new))
             }
-
+            DividerMaterial()
             Spacer(Modifier.height(6.dp))
             Text(
                 stringResource(R.string.ai_settings_key_hint),
@@ -885,4 +881,15 @@ private fun McpCardMaterial(
             )
         }
     }
+}
+
+@Composable
+private fun DividerMaterial() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 10.dp)
+            .height(1.dp)
+            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+    )
 }

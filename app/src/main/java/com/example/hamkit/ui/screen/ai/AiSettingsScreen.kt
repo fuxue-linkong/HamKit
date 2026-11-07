@@ -77,6 +77,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.material3.Switch
+import androidx.compose.foundation.border
 
 /**
  * AI 设置页（从「设置」或 AI 页右上角进入）。
@@ -543,28 +544,29 @@ private fun ModelConfigCardMiuix(
             Spacer(Modifier.height(10.dp))
 
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
-                    .padding(3.dp),
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 listOf(false to stringResource(R.string.ai_model_preset_tab), true to stringResource(R.string.ai_model_custom_tab))
                     .forEach { (isCustom, label) ->
+                        val selected = customApi == isCustom
                         Box(
                             modifier = Modifier
                                 .weight(1f)
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(
-                                    if (customApi == isCustom) colorScheme.surface else Color.Transparent,
+                                    if (selected) colorScheme.primary.copy(alpha = 0.10f)
+                                    else colorScheme.surfaceVariant.copy(alpha = 0.35f),
                                 )
                                 .clickable { customApi = isCustom }
-                                .padding(vertical = 8.dp),
+                                .padding(vertical = 9.dp),
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(
                                 label,
                                 fontSize = 12.sp,
-                                color = if (customApi == isCustom) colorScheme.primary else colorScheme.onSurfaceVariantSummary,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (selected) colorScheme.primary else colorScheme.onSurfaceVariantSummary,
                             )
                         }
                     }
@@ -645,37 +647,16 @@ private fun ModelConfigCardMiuix(
                     enabled = !state.fetchingModels,
                 )
             }
-            if (state.models.isEmpty()) {
-                Text(
-                    stringResource(R.string.ai_model_catalog_empty),
-                    fontSize = 10.sp,
-                    color = colorScheme.onSurfaceVariantSummary,
-                    modifier = Modifier.padding(bottom = 6.dp),
-                )
-            } else {
-                Row(
-                    modifier = Modifier
-                        .horizontalScroll(rememberScrollState())
-                        .padding(bottom = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    state.models.forEach { model ->
-                        ChipMiuix(
-                            text = model,
-                            selected = state.editingModels.any { it.modelId == model },
-                            onClick = {
-                                val entryId = state.editingModelId
-                                val entry = state.editingModels.firstOrNull { it.id == entryId }
-                                if (entryId != null) {
-                                    onModelChange(entryId, model, entry?.displayName.orEmpty())
-                                } else {
-                                    onModelAdd()
-                                }
-                            },
-                        )
-                    }
-                }
-            }
+            Text(
+                if (state.models.isEmpty()) {
+                    stringResource(R.string.ai_model_catalog_empty)
+                } else {
+                    "已获取 ${state.models.size} 个模型，已自动加入下方列表"
+                },
+                fontSize = 10.sp,
+                color = colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.padding(bottom = 6.dp),
+            )
             state.modelsError?.let {
                 Text(
                     it,
@@ -684,6 +665,7 @@ private fun ModelConfigCardMiuix(
                     modifier = Modifier.padding(bottom = 6.dp),
                 )
             }
+            DividerMiuix()
 
             if (state.editingModels.isEmpty()) {
                 Text(
@@ -700,9 +682,16 @@ private fun ModelConfigCardMiuix(
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(10.dp))
                         .background(
-                            if (selected) colorScheme.primary.copy(alpha = 0.06f)
+                            if (selected) colorScheme.primary.copy(alpha = 0.04f)
                             else colorScheme.surfaceVariant.copy(alpha = 0.4f),
                             RoundedCornerShape(10.dp),
+                        )
+                        .then(
+                            if (selected) {
+                                Modifier.border(1.dp, colorScheme.primary, RoundedCornerShape(10.dp))
+                            } else {
+                                Modifier
+                            },
                         )
                         .clickable { onModelSelect(entry.id) }
                         .padding(horizontal = 8.dp, vertical = 6.dp),
@@ -733,8 +722,14 @@ private fun ModelConfigCardMiuix(
                         }
                     }
                     Spacer(Modifier.height(4.dp))
-                    Row {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Spacer(Modifier.width(24.dp))
+                        Text(
+                            "显示名称",
+                            fontSize = 10.sp,
+                            color = colorScheme.onSurfaceVariantSummary,
+                            modifier = Modifier.width(52.dp),
+                        )
                         TextField(
                             value = entry.displayName.orEmpty(),
                             onValueChange = { onModelChange(entry.id, entry.modelId, it) },
@@ -750,7 +745,7 @@ private fun ModelConfigCardMiuix(
                 text = stringResource(R.string.ai_model_new),
                 onClick = onModelAdd,
             )
-
+            DividerMiuix()
             Spacer(Modifier.height(6.dp))
             Text(
                 stringResource(R.string.ai_settings_key_hint),
@@ -1003,4 +998,15 @@ private fun McpCardMiuix(
             )
         }
     }
+}
+
+@Composable
+private fun DividerMiuix() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 10.dp)
+            .height(1.dp)
+            .background(colorScheme.onSurface.copy(alpha = 0.08f)),
+    )
 }
