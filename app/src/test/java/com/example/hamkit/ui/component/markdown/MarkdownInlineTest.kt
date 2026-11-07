@@ -33,7 +33,6 @@ class MarkdownInlineTest {
         val code = "```\n网格- 卫星：示例\n```"
         assertEquals(code, normalizeInlineBullets(code))
     }
-}
 
     @Test
     fun `adds space after line-start dash`() {
@@ -44,3 +43,4 @@ class MarkdownInlineTest {
     fun `keeps thematic break`() {
         assertEquals("---", normalizeInlineBullets("---"))
     }
+}
