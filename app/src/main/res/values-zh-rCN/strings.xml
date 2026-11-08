@@ -74,7 +74,9 @@
     <string name="color_yellow">黄色</string>
     <string name="color_amber">琥珀</string>
     <string name="color_blue_grey">灰蓝</string>
-    <string name="settings_enable_blur">模糊</string>
+        <string name="settings_background_alpha" translatable="false">背景不透明度</string>
+    <string name="settings_background_alpha_summary" translatable="false">降低后系统壁纸会透出；文字与卡片保持不透明。</string>
+<string name="settings_enable_blur">模糊</string>
     <string name="settings_enable_blur_summary">启用顶栏和底栏的模糊效果</string>
     <string name="settings_floating_bottom_bar">悬浮底栏</string>
     <string name="settings_floating_bottom_bar_summary">使用 Apple 风格的悬浮底栏</string>

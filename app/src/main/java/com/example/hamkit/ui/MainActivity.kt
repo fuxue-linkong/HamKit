@@ -175,6 +175,17 @@ class MainActivity : ComponentActivity() {
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             val selectedMainPage by viewModel.selectedMainPage.collectAsStateWithLifecycle()
             val appSettings = uiState.appSettings
+            // 背景透明度：<1 时让窗口透明，露出系统壁纸；恢复 1 时还原默认背景
+            val defaultWindowBackground = remember { window.decorView.background }
+            LaunchedEffect(appSettings.backgroundAlpha) {
+                window.setBackgroundDrawable(
+                    if (appSettings.backgroundAlpha < 1f) {
+                        android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT)
+                    } else {
+                        defaultWindowBackground
+                    },
+                )
+            }
             val uiMode = uiState.uiMode
             val darkMode = appSettings.colorMode.isDark || (appSettings.colorMode.isSystem && isSystemInDarkTheme())
 
@@ -245,6 +256,7 @@ class MainActivity : ComponentActivity() {
                         MainScreen(
                             initialPage = selectedMainPage,
                             onPageChanged = viewModel::setSelectedMainPage,
+                            backgroundAlpha = appSettings.backgroundAlpha,
                         )
                     }
 
@@ -382,6 +394,7 @@ val LocalMainViewModel = staticCompositionLocalOf<MainViewModel> { error("LocalM
 fun MainScreen(
     initialPage: Int = 0,
     onPageChanged: (Int) -> Unit = {},
+    backgroundAlpha: Float = 1f,
 ) {
     val navController = LocalNavigator.current
     val enableBlur = LocalEnableBlur.current
@@ -397,7 +410,7 @@ fun MainScreen(
     val surfaceColor = when (uiMode) {
         UiMode.Material -> MaterialTheme.colorScheme.surface // Blur is not used in Material, this is just a placeholder
         UiMode.Miuix -> MiuixTheme.colorScheme.surface
-    }
+    }.copy(alpha = backgroundAlpha.coerceIn(0.5f, 1f))
     val blurBackdrop = rememberBlurBackdrop(enableBlur)
 
     val backdrop = rememberLayerBackdrop {

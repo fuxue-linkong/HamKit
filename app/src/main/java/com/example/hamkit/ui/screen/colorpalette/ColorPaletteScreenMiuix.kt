@@ -320,6 +320,27 @@ fun ColorPaletteScreenMiuix(
                                 }
                             )
                         }
+                        Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text(
+                                    stringResource(R.string.settings_background_alpha),
+                                    fontSize = 14.sp,
+                                )
+                                Text(
+                                    "${(uiState.backgroundAlpha * 100).toInt()}%",
+                                    fontSize = 12.sp,
+                                    color = colorScheme.onSurfaceVariantSummary,
+                                )
+                            }
+                            Slider(
+                                value = uiState.backgroundAlpha,
+                                onValueChange = actions.onSetBackgroundAlpha,
+                                valueRange = 0.5f..1f,
+                            )
+                        }
                         SwitchPreference(
                             title = stringResource(id = R.string.settings_floating_bottom_bar),
                             summary = stringResource(id = R.string.settings_floating_bottom_bar_summary),

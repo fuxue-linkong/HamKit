@@ -173,6 +173,7 @@ fun ColorPaletteScreen() {
         onSetColorStyle = viewModel::setColorStyle,
         onSetColorSpec = viewModel::setColorSpec,
         onSetEnableBlur = viewModel::setEnableBlur,
+        onSetBackgroundAlpha = viewModel::setBackgroundAlpha,
         onSetEnableFloatingBottomBar = viewModel::setEnableFloatingBottomBar,
         onSetEnableFloatingBottomBarBlur = viewModel::setEnableFloatingBottomBarBlur,
         onSetEnablePredictiveBack = {

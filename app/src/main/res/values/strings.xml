@@ -79,7 +79,9 @@
     <string name="color_amber">Amber</string>
     <string name="color_blue_grey">Blue Grey</string>
     <string name="color_sakura">Sakura</string>
-    <string name="settings_enable_blur">Blur</string>
+        <string name="settings_background_alpha" translatable="false">Background opacity</string>
+    <string name="settings_background_alpha_summary" translatable="false">Lower values let the system wallpaper show through. Text and cards stay opaque.</string>
+<string name="settings_enable_blur">Blur</string>
     <string name="settings_enable_blur_summary">Enable blur effect for top and bottom bars.</string>
     <string name="settings_floating_bottom_bar">Floating bottom bar</string>
     <string name="settings_floating_bottom_bar_summary">Use Apple style floating bottom bar.</string>
