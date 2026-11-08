@@ -15,6 +15,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import android.Manifest
 import android.content.pm.PackageManager
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -175,17 +176,6 @@ class MainActivity : ComponentActivity() {
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             val selectedMainPage by viewModel.selectedMainPage.collectAsStateWithLifecycle()
             val appSettings = uiState.appSettings
-            // 背景透明度：<1 时让窗口透明，露出系统壁纸；恢复 1 时还原默认背景
-            val defaultWindowBackground = remember { window.decorView.background }
-            LaunchedEffect(appSettings.backgroundAlpha) {
-                window.setBackgroundDrawable(
-                    if (appSettings.backgroundAlpha < 1f) {
-                        android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT)
-                    } else {
-                        defaultWindowBackground
-                    },
-                )
-            }
             val uiMode = uiState.uiMode
             val darkMode = appSettings.colorMode.isDark || (appSettings.colorMode.isSystem && isSystemInDarkTheme())
 
@@ -256,7 +246,6 @@ class MainActivity : ComponentActivity() {
                         MainScreen(
                             initialPage = selectedMainPage,
                             onPageChanged = viewModel::setSelectedMainPage,
-                            backgroundAlpha = appSettings.backgroundAlpha,
                         )
                     }
 
@@ -394,7 +383,6 @@ val LocalMainViewModel = staticCompositionLocalOf<MainViewModel> { error("LocalM
 fun MainScreen(
     initialPage: Int = 0,
     onPageChanged: (Int) -> Unit = {},
-    backgroundAlpha: Float = 1f,
 ) {
     val navController = LocalNavigator.current
     val enableBlur = LocalEnableBlur.current
@@ -407,10 +395,23 @@ fun MainScreen(
     val mainPagerState = rememberMainPagerState(pagerState)
     var userScrollEnabled by remember { mutableStateOf(true) }
     val uiMode = LocalUiMode.current
+    val backgroundAlpha = settingsUiState.backgroundAlpha.coerceIn(0.5f, 1f)
+    val context = LocalContext.current
+    val window = (context as? Activity)?.window
+    val defaultWindowBackground = remember { window?.decorView?.background }
+    LaunchedEffect(backgroundAlpha) {
+        window?.setBackgroundDrawable(
+            if (backgroundAlpha < 1f) {
+                android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT)
+            } else {
+                defaultWindowBackground
+            },
+        )
+    }
     val surfaceColor = when (uiMode) {
         UiMode.Material -> MaterialTheme.colorScheme.surface // Blur is not used in Material, this is just a placeholder
         UiMode.Miuix -> MiuixTheme.colorScheme.surface
-    }.copy(alpha = backgroundAlpha.coerceIn(0.5f, 1f))
+    }.copy(alpha = backgroundAlpha)
     val blurBackdrop = rememberBlurBackdrop(enableBlur)
 
     val backdrop = rememberLayerBackdrop {
@@ -437,7 +438,11 @@ fun MainScreen(
         LocalMainPagerState provides mainPagerState
     ) {
         val pagerContent = @Composable { bottomInnerPadding: Dp ->
-            Box(modifier = if (blurBackdrop != null) Modifier.layerBackdrop(blurBackdrop) else Modifier) {
+            Box(
+                modifier = Modifier
+                    .background(surfaceColor)
+                    .then(if (blurBackdrop != null) Modifier.layerBackdrop(blurBackdrop) else Modifier),
+            ) {
                 HorizontalPager(
                     modifier = Modifier
                         .then(if (enableFloatingBottomBar && enableFloatingBottomBarBlur) Modifier.layerBackdrop(backdrop) else Modifier),

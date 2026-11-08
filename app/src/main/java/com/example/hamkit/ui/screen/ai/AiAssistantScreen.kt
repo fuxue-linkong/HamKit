@@ -226,6 +226,7 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
     }
 
     Scaffold(
+        containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
                 title = stringResource(R.string.ai_title),
