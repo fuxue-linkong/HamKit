@@ -207,6 +207,7 @@ fun AiAssistantScreenMaterial(bottomInnerPadding: Dp = 0.dp) {
     }
 
     Scaffold(
+        containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.ai_title), fontWeight = FontWeight.SemiBold) },

@@ -73,6 +73,7 @@ fun HomePagerMaterial(
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
 
     Scaffold(
+        containerColor = Color.Transparent,
         topBar = { TopBar(scrollBehavior = scrollBehavior) },
         contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
     ) { innerPadding ->
