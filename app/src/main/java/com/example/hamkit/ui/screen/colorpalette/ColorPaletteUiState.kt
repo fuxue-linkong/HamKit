@@ -24,6 +24,7 @@ data class ColorPaletteScreenActions(
     val onSetColorStyle: (String) -> Unit,
     val onSetColorSpec: (String) -> Unit,
     val onSetEnableBlur: (Boolean) -> Unit,
+    val onSetBackgroundAlpha: (Float) -> Unit,
     val onSetEnableFloatingBottomBar: (Boolean) -> Unit,
     val onSetEnableFloatingBottomBarBlur: (Boolean) -> Unit,
     val onSetEnablePredictiveBack: (Boolean) -> Unit,

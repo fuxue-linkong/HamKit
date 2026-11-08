@@ -355,6 +355,29 @@ fun ColorPaletteScreenMaterial(
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
+
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(
+                                stringResource(R.string.settings_background_alpha),
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                            Text(
+                                "${(uiState.backgroundAlpha * 100).toInt()}%",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Slider(
+                            value = uiState.backgroundAlpha,
+                            onValueChange = actions.onSetBackgroundAlpha,
+                            valueRange = 0.5f..1f,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
             }
 

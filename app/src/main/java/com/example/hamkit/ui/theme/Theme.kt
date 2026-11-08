@@ -49,6 +49,8 @@ data class AppSettings(
     val keyColor: Int,
     val paletteStyle: PaletteStyle,
     val colorSpec: ColorSpec.SpecVersion,
+    /** 背景不透明度：1f 不透明，0.5f 半透明。 */
+    val backgroundAlpha: Float = 1f,
 )
 
 object ThemeController {
@@ -84,7 +86,8 @@ object ThemeController {
             ColorSpec.SpecVersion.Default
         }
 
-        return AppSettings(colorMode, keyColor, paletteStyle, colorSpec)
+        val backgroundAlpha = prefs.getFloat("background_alpha", 1f).coerceIn(0.5f, 1f)
+        return AppSettings(colorMode, keyColor, paletteStyle, colorSpec, backgroundAlpha)
     }
 }
 
