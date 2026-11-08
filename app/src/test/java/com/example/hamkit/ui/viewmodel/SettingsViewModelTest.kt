@@ -40,6 +40,7 @@ class FakeSettingsRepository : SettingsRepository {
     override var enableFloatingBottomBar: Boolean = true
     override var enableFloatingBottomBarBlur: Boolean = true
     override var pageScale: Float = 1.0f
+    override var backgroundAlpha: Float = 1f
     override var customBackgroundUri: String = ""
 }
 
