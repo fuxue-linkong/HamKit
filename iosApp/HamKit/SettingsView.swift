@@ -26,8 +26,9 @@ final class ReminderSettingsStore: ObservableObject {
     var leadSeconds: TimeInterval { TimeInterval(leadMinutes * 60) }
 }
 
-/// 「设置」页：照抄 Android Settings 页结构 ——
-/// 外观 / 观测 / 数据源 / 隐私 / 关于。
+/// 「设置」页：对齐 fork miuix 分支 `SettingsMiuix.kt` 的卡片分组结构 ——
+/// 页面 12 边距 + 卡片间 12，每组一张 Miuix 卡片，行图标用 onBackground 色
+/// （fork 里 startAction 统一 `tint = colorScheme.onBackground`）。
 struct SettingsView: View {
 
     @ObservedObject var model: TrackerModel
@@ -36,83 +37,89 @@ struct SettingsView: View {
     @State private var showRevokeConfirm = false
 
     var body: some View {
-        List {
-            Section("观测") {
-                NavigationLink(value: Route.locationDetail) {
-                    Label("定位详情", systemImage: "location")
-                }
-                NavigationLink(value: Route.reminderList) {
-                    LabeledContent("过境提醒", value: "本地通知")
-                }
+        MiuixPage {
+            // 观测
+            MiuixGroupCard {
+                navRow(.locationDetail, "定位详情", summary: "定位状态与地面站坐标", systemImage: "location")
+                navRow(.reminderList, "过境提醒列表", summary: "本地通知提醒即将过境的卫星", systemImage: "bell")
             }
 
-            Section("过境提醒") {
-                Toggle("启用过境提醒", isOn: $reminderSettings.enabled)
-                Picker("提前量", selection: $reminderSettings.leadMinutes) {
-                    ForEach(ReminderSettingsStore.leadOptions, id: \.self) { minutes in
-                        Text("提前 \(minutes) 分钟").tag(minutes)
-                    }
-                }
-                .disabled(!reminderSettings.enabled)
+            // 过境提醒（对应 fork「日程提醒」分组）
+            MiuixGroupCard {
+                MiuixSwitchRow(
+                    title: "启用过境提醒",
+                    summary: "在卫星过境前发出本地通知",
+                    systemImage: "notifications",
+                    isOn: $reminderSettings.enabled
+                )
+                MiuixMenuRow(
+                    title: "提前量",
+                    systemImage: "clock",
+                    disabled: !reminderSettings.enabled,
+                    options: ReminderSettingsStore.leadOptions,
+                    label: { "提前 \($0) 分钟" },
+                    selection: $reminderSettings.leadMinutes
+                )
             }
 
-            Section("外观") {
-                NavigationLink(value: Route.colorPalette) {
-                    LabeledContent {
-                        Text(theme.appearance.label + " · " + theme.accent.label)
-                            .foregroundStyle(.secondary)
-                    } label: {
-                        Label("主题配色", systemImage: "paintpalette")
-                    }
-                }
+            // 外观
+            MiuixGroupCard {
+                navRow(
+                    .colorPalette,
+                    "主题配色",
+                    summary: theme.appearance.label + " · " + theme.accent.label,
+                    systemImage: "paintpalette"
+                )
             }
 
-            Section("隐私") {
-                NavigationLink(value: Route.privacyPolicy) {
-                    Label("隐私政策", systemImage: "hand.raised")
-                }
-                NavigationLink(value: Route.permissions) {
-                    Label("权限管理", systemImage: "lock.shield")
-                }
-                Button(role: .destructive) {
-                    showRevokeConfirm = true
-                } label: {
-                    Label("撤回隐私同意", systemImage: "arrow.uturn.backward")
-                }
-            }
-
-            Section("数据源") {
-                LabeledContent("TLE 源", value: "tle.hamkit.click（amateur + satnogs + active）")
-                LabeledContent("轨道目录", value: "\(model.satellites.count) 颗")
-                LabeledContent("业余卫星", value: "\(model.amateurSatellites.count) 颗")
-                LabeledContent("更新于", value: model.lastUpdatedText)
-                LabeledContent("转发器（SatNOGS）", value: model.transmitterStatusText)
-                Button {
+            // 数据源
+            MiuixGroupCard {
+                MiuixValueRow(title: "TLE 源", value: "tle.hamkit.click（amateur + satnogs + active）")
+                MiuixValueRow(title: "轨道目录", value: "\(model.satellites.count) 颗")
+                MiuixValueRow(title: "业余卫星", value: "\(model.amateurSatellites.count) 颗")
+                MiuixValueRow(title: "更新于", value: model.lastUpdatedText)
+                MiuixValueRow(title: "转发器（SatNOGS）", value: model.transmitterStatusText)
+                actionRow(
+                    "立即刷新 TLE",
+                    summary: "重新拉取并解析轨道数据",
+                    systemImage: "arrow.triangle.2.circlepath",
+                    isLoading: model.isLoadingSatellites
+                ) {
                     model.loadSatellites(force: true)
-                } label: {
-                    Label("立即刷新 TLE", systemImage: "arrow.triangle.2.circlepath")
                 }
-                .disabled(model.isLoadingSatellites)
-                Button {
+                actionRow(
+                    "重新拉取转发器频率",
+                    summary: "从 SatNOGS 同步转发器",
+                    systemImage: "antenna.radiowaves.left.and.right",
+                    isLoading: model.isTransmittersLoading
+                ) {
                     model.loadTransmitters()
-                } label: {
-                    Label("重新拉取转发器频率", systemImage: "antenna.radiowaves.left.and.right")
                 }
-                .disabled(model.isTransmittersLoading)
             }
 
-            Section("关于") {
-                NavigationLink(value: Route.about) {
-                    Label("关于 HamKit", systemImage: "info.circle")
+            // 隐私
+            MiuixGroupCard {
+                navRow(.privacyPolicy, "隐私政策", summary: "数据处理与第三方服务说明", systemImage: "hand.raised")
+                navRow(.permissions, "权限管理", summary: "定位 / 麦克风权限状态", systemImage: "lock.shield")
+                MiuixArrowRow(
+                    title: "撤回隐私同意",
+                    summary: "撤回后重新走首次启动同意流程",
+                    systemImage: "arrow.uturn.backward",
+                    destructive: true
+                ) {
+                    showRevokeConfirm = true
                 }
-                LabeledContent("内核版本", value: HamKitApi.shared.version())
+            }
+
+            // 关于
+            MiuixGroupCard {
+                navRow(.about, "关于 HamKit", summary: "版本与开发者名单", systemImage: "info.circle")
+                MiuixValueRow(title: "内核版本", value: HamKitApi.shared.version())
             }
         }
-        .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
-        .background(MiuixTheme.background)
         .navigationTitle("设置")
         .navigationBarTitleDisplayMode(.inline)
+        .tint(MiuixTheme.primary)
         .onChange(of: reminderSettings.enabled) { _ in
             model.applyReminderSettings()
         }
@@ -131,12 +138,47 @@ struct SettingsView: View {
         }
         // 路由目标由 AppRootView 统一注册，避免同一 stack 重复注册 for: Route.self
     }
+
+    /// 值式导航行：包一层 NavigationLink(value:) 走统一 NavigationPath。
+    private func navRow(
+        _ route: Route,
+        _ title: String,
+        summary: String? = nil,
+        systemImage: String? = nil
+    ) -> some View {
+        NavigationLink(value: route) {
+            MiuixRow(title: title, summary: summary, systemImage: systemImage, showsChevron: true)
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// 动作行（刷新数据等）：进行中在行尾显示 ProgressView（用透明度切换，避免
+    /// 在非 ViewBuilder 闭包里写分支）。
+    private func actionRow(
+        _ title: String,
+        summary: String? = nil,
+        systemImage: String? = nil,
+        isLoading: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        let tap: (() -> Void)? = isLoading ? nil : action
+        return MiuixRow(
+            title: title,
+            summary: summary,
+            systemImage: systemImage,
+            showsChevron: false,
+            onClick: tap,
+            end: AnyView(
+                ProgressView()
+                    .controlSize(.small)
+                    .opacity(isLoading ? 1 : 0)
+            )
+        )
+    }
 }
 
-/// 「关于」页：对应 Android About 页。
-///
-/// 开发者 / 捐赠者名单与 Android `AboutScreen` 同一份数据（姓名 + 呼号 + GitHub id），
-/// 头像直接取 GitHub（`https://github.com/<id>.png`），点整行打开对应主页。
+/// 「关于」页：miuix 卡片分组。名单与 Android `AboutScreen` 同一份数据
+/// （姓名 + 呼号 + GitHub id），头像取 GitHub，点整行打开对应主页。
 struct AboutView: View {
 
     /// 与 Android `AboutScreen` 保持一致的名单；改一边记得改另一边。
@@ -155,38 +197,51 @@ struct AboutView: View {
     }
 
     var body: some View {
-        List {
-            Section {
-                LabeledContent("应用", value: "HamKit iOS")
-                LabeledContent("版本", value: versionText)
-                LabeledContent("内核版本", value: HamKitApi.shared.version())
+        MiuixPage {
+            MiuixGroupCard {
+                MiuixValueRow(title: "应用", value: "HamKit iOS")
+                MiuixValueRow(title: "版本", value: versionText)
+                MiuixValueRow(title: "内核版本", value: HamKitApi.shared.version())
             }
-            Section("项目") {
-                LabeledContent("定位", value: "业余无线电卫星观测工具")
-                LabeledContent("内核", value: "Kotlin Multiplatform（与 Android 同源）")
-                LabeledContent("开源", value: "github.com/fuxue-linkong/HamKit")
+            MiuixGroupCard {
+                MiuixValueRow(title: "定位", value: "业余无线电卫星观测工具")
+                MiuixValueRow(title: "内核", value: "Kotlin Multiplatform（与 Android 同源）")
+                MiuixValueRow(title: "开源", value: "github.com/fuxue-linkong/HamKit")
             }
-            Section("开发者") {
-                ForEach(developers) { ContributorRow(contributor: $0) }
-            }
+            contributorCard("开发者", contributors: developers)
             if !donors.isEmpty {
-                Section {
-                    ForEach(donors) { ContributorRow(contributor: $0) }
-                } header: {
-                    Text("捐赠者")
-                } footer: {
-                    Text("感谢对项目的支持。")
-                }
+                contributorCard("捐赠者", contributors: donors, footer: "感谢对项目的支持。")
             }
-            Section("说明") {
+            MiuixGroupCard {
                 Text("iOS 端为 SwiftUI 壳，业务计算全部由共享内核提供：分区定位、SGP4/SDP4 过境计算、多普勒。")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 14))
+                    .foregroundStyle(MiuixTheme.textSecondary)
+                    .padding(MiuixTheme.cardPadding)
             }
         }
-        .listStyle(.insetGrouped)
         .navigationTitle("关于")
         .navigationBarTitleDisplayMode(.inline)
+        .tint(MiuixTheme.primary)
+    }
+
+    private func contributorCard(_ title: String, contributors: [Contributor], footer: String? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(MiuixTheme.textSecondary)
+                .padding(.horizontal, 16)
+            MiuixGroupCard {
+                ForEach(contributors) { contributor in
+                    ContributorRow(contributor: contributor)
+                }
+            }
+            if let footer {
+                Text(footer)
+                    .font(.system(size: 12))
+                    .foregroundStyle(MiuixTheme.textTertiary)
+                    .padding(.horizontal, 16)
+            }
+        }
     }
 }
 
@@ -213,37 +268,43 @@ private struct ContributorRow: View {
                 } placeholder: {
                     Image(systemName: "person.crop.circle.fill")
                         .resizable()
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(MiuixTheme.textTertiary)
                 }
                 .frame(width: 36, height: 36)
                 .clipShape(Circle())
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(contributor.name)
-                        .foregroundStyle(.primary)
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(MiuixTheme.text)
                     if let callsign = contributor.callsign, !callsign.isEmpty {
                         Text(callsign)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 14))
+                            .foregroundStyle(MiuixTheme.textSecondary)
                     }
                 }
                 Spacer()
                 Text("@\(contributor.githubId)")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+                    .font(.system(size: 14))
+                    .foregroundStyle(MiuixTheme.textTertiary)
             }
+            .padding(.horizontal, MiuixTheme.cardPadding)
+            .padding(.vertical, MiuixTheme.cardPadding)
+            .contentShape(Rectangle())
         }
     }
 }
 
-/// 「隐私政策」页：对应 Android PrivacyPolicy 页；条款与 Android 同源，只描述 iOS 的实际情况。
+/// 「隐私政策」页：条款与 Android 同源，只描述 iOS 的实际情况。
 struct PrivacyPolicyView: View {
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("HamKit 隐私政策（iOS）")
-                    .font(.title3.weight(.semibold))
-                Text("""
+        MiuixPage {
+            MiuixGroupCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("HamKit 隐私政策（iOS）")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(MiuixTheme.text)
+                    Text("""
 1. 我们处理哪些信息
 • 精确位置（敏感个人信息）：仅用于本地计算分区、卫星过境与地图定位。除非你主动开启 APRS 上报或使用天气，位置不会离开设备。
 • 麦克风与音频：仅在你主动开始 CW / FT8 / SSTV / HF Fax 接收时采集，用于本地解码，不上传。
@@ -267,132 +328,195 @@ APRS-IS、CelesTrak、SatNOGS、AMSAT、GitHub 位于中国境外；使用相关
 5. 其他
 无广告、无统计 SDK、无第三方追踪。若需撤回同意、删除数据或有疑问，请联系 liurun637@gmail.com。
 """)
-                .font(.callout)
-                .foregroundStyle(.secondary)
+                    .font(.system(size: 14))
+                    .foregroundStyle(MiuixTheme.textSecondary)
+                }
+                .padding(MiuixTheme.cardPadding)
             }
-            .padding()
         }
         .navigationTitle("隐私政策")
         .navigationBarTitleDisplayMode(.inline)
     }
 }
 
-/// 「权限管理」页：对应 Android Permissions 页；iOS 权限由系统设置管理，这里展示状态并给跳转。
+/// 「权限管理」页：iOS 权限由系统设置管理，这里展示状态并给跳转。
 struct PermissionsView: View {
 
     @ObservedObject var location: LocationProvider
 
     var body: some View {
-        List {
-            Section {
-                LabeledContent("定位", value: location.statusText)
-                Button("打开系统设置") {
+        MiuixPage {
+            MiuixGroupCard {
+                MiuixValueRow(title: "定位", value: location.statusText)
+                MiuixArrowRow(title: "打开系统设置", summary: "定位 / 麦克风权限只能在系统设置里开关", systemImage: "gearshape") {
                     if let url = URL(string: UIApplication.openSettingsURLString) {
                         UIApplication.shared.open(url)
                     }
                 }
-            } header: {
-                Text("权限状态")
-            } footer: {
+            }
+            MiuixGroupCard {
                 Text("iOS 权限只能到系统设置里开关，HamKit 不存储这些状态。")
+                    .font(.system(size: 14))
+                    .foregroundStyle(MiuixTheme.textSecondary)
+                    .padding(MiuixTheme.cardPadding)
             }
         }
-        .listStyle(.insetGrouped)
         .navigationTitle("权限管理")
         .navigationBarTitleDisplayMode(.inline)
+        .tint(MiuixTheme.primary)
     }
 }
 
 /// 「主题配色」页：对应 Android ColorPalette 页（外观模式 + 主题色）。
 ///
-/// Android 用 Miuix 的 `ThemeController`（Monet 动态取色）；iOS 没有对应的取色器，
-/// 这里提供固定的 9 档色板 + 三种外观模式，效果等价于 Android 的「自定义配色」。
+/// 色板对齐 Android 端 `SafeColors.keyColorSeed`（15 档 Material 400 种子色）；
+/// Android 的「默认」是 Monet 从壁纸取色，iOS 没有对应 API，默认落在
+/// miuix 蓝（上游 `lightColorScheme()` 的 primary 默认值）。
 struct ColorPaletteView: View {
 
     @ObservedObject private var theme = ThemeStore.shared
     @ObservedObject private var glass = LiquidGlassSettingsStore.shared
 
-    private let columns = [GridItem(.adaptive(minimum: 68), spacing: 12)]
+    private let columns = [GridItem(.adaptive(minimum: 64), spacing: 12)]
 
     var body: some View {
-        List {
-            Section {
-                Picker("外观", selection: $theme.appearance) {
-                    ForEach(MiuixAppearance.allCases) { mode in
-                        Text(mode.label).tag(mode)
+        MiuixPage {
+            // 外观模式
+            MiuixGroupCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "circle.lefthalf.filled")
+                            .font(.system(size: 17))
+                            .frame(width: 24)
+                            .foregroundStyle(MiuixTheme.text)
+                        Text("外观")
+                            .font(.system(size: 17, weight: .medium))
+                            .foregroundStyle(MiuixTheme.text)
                     }
-                }
-                .pickerStyle(.segmented)
-            } header: {
-                Text("外观")
-            } footer: {
-                Text("「跟随系统」时深浅色由 iOS 显示设置决定；选浅色/深色则覆盖系统设置。")
-            }
-
-            Section {
-                LazyVGrid(columns: columns, spacing: 16) {
-                    ForEach(MiuixAccent.allCases) { accent in
-                        Button {
-                            theme.accent = accent
-                        } label: {
-                            VStack(spacing: 6) {
-                                Circle()
-                                    .fill(accent.color)
-                                    .frame(width: 34, height: 34)
-                                    .overlay {
-                                        Image(systemName: "checkmark")
-                                            .font(.system(size: 13, weight: .bold))
-                                            .foregroundStyle(.white)
-                                            .opacity(theme.accent == accent ? 1 : 0)
-                                    }
-                                    .overlay {
-                                        Circle()
-                                            .strokeBorder(Color.white.opacity(0.85), lineWidth: 2)
-                                            .opacity(theme.accent == accent ? 1 : 0)
-                                    }
-                                Text(accent.label)
-                                    .font(.caption2)
-                                    .foregroundStyle(theme.accent == accent ? MiuixTheme.primary : .secondary)
-                            }
-                            .frame(maxWidth: .infinity)
+                    Picker("外观", selection: $theme.appearance) {
+                        ForEach(MiuixAppearance.allCases) { mode in
+                            Text(mode.label).tag(mode)
                         }
-                        .buttonStyle(.borderless)
-                        .accessibilityLabel(Text(accent.label))
+                    }
+                    .pickerStyle(.segmented)
+                    Text("「跟随系统」时深浅色由 iOS 显示设置决定；选浅色/深色则覆盖系统设置。")
+                        .font(.system(size: 14))
+                        .foregroundStyle(MiuixTheme.textSecondary)
+                }
+                .padding(MiuixTheme.cardPadding)
+            }
+
+            // 液态玻璃（iOS 26+ 原生 Liquid Glass；旧 SDK 编译时不展示无效开关）
+            if LiquidGlass.isAvailable {
+                MiuixGroupCard {
+                    MiuixSwitchRow(
+                        title: "液态玻璃",
+                        summary: "为地图浮层与悬浮按钮启用 iOS 26 原生 Liquid Glass。关闭后改用半透明材质。系统自带的标签栏 / 导航栏由系统外观控制，不受此开关影响。",
+                        systemImage: "drop",
+                        isOn: $glass.enabled
+                    )
+                }
+            }
+
+            // 主题色
+            MiuixGroupCard {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "paintpalette")
+                            .font(.system(size: 17))
+                            .frame(width: 24)
+                            .foregroundStyle(MiuixTheme.text)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("主题色")
+                                .font(.system(size: 17, weight: .medium))
+                                .foregroundStyle(MiuixTheme.text)
+                            Text("应用到按钮、链接、选中态与分类高亮")
+                                .font(.system(size: 14))
+                                .foregroundStyle(MiuixTheme.textSecondary)
+                        }
+                    }
+                    LazyVGrid(columns: columns, spacing: 16) {
+                        ForEach(MiuixAccent.allCases) { accent in
+                            Button {
+                                theme.accent = accent
+                            } label: {
+                                VStack(spacing: 6) {
+                                    Circle()
+                                        .fill(accent.color)
+                                        .frame(width: 34, height: 34)
+                                        .overlay {
+                                            Image(systemName: "checkmark")
+                                                .font(.system(size: 13, weight: .bold))
+                                                .foregroundStyle(.white)
+                                                .opacity(theme.accent == accent ? 1 : 0)
+                                        }
+                                        .overlay {
+                                            Circle()
+                                                .strokeBorder(Color.white.opacity(0.85), lineWidth: 2)
+                                                .opacity(theme.accent == accent ? 1 : 0)
+                                        }
+                                    Text(accent.label)
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(theme.accent == accent ? MiuixTheme.primary : MiuixTheme.textSecondary)
+                                }
+                                .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderless)
+                            .accessibilityLabel(Text(accent.label))
+                        }
                     }
                 }
-                .padding(.vertical, 6)
-            } header: {
-                Text("主题色")
-            } footer: {
-                Text("主题色会应用到按钮、链接、选中态与分类高亮。Android 端的动态取色（Monet）在 iOS 上没有对应 API，因此这里用固定色板。")
+                .padding(MiuixTheme.cardPadding)
             }
 
-            // 原生 Liquid Glass 只存在于 iOS 26+；用旧 SDK 构建时
-            // LiquidGlass.isAvailable 为 false，不展示无效开关。
-            if LiquidGlass.isAvailable {
-                Section {
-                    Toggle("液态玻璃", isOn: $glass.enabled)
-                        .tint(MiuixTheme.primary)
-                } header: {
-                    Text("液态玻璃")
-                } footer: {
-                    Text("为地图浮层与悬浮按钮启用 iOS 26 原生 Liquid Glass。关闭后改用半透明材质。系统自带的标签栏 / 导航栏由系统外观控制，不受此开关影响。")
+            // 效果预览（对齐 fork 预览卡的意图：一眼看到当前配色在各元素上的表现）
+            MiuixGroupCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "eyeglasses")
+                            .font(.system(size: 17))
+                            .frame(width: 24)
+                            .foregroundStyle(MiuixTheme.text)
+                        Text("效果预览")
+                            .font(.system(size: 17, weight: .medium))
+                            .foregroundStyle(MiuixTheme.text)
+                    }
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Text("示例标题")
+                                .font(.system(size: 17, weight: .medium))
+                                .foregroundStyle(MiuixTheme.text)
+                            Spacer()
+                            Text("摘要文字")
+                                .font(.system(size: 14))
+                                .foregroundStyle(MiuixTheme.textSecondary)
+                        }
+                        HStack(spacing: 10) {
+                            Text("主色按钮")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(MiuixTheme.onPrimary)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(MiuixTheme.primary)
+                                .clipShape(Capsule())
+                            Text("链接")
+                                .font(.system(size: 14))
+                                .foregroundStyle(MiuixTheme.primary)
+                            Spacer()
+                            Image(systemName: "circle.fill").foregroundStyle(MiuixTheme.success)
+                            Image(systemName: "circle.fill").foregroundStyle(MiuixTheme.danger)
+                            Image(systemName: "circle.fill").foregroundStyle(MiuixTheme.infoIcon)
+                        }
+                    }
+                    .padding(12)
+                    .background(MiuixTheme.background)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
-            }
-
-            Section {
-                HStack(spacing: 10) {
-                    Image(systemName: "circle.fill").foregroundStyle(MiuixTheme.primary)
-                    Text("示例：导航返回箭头、开关、链接都会跟随主题色")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
+                .padding(MiuixTheme.cardPadding)
             }
         }
-        .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
-        .background(MiuixTheme.background)
         .navigationTitle("主题配色")
         .navigationBarTitleDisplayMode(.inline)
+        .tint(MiuixTheme.primary)
     }
 }
