@@ -27,7 +27,9 @@ object AiModelList {
                     .get()
                     .build()
 
-                AiHttp.blocking(cfg.allowSelfSigned).newCall(request).execute().use { response ->
+                // trustAll 客户端仅限私有地址：把请求 URL 交给 AiHttp 做强制校验
+                AiHttp.blocking(cfg.allowSelfSigned, request.url)
+                    .newCall(request).execute().use { response ->
                     val body = response.body?.string().orEmpty()
                     if (!response.isSuccessful) {
                         throw AiModelListException(AiError.fromHttp(response.code, body))

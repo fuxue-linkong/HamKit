@@ -93,7 +93,15 @@ fun GithubMarkdown(
     val parser = remember(extensions) { Parser.builder().extensions(extensions).build() }
     val renderer = remember(extensions) { HtmlRenderer.builder().extensions(extensions).build() }
     val rendered = remember(content, isMarkdown) {
-        if (isMarkdown) renderer.render(parser.parse(content)) else content
+        if (isMarkdown) {
+            // M-2：AI/远端内容不可信。commonmark 会原样输出原始 HTML，
+            // 渲染前在 AST 上消毒：剥离可执行 HTML、限制链接/图片 scheme。
+            val ast = parser.parse(content)
+            MarkdownSanitizer.sanitize(ast)
+            renderer.render(ast)
+        } else {
+            content
+        }
     }
     val body = """
         <style>
@@ -129,7 +137,8 @@ fun GithubMarkdown(
                         offscreenPreRaster = true
                         javaScriptEnabled = true
                         domStorageEnabled = true
-                        mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                        // M-2：HTTPS 页面不允许加载 HTTP 资源，防混合内容降级
+                        mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
                         allowContentAccess = false
                         allowFileAccess = false
                         cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
