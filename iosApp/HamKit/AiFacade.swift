@@ -1,4 +1,5 @@
 import Foundation
+import CoreLocation
 import Shared
 
 /// 把 App 的实时数据喂给共享内核的工具层（对齐 Android `AiAppFacadeImpl`）。
@@ -12,6 +13,8 @@ final class AiAppFacadeImpl: NSObject, AiAppFacade {
     weak var model: TrackerModel?
     /// 「打开页面」的动作出口，由 AppRootView 注入（拿到导航栈才能真的跳）。
     var onNavigate: ((Route) -> Void)?
+    /// 全局唯一的定位器（AppRootView 注入）：refresh_location 工具用。
+    private weak var locationProvider: LocationProvider?
 
     /// 全量目录 1.6 万颗，逐个跨语言构造对象很贵；工具一次对话里可能问两三遍，
     /// 这里按 5 秒缓存（过境数据本身也是分钟级精度，不会因此失真）。
@@ -21,6 +24,11 @@ final class AiAppFacadeImpl: NSObject, AiAppFacade {
     func attach(model: TrackerModel) {
         self.model = model
         cachedAt = .distantPast
+    }
+
+    /// 注入全局定位器（AppRootView onAppear 调用一次）。
+    func attach(location: LocationProvider) {
+        self.locationProvider = location
     }
 
     // ── 数据 ────────────────────────────────────────────────────────────────
@@ -138,6 +146,62 @@ final class AiAppFacadeImpl: NSObject, AiAppFacade {
                 isComplete: entry.isComplete
             )
         }
+    }
+
+    /// 强制重新定位（忽略缓存）：AI 工具 refresh_location 用。
+    ///
+    /// 内核工具在主线程回调链上同步执行（AiToolbox.execute 是同步实现），
+    /// 所以主线程直接回当前值；后台调用方（MCP）用信号量等待 GPS 刷新。
+    func refreshLocation() -> AiLocationInfo? {
+        guard let provider = locationProvider else { return location() }
+        if Thread.isMainThread {
+            // 主线程不允许阻塞轮询：直接给当前值（页面本身也持有最新定位）
+            return Self.locationInfo(provider.coordinate, model: model)
+        }
+        let semaphore = DispatchSemaphore(value: 0)
+        var result: AiLocationInfo?
+        DispatchQueue.main.async {
+            provider.refreshLocation { coordinate in
+                result = Self.locationInfo(coordinate, model: self.model)
+                semaphore.signal()
+            }
+        }
+        _ = semaphore.wait(timeout: .now() + 20)
+        return result
+    }
+
+    /// 写入一条 QSO 日志；返回正数（时间戳毫秒）作为行 id 给模型看，失败返回 -1。
+    func addQso(draft: AiQsoDraft) -> Int64 {
+        let entry = QsoEntry(
+            callsign: draft.callsign,
+            grid: draft.grid ?? "",
+            reportSent: draft.reportSent,
+            reportReceived: draft.reportReceived,
+            bandName: draft.band,
+            freqHz: draft.freqHz,
+            mode: draft.mode,
+            qsoTime: draft.qsoTimeMs > 0
+                ? Date(timeIntervalSince1970: Double(draft.qsoTimeMs) / 1000)
+                : Date(),
+            isComplete: draft.isComplete,
+            operatorCallsign: "",
+            myGrid: draft.myGrid ?? "",
+            comment: draft.comment ?? ""
+        )
+        QsoStore.shared.upsert(entry)
+        return Int64(entry.qsoTime.timeIntervalSince1970 * 1000)
+    }
+
+    private static func locationInfo(
+        _ coordinate: CLLocationCoordinate2D?,
+        model: TrackerModel?
+    ) -> AiLocationInfo? {
+        guard let coordinate else { return nil }
+        return AiLocationInfo(
+            latitude: coordinate.latitude,
+            longitude: coordinate.longitude,
+            altitudeM: model?.altitudeM ?? 50
+        )
     }
 
     private static func millis(_ date: Date) -> Int64 {

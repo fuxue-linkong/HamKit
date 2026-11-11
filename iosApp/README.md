@@ -2,9 +2,13 @@
 
 SwiftUI 外壳 + Kotlin Multiplatform 内核。业务算法（SGP4/SDP4、TLE、CW、FT8、SSTV、HF Fax、APRS 报文、QSO、AI 引擎）全部在仓库根目录的 `:shared` 里，Android 与 iOS 跑同一份代码；Swift 侧只负责界面与平台能力（定位、音频、通知、网络、地图、Keychain）。
 
-> 状态：**测试版**（`ios` 分支，2026-11-07 同步 miuix 的 AI 模型配置改造，含模型目录 chips 与设置页两行模型行）。
+> 状态：**测试版**（`ios` 分支，2026-11-11 同步 miuix 更新：AI 推理等级与思考过程、自签 HTTPS、
+> 输出上限 65536、卫星歧义自动匹配、`refresh_location` / `add_qso_log` 工具、
+> 局域网 MCP 服务、背景不透明度、用户协议 v2、提醒补发）。
 > 功能已对齐 Android 的主要模块，没有 App Store / TestFlight（项目无收入，买不起开发者账号），
 > 以**未签名 IPA** 分发，需自行用 Apple ID 重签。
+>
+> Android 专属、不移植 iOS 的功能：**手环提醒**（小米手环 9 快应用依赖 XMS Android SDK）。
 
 ## 分支与维护
 
@@ -44,9 +48,10 @@ SwiftUI 外壳 + Kotlin Multiplatform 内核。业务算法（SGP4/SDP4、TLE、
 **其它**
 
 - 天气（高德 Web 服务，Key 构建时注入）+ 每日一言 + UTC
-- 主题：深浅模式 + 9 档强调色，Miuix 风格卡片
-- AI 助手：OpenAI / Anthropic / Gemini 三协议，SSE 流式，Key 存 Keychain；多提供商 + 每提供商多模型（模型搜索切换、目录拉取、独立 Key 槽位），可查卫星 / FT8 / APRS / QSO
-- 首启隐私同意、权限管理页、撤回同意
+- 主题：深浅模式 + 9 档强调色 + 背景不透明度（半透明后壁纸透出），Miuix 风格卡片
+- AI 助手：OpenAI / Anthropic / Gemini 三协议，SSE 流式，Key 存 Keychain；多提供商 + 每提供商多模型（模型搜索切换、目录拉取后**自动填充**、独立 Key 槽位）、推理等级（OFF/Low/Medium/High，思考过程折叠卡）、自签 HTTPS（仅内网）、输出上限 65536；工具可查卫星 / FT8 / APRS / QSO，并支持 `refresh_location`（重新定位）与 `add_qso_log`（写日志，弹确认、批量、ISO 时间）
+- 局域网 MCP 服务（AI 设置页开关）：`POST /mcp` JSON-RPC 2.0 + Bearer Token，只读工具供同网设备调用
+- 首启隐私同意（v2：隐私政策 + 用户协议，老用户升级后补看协议）、权限管理页、撤回同意
 
 ## 架构
 
@@ -81,7 +86,7 @@ iosApp/ (SwiftUI)                         shared/ (Kotlin Multiplatform)
 | SSTV / HF Fax | `SstvViews.swift`、`HfFaxView.swift` |
 | APRS | `AprsClient.swift`、`AprsViews.swift` |
 | QSO | `QsoStore.swift`、`QsoViews.swift` |
-| AI 助手 | `AiChatModel.swift`、`AiTransport.swift`、`AiFacade.swift`、`AiViews.swift`、`AiSettingsView.swift`、`AiSettingsStore.swift` |
+| AI 助手 | `AiChatModel.swift`、`AiTransport.swift`、`AiFacade.swift`、`AiViews.swift`、`AiSettingsView.swift`、`AiSettingsStore.swift`、`McpServer.swift` |
 | 设置 / 主题 / 合规 | `SettingsView.swift`、`ToolsView.swift`、`MiuixTheme.swift`、`LiquidGlass.swift`、`PrivacyConsentView.swift` |
 | 平台能力 | `LocationProvider.swift`、`Networking.swift`、`AudioSession.swift`、`NotificationManager.swift`、`BackgroundReminderScheduler.swift` |
 | 缓存 | `TleDiskCache.swift`、`TransmitterDiskCache.swift` |

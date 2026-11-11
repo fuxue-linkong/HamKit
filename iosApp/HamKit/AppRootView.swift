@@ -54,13 +54,18 @@ struct AppRootView: View {
         // 主题：强调色 + 深浅模式（设置里改完立即生效）
         .tint(theme.accentColor)
         .preferredColorScheme(theme.appearance.colorScheme)
-        // 首启隐私同意：盖住整个 Tab（Android 是独立 Activity，iOS 用全屏覆盖）
+        // 首启隐私同意：盖住整个 Tab（Android 是独立 Activity，iOS 用全屏覆盖）。
+        // v2 起：老用户（同意过 v1）只弹「协议更新」页，不重复介绍功能。
         .overlay {
             if !consent.accepted {
-                PrivacyConsentView { aprsPublic in
+                PrivacyConsentView(isAgreementUpdate: consent.needsAgreementUpdate) { aprsPublic in
+                    // 先取补看标记再 accept（accept 会把它清掉）：
+                    // 老用户定位早已授权，不重复请求；首启用户在同意后立即请求。
+                    let isAgreementUpdate = consent.needsAgreementUpdate
                     consent.accept(aprsPublic: aprsPublic)
-                    // 同意之后才请求定位：与 Android「同意前不初始化高德、不申请权限」一致
-                    location.requestLocation()
+                    if !isAgreementUpdate {
+                        location.requestLocation()
+                    }
                 }
                 .transition(.opacity)
             }
@@ -72,6 +77,7 @@ struct AppRootView: View {
             SatelliteStore.shared.configure(model: model)
             // AI 工具层需要同一份卫星 / 定位数据；「打开页面」走首页导航栈
             AiAppFacadeImpl.shared.attach(model: model)
+            AiAppFacadeImpl.shared.attach(location: location)
             AiAppFacadeImpl.shared.onNavigate = { [self] route in
                 homePath.append(route)
             }

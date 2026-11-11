@@ -76,6 +76,7 @@ struct AiSettingsView: View {
             generationSection
             promptSection
             toolsSection
+            mcpSection
             historySection
             saveSection
         }
@@ -105,6 +106,7 @@ struct AiSettingsView: View {
         }
         .onAppear {
             if draft == nil { loadDraft() }
+            loadMcpState()
         }
         .sheet(isPresented: $showProfilePicker) {
             NavigationStack {
@@ -467,14 +469,22 @@ struct AiSettingsView: View {
                 )
             }
             Stepper(
-                "最大输出 \(draft?.maxOutputTokens ?? 2048) tokens",
+                "最大输出 \(draft?.maxOutputTokens ?? 8192) tokens",
                 value: Binding(
-                    get: { draft?.maxOutputTokens ?? 2048 },
+                    get: { draft?.maxOutputTokens ?? 8192 },
                     set: { draft?.maxOutputTokens = $0 }
                 ),
-                in: 256...8192,
+                in: 256...65536,
                 step: 256
             )
+            Picker("推理等级", selection: Binding(
+                get: { store.global.reasoningEffort },
+                set: { value in store.updateGlobal { $0.reasoningEffort = value } }
+            )) {
+                ForEach(reasoningEfforts, id: \.name) { effort in
+                    Text(effort.label).tag(effort.name)
+                }
+            }
             Stepper(
                 "工具往返上限 \(store.global.maxToolRounds) 次",
                 value: Binding(
@@ -483,11 +493,27 @@ struct AiSettingsView: View {
                 ),
                 in: 1...8
             )
+            Toggle("信任自签 HTTPS（仅内网）", isOn: Binding(
+                get: { store.global.allowSelfSigned },
+                set: { value in store.updateGlobal { $0.allowSelfSigned = value } }
+            ))
         } header: {
             Text("生成参数")
         } footer: {
-            Text("温度与最大输出随提供商配置保存；工具往返上限为全局设置。")
+            Text("温度与最大输出随提供商配置保存；推理等级、工具往返与自签开关为全局设置。" +
+                 "推理会占用输出额度，HIGH 档会自动抬高请求上限；" +
+                 "「信任自签」只对内网地址（192.168 / 10. / .local 等）生效，公网仍走系统证书校验。")
         }
+    }
+
+    /// 推理等级选项（名称与展示标签都来自内核，与 Android 同源）。
+    private var reasoningEfforts: [(name: String, label: String)] {
+        AiBridge.shared.reasoningEffortNames()
+            .split(separator: ",")
+            .map { name in
+                let key = String(name)
+                return (key, AiBridge.shared.reasoningEffortLabel(name: key))
+            }
     }
 
     // MARK: - 系统提示词
@@ -542,6 +568,108 @@ struct AiSettingsView: View {
         } footer: {
             Text("关掉的工具不会出现在请求里，模型完全看不到，也就不会调用。")
         }
+    }
+
+    // MARK: - 局域网 MCP 服务
+
+    /// 局域网 MCP（对齐 miuix `220ab7a`）：本机起 JSON-RPC over HTTP 服务，
+    /// 让同一局域网内的其它设备调用 HamKit 的只读 AI 工具。
+    private var mcpSection: some View {
+        Section {
+            Toggle("启用局域网 MCP 服务", isOn: Binding(
+                get: { McpSettingsStore.shared.enabled },
+                set: { enabled in
+                    let running = McpController.shared.setEnabled(enabled)
+                    mcpRunning = McpController.shared.isRunning
+                    mcpError = enabled && !running ? "启动失败：端口可能被占用" : nil
+                    refreshMcpUI()
+                }
+            ))
+            HStack {
+                Text("端口")
+                Spacer()
+                TextField("8765", text: $mcpPortDraft)
+                    .keyboardType(.numberPad)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 90)
+                    .onSubmit { applyMcpPort() }
+            }
+            LabeledContent("访问令牌") {
+                Text(mcpToken)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+            }
+            Button("重新生成令牌") {
+                mcpToken = McpController.shared.resetToken()
+            }
+            if !mcpAddress.isEmpty {
+                LabeledContent("本机地址") {
+                    Text(mcpAddress)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+            }
+            if mcpRunning {
+                Label("服务运行中（App 退到后台会暂停）", systemImage: "checkmark.circle")
+                    .font(.caption)
+                    .foregroundStyle(.green)
+            }
+            if let mcpError {
+                Text(mcpError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+        } header: {
+            Text("局域网 MCP 服务")
+        } footer: {
+            Text("局域网内其它设备可用 MCP 客户端连接 http://本机IP:端口/mcp，" +
+                 "以 Bearer Token 鉴权，只开放只读工具（查卫星 / 定位 / FT8 / APRS / QSO）。" +
+                 "写工具与导航不开放，令牌泄露请立即重新生成。")
+        }
+    }
+
+    @State private var mcpPortDraft = ""
+    @State private var mcpToken = ""
+    @State private var mcpAddress = ""
+    @State private var mcpRunning = false
+    @State private var mcpError: String?
+
+    private func applyMcpPort() {
+        guard let port = Int(mcpPortDraft), (1024...65535).contains(port) else {
+            mcpError = "端口需在 1024-65535 之间"
+            return
+        }
+        let running = McpController.shared.setPort(port)
+        mcpRunning = McpController.shared.isRunning
+        mcpError = McpSettingsStore.shared.enabled && !running ? "端口被占用，请换一个" : nil
+        refreshMcpAddress()
+    }
+
+    private func refreshMcpAddress() {
+        let port = McpSettingsStore.shared.port
+        let ip = McpController.shared.wifiIPv4Address()
+        mcpAddress = ip.map { "http://\($0):\(port)/mcp" } ?? ""
+    }
+
+    private func loadMcpState() {
+        mcpPortDraft = String(McpSettingsStore.shared.port)
+        mcpToken = McpSettingsStore.shared.ensureToken()
+        mcpRunning = McpController.shared.isRunning
+        mcpError = nil
+        refreshMcpAddress()
+        // 开关开着但服务没跑（例如刚从后台恢复），尝试拉起
+        if McpSettingsStore.shared.enabled {
+            _ = McpController.shared.maybeStart()
+            mcpRunning = McpController.shared.isRunning
+        }
+    }
+
+    private func refreshMcpUI() {
+        refreshMcpAddress()
     }
 
     // MARK: - 历史
@@ -769,11 +897,60 @@ struct AiSettingsView: View {
         catalogError = nil
         errorMessage = nil
         do {
-            catalog = try await AiModelCatalog.fetch(profile: profile, apiKey: key)
+            catalog = try await AiModelCatalog.fetch(
+                profile: profile,
+                apiKey: key,
+                allowSelfSigned: store.global.allowSelfSigned
+            )
+            // 与 miuix 一致：获取成功后自动填充模型列表（保留已有行，缺的补上）
+            autoFillModels(from: catalog)
         } catch {
             catalogError = error.localizedDescription
         }
         fetchingCatalog = false
+    }
+
+    /// 获取目录成功后自动填充：已有行按目录顺序重排/补齐，保留显示名称与选中项。
+    ///
+    /// 与 miuix `9cc0b59` 对齐——之前只把目录当「可点的 chips」，用户还得逐个手动添加；
+    /// 现在拉到列表就直接落进模型行，目录外自定义的模型仍保留在末尾。
+    private func autoFillModels(from catalog: [String]) {
+        guard var value = draft, !catalog.isEmpty else { return }
+        var usedEmptySlot = false
+        var entries: [AiModelEntry] = []
+        for modelId in catalog {
+            // 目录里第一个命中已有空行的，复用那一行（避免留下一个空模型行）
+            if !usedEmptySlot,
+               let index = value.models.firstIndex(where: { $0.modelId.isEmpty }),
+               !entries.contains(where: { $0.modelId == modelId }) {
+                entries.append(
+                    AiModelEntry(
+                        id: value.models[index].id,
+                        modelId: modelId,
+                        displayName: value.models[index].displayName
+                    )
+                )
+                usedEmptySlot = true
+                continue
+            }
+            if let existing = value.models.first(where: { $0.modelId == modelId }) {
+                entries.append(existing)
+            } else {
+                entries.append(AiModelEntry(id: "m_" + Self.shortId(), modelId: modelId, displayName: nil))
+            }
+        }
+        // 目录外的自定义模型排在最后
+        entries += value.models.filter { entry in
+            !entry.modelId.isEmpty && !catalog.contains(entry.modelId)
+        }
+        if let selected = value.selectedModelId, entries.contains(where: { $0.id == selected }) {
+            value.selectedModelId = selected
+        } else {
+            value.selectedModelId = entries.first?.id
+        }
+        value.models = entries
+        draft = value
+        notice = "已自动填充 \(catalog.count) 个模型，记得点右上角「保存」。"
     }
 
     private static func shortId() -> String {

@@ -13,6 +13,11 @@ data class AiHttpRequest(
     val timeoutSeconds: Int,
     /** 是否要求流式（false 时平台可以一次性读完整响应再回调一次 chunk）。 */
     val stream: Boolean = true,
+    /**
+     * 信任自签 HTTPS（仅内网请求；由内核按配置 + [AiNetworkPolicy.isPrivateHost] 决定）。
+     * 平台实现据此选择 trustAll 会话，公网请求永远不携带该标记。
+     */
+    val allowSelfSigned: Boolean = false,
 )
 
 /** 一次请求的取消句柄。 */
@@ -104,6 +109,8 @@ class AiChatEngine(
     private val textBuffer = StringBuilder()
     private val reasoningBuffer = StringBuilder()
     private val callMap = LinkedHashMap<Int, MutableCall>()
+    /** 本轮已分配的 tool_call id：服务商返回空/重复 id 时在这里补唯一值。 */
+    private val seenCallIds = mutableSetOf<String>()
     private var stop: AiStopReason? = null
     private var streamFailed = false
     private var rounds = 0
@@ -175,6 +182,7 @@ class AiChatEngine(
         textBuffer.setLength(0)
         reasoningBuffer.clear()
         callMap.clear()
+        seenCallIds.clear()
         stop = null
         streamFailed = false
 
@@ -193,6 +201,7 @@ class AiChatEngine(
             headers = AiCodecs.headers(cfg.protocol, apiKey),
             body = body,
             timeoutSeconds = 120,
+            allowSelfSigned = cfg.allowSelfSigned && AiNetworkPolicy.isPrivateHost(hostOf(cfg.endpoint())),
         )
         val streamDecoder = AiCodecs.decoder(cfg.protocol)
         decoder = streamDecoder
@@ -242,7 +251,7 @@ class AiChatEngine(
                 AiEventKind.TOOL_CALL_STARTED -> {
                     val existing = callMap[event.index]
                     if (existing == null) {
-                        val id = event.callId.ifEmpty { "call_${event.index}_${event.toolName}" }
+                        val id = uniqueCallId(event.index, event.toolName, event.callId)
                         callMap[event.index] = MutableCall(event.index, id, event.toolName)
                         listener.onToolStarted(id, event.toolName, titleOf(event.toolName))
                     } else if (event.toolName.isNotEmpty() && existing.name.isEmpty()) {
@@ -269,6 +278,7 @@ class AiChatEngine(
         if (cancelled || completed || streamFailed) return
 
         val finalStop = stop ?: AiStopReason.END_TURN
+        // id 唯一性已在 TOOL_CALL_STARTED 阶段处理（UI 拿到的与最终配对的一致）
         val calls = callMap.values.map {
             AiToolCall(
                 id = it.id,
@@ -279,7 +289,8 @@ class AiChatEngine(
 
         val assistant = AiMessage(
             role = AiRole.ASSISTANT,
-            text = textBuffer.toString(),
+            // DSML 工具调用文本不进历史（模型偶尔把它当正文输出）
+            text = stripDsml(textBuffer.toString()),
             calls = calls,
         )
         messages = messages + assistant
@@ -385,7 +396,33 @@ class AiChatEngine(
 
     private fun titleOf(name: String): String =
         toolHost?.specs()?.firstOrNull { it.name == name }?.title ?: name
+
+    /**
+     * 分配唯一的 tool_call id：
+     * - 服务商给的 id 为空 → `call_<index>_<name>`；
+     * - id 与之前的重复 → 追加序号，避免工具卡/结果互相覆盖。
+     */
+    private fun uniqueCallId(index: Int, name: String, rawId: String): String {
+        val candidate = rawId.takeIf { it.isNotBlank() && seenCallIds.add(it) }
+            ?: run {
+                var fallback = "call_${index}_${name}"
+                var attempt = 1
+                while (!seenCallIds.add(fallback)) {
+                    attempt += 1
+                    fallback = "call_${index}_${name}_$attempt"
+                }
+                fallback
+            }
+        return candidate
+    }
 }
+
+/** 从请求 URL 里取出 host（仅用于内网判定；解析失败返回空串）。 */
+private fun hostOf(url: String): String = runCatching {
+    // 内核没有 URL 解析器，手拆 scheme://host[:port]/path
+    val withoutScheme = url.substringAfter("://", missingDelimiterValue = "")
+    withoutScheme.substringBefore('/').substringBefore(':')
+}.getOrDefault("")
 
 /**
  * 给模型看的工具结果文本。

@@ -18,9 +18,13 @@ class AiToolboxCommunityTest {
         private val ft8: AiFt8Snapshot? = null,
         private val aprs: AiAprsSnapshot? = null,
         private val qso: List<AiQsoSummary> = emptyList(),
-        private val now: Long = 1_800_000_000_000L,
+        val now: Long = 1_800_000_000_000L,
         private val here: AiLocationInfo? = AiLocationInfo(39.9, 116.4, 50.0),
     ) : AiAppFacade {
+
+        val addedQso = mutableListOf<AiQsoDraft>()
+        var refreshedLocation = false
+        var nextRefreshedLocation: AiLocationInfo? = null
 
         override fun satellites(): List<AiSatelliteInfo> = satellites
 
@@ -42,6 +46,16 @@ class AiToolboxCommunityTest {
         override fun aprsSnapshot(): AiAprsSnapshot? = aprs
 
         override fun qsoRecords(): List<AiQsoSummary> = qso
+
+        override fun refreshLocation(): AiLocationInfo? {
+            refreshedLocation = true
+            return nextRefreshedLocation ?: here
+        }
+
+        override fun addQso(draft: AiQsoDraft): Long {
+            addedQso += draft
+            return addedQso.size.toLong()
+        }
     }
 
     private fun satellite(
@@ -212,14 +226,184 @@ class AiToolboxCommunityTest {
         assertTrue(result.modelText.contains("为空"))
     }
 
+    @Test
+    fun `qso log filters by band and mode`() {
+        val now = 1_800_000_000_000L
+        val day = 86_400_000L
+        val records = listOf(
+            AiQsoSummary("A1", "", "2m", "FM", now - 1 * day, true),
+            AiQsoSummary("A2", "", "40m", "FT8", now - 2 * day, true),
+            AiQsoSummary("A3", "", "2m", "FT8", now - 3 * day, true),
+        )
+        val box = AiToolbox(FakeFacade(qso = records, now = now))
+
+        val bandOnly = run(box, "search_qso_log", """{"band":"2m"}""")
+        assertFalse(bandOnly.isError)
+        assertTrue(bandOnly.modelText.contains("\"total\":2"), bandOnly.modelText)
+        assertFalse(bandOnly.modelText.contains("A2"))
+
+        val both = run(box, "search_qso_log", """{"band":"2m","mode":"fm"}""")
+        assertFalse(both.isError)
+        assertTrue(both.modelText.contains("A1"), both.modelText)
+        assertFalse(both.modelText.contains("A3"))
+
+        val combined = run(box, "search_qso_log", """{"band":"2m/70cm"}""")
+        assertFalse(combined.isError, combined.modelText)
+        assertTrue(combined.modelText.contains("\"band\":\"2m\""), combined.modelText)
+
+        val unknown = run(box, "search_qso_log", """{"band":"23cm"}""")
+        assertTrue(unknown.isError)
+        assertTrue(unknown.modelText.contains("无法识别波段"), unknown.modelText)
+    }
+
+    // ── add_qso_log ────────────────────────────────────────────────────────
+
+    @Test
+    fun `add qso normalizes callsign and defaults band`() {
+        val facade = FakeFacade()
+        val box = AiToolbox(facade)
+        val result = run(box, "add_qso_log", """{"callsign":" bh4xyz ","mode":"FM"}""")
+
+        assertFalse(result.isError, result.modelText)
+        assertEquals(1, facade.addedQso.size)
+        val draft = facade.addedQso.single()
+        assertEquals("BH4XYZ", draft.callsign)
+        assertEquals("40m", draft.band)
+        assertEquals(7_074_000L, draft.freqHz)
+        assertEquals("FM", draft.mode)
+        assertEquals(facade.now, draft.qsoTimeMs)
+        assertTrue(result.summary.contains("BH4XYZ"))
+    }
+
+    @Test
+    fun `add qso parses iso time and combined band into comment`() {
+        val facade = FakeFacade()
+        val box = AiToolbox(facade)
+        val result = run(
+            box,
+            "add_qso_log",
+            """{"callsign":"XX9XX","band":"2m/70cm","qso_time":"2026-10-24T02:21:00Z"}""",
+        )
+
+        assertFalse(result.isError, result.modelText)
+        val draft = facade.addedQso.single()
+        assertEquals("2m", draft.band)
+        assertEquals(144_174_000L, draft.freqHz)
+        // 2026-10-24T02:21:00Z
+        assertEquals(1_792_808_460_000L, draft.qsoTimeMs)
+        assertEquals("波段：2m/70cm", draft.comment)
+    }
+
+    @Test
+    fun `add qso prefers epoch millis and reads large freq`() {
+        val facade = FakeFacade()
+        val box = AiToolbox(facade)
+        val result = run(
+            box,
+            "add_qso_log",
+            """{"callsign":"XX9XX","qso_time":"2020-01-01T00:00:00Z",""" +
+                """"qso_time_epoch_ms":1792808460000,"freq_hz":145800000}""",
+        )
+
+        assertFalse(result.isError, result.modelText)
+        val draft = facade.addedQso.single()
+        // epoch 毫秒优先于 ISO；超出 Int32 的毫秒值与频率要完整保留
+        assertEquals(1_792_808_460_000L, draft.qsoTimeMs)
+        assertEquals(145_800_000L, draft.freqHz)
+    }
+
+    @Test
+    fun `add qso batch writes all records at once`() {
+        val facade = FakeFacade()
+        val box = AiToolbox(facade)
+        val result = run(
+            box,
+            "add_qso_log",
+            """{"records":[{"callsign":"A1BCD"},{"callsign":"E2FGH","band":"20m"}]}""",
+        )
+
+        assertFalse(result.isError, result.modelText)
+        assertEquals(2, facade.addedQso.size)
+        assertEquals("A1BCD", facade.addedQso[0].callsign)
+        assertEquals("20m", facade.addedQso[1].band)
+        assertTrue(result.modelText.contains("\"count\":2"), result.modelText)
+    }
+
+    @Test
+    fun `add qso rejects malformed callsign and band`() {
+        val facade = FakeFacade()
+        val box = AiToolbox(facade)
+        assertTrue(run(box, "add_qso_log", """{"callsign":"!!"}""").isError)
+        assertTrue(facade.addedQso.isEmpty())
+        assertTrue(run(box, "add_qso_log", """{"callsign":"BH4XYZ","band":"23cm"}""").isError)
+        assertTrue(facade.addedQso.isEmpty())
+        assertTrue(run(box, "add_qso_log", "{}").isError)
+    }
+
+    // ── refresh_location ───────────────────────────────────────────────────
+
+    @Test
+    fun `refresh location forces a new fix and returns zone json`() {
+        val facade = FakeFacade()
+        val box = AiToolbox(facade)
+        val result = run(box, "refresh_location", "{}")
+
+        assertFalse(result.isError, result.modelText)
+        assertTrue(facade.refreshedLocation)
+        assertTrue(result.modelText.contains("\"grid\":\"OM89"), result.modelText)
+        assertTrue(result.summary.contains("OM89"))
+    }
+
+    @Test
+    fun `refresh location without fix fails clearly`() {
+        val facade = FakeFacade(here = null)
+        val box = AiToolbox(facade)
+        val result = run(box, "refresh_location", "{}")
+        assertTrue(result.isError)
+        assertTrue(result.modelText.contains("定位失败"), result.modelText)
+    }
+
     // ── 截断 ────────────────────────────────────────────────────────────────
 
     @Test
     fun `truncate keeps short text and marks long text`() {
         assertEquals("abc", truncateToolResult("abc", max = 10))
-        val long = "x".repeat(50)
-        val cut = truncateToolResult(long, max = 10)
-        assertEquals(10, cut.substringBefore("\n").length)
+        // 尾部说明计入上限：前缀 = max - 40
+        val long = "x".repeat(200)
+        val cut = truncateToolResult(long, max = 100)
+        assertEquals(60, cut.substringBefore("\n").length)
         assertTrue(cut.endsWith("（结果已截断）"))
+    }
+
+    // ── DSML 剥离 ───────────────────────────────────────────────────────────
+
+    @Test
+    fun `dsml blocks are stripped from text`() {
+        assertEquals("你好", stripDsml("你好"))
+        assertEquals(
+            "前文",
+            stripDsml("前文<||DSML||calls>{\"tool\":\"x\"}</||DSML||calls>"),
+        )
+        // 残留标记连同该行剩余内容一起剥掉
+        assertEquals("", stripDsml("<||DSML||calls>{\"a\":1}"))
+    }
+
+    // ── 内网判定 ────────────────────────────────────────────────────────────
+
+    @Test
+    fun `private host detection matches android policy`() {
+        assertTrue(AiNetworkPolicy.isPrivateHost("192.168.1.10"))
+        assertTrue(AiNetworkPolicy.isPrivateHost("10.0.0.2"))
+        assertTrue(AiNetworkPolicy.isPrivateHost("172.16.5.4"))
+        assertTrue(AiNetworkPolicy.isPrivateHost("172.31.255.1"))
+        assertTrue(AiNetworkPolicy.isPrivateHost("127.0.0.1"))
+        assertTrue(AiNetworkPolicy.isPrivateHost("localhost"))
+        assertTrue(AiNetworkPolicy.isPrivateHost("nas.local"))
+        assertTrue(AiNetworkPolicy.isPrivateHost("router.lan"))
+        // 公网与边界外
+        assertFalse(AiNetworkPolicy.isPrivateHost("api.deepseek.com"))
+        assertFalse(AiNetworkPolicy.isPrivateHost("172.32.0.1"))
+        assertFalse(AiNetworkPolicy.isPrivateHost("192.169.1.1"))
+        assertFalse(AiNetworkPolicy.isPrivateHost("11.0.0.1"))
     }
 }

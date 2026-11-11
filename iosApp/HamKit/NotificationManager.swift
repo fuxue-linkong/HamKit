@@ -38,7 +38,13 @@ final class NotificationManager {
         }
     }
 
-    /// 为一次过境安排提醒；AOS 已过（或不足提前量）时忽略。
+    /// 为一次过境安排提醒；对齐 miuix `6c26e13` 的补发语义：
+    ///
+    /// - 触发时刻在未来 → 正常排期；
+    /// - 触发时刻已过但 **AOS 还没过** → 立即补发（1 秒后），而不是直接丢弃。
+    ///   背景：设置提前量改小、或 App 刚回到前台重建排程时，触发点可能已经过去，
+    ///   旧实现直接 return false，用户看到的就是「到点什么都不弹」；
+    /// - AOS 也已过 → 丢弃。
     @discardableResult
     func schedulePassReminder(
         satelliteName: String,
@@ -46,9 +52,17 @@ final class NotificationManager {
         aosMs: Int64,
         leadSeconds: TimeInterval = 300
     ) -> Bool {
+        let now = Date()
         let aosDate = Date(timeIntervalSince1970: Double(aosMs) / 1000.0)
         let fireDate = aosDate.addingTimeInterval(-leadSeconds)
-        guard fireDate > Date() else { return false }
+        let resolvedFireDate: Date
+        if fireDate > now {
+            resolvedFireDate = fireDate
+        } else if now < aosDate {
+            resolvedFireDate = now.addingTimeInterval(1)
+        } else {
+            return false
+        }
 
         let content = UNMutableNotificationContent()
         content.title = "\(satelliteName) 即将过境"
@@ -56,7 +70,7 @@ final class NotificationManager {
         content.sound = .default
 
         let trigger = UNTimeIntervalNotificationTrigger(
-            timeInterval: max(1, fireDate.timeIntervalSinceNow),
+            timeInterval: max(1, resolvedFireDate.timeIntervalSinceNow),
             repeats: false
         )
         let request = UNNotificationRequest(

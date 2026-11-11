@@ -16,6 +16,10 @@ object AiToolRouter {
 
     private val rules: List<Rule> = listOf(
         Rule(
+            listOf("重新定位", "刷新定位", "重新获取位置", "定位不准", "更新位置"),
+            setOf("refresh_location"),
+        ),
+        Rule(
             listOf("定位", "分区", "网格", "maidenhead", "cq", "itu", "坐标", "经纬", "我在哪"),
             setOf("get_zone_info"),
         ),
@@ -34,7 +38,15 @@ object AiToolRouter {
         ),
         Rule(listOf("ft8", "解码", "js8", "wspr"), setOf("get_ft8_activity")),
         Rule(listOf("aprs", "igate", "digipeater"), setOf("get_aprs_stations")),
-        Rule(listOf("qso", "日志", "通联", "联络记录", "通联记录"), setOf("search_qso_log")),
+        // 写入意图在前：命中“记一下/写入/添加”时不再下发检索工具，避免模型误用 search
+        Rule(
+            listOf("记一下", "记一条", "写入", "添加", "录入"),
+            setOf("add_qso_log"),
+        ),
+        Rule(
+            listOf("qso", "日志", "通联", "联络记录", "通联记录"),
+            setOf("search_qso_log", "add_qso_log"),
+        ),
         Rule(listOf("天气", "气温", "风力", "湿度", "下雨"), setOf("get_weather")),
         Rule(listOf("时间", "utc", "几点", "星期"), setOf("get_utc_time")),
         Rule(listOf("摩斯", "cw", "电码"), setOf("cw_encode")),

@@ -82,10 +82,34 @@ enum class AiPreset(
 }
 
 /**
+ * 推理等级（对齐 Android `AiReasoningEffort`）：OFF 不传思考参数；其余映射到各协议的思考预算。
+ */
+enum class AiReasoningEffort(
+    val label: String,
+    /** OpenAI 兼容的 reasoning_effort 值；OFF 为 null。 */
+    val apiValue: String?,
+    /** Anthropic budget_tokens。 */
+    val budgetTokens: Int,
+    /** Gemini thinkingBudget（-1 = 动态）。 */
+    val geminiBudget: Int,
+) {
+    OFF("关闭", null, 0, 0),
+    LOW("Low", "low", 1024, 1024),
+    MEDIUM("Medium", "medium", 2048, 2048),
+    HIGH("High", "high", 4096, -1);
+
+    companion object {
+        fun fromName(name: String?): AiReasoningEffort =
+            entries.firstOrNull { it.name == name } ?: MEDIUM
+    }
+}
+
+/**
  * AI 配置。
  *
  * [systemPrompt] 为空表示使用 [AiPrompts.DEFAULT_SYSTEM_PROMPT]；
- * [disabledTools] 里的工具不会出现在请求里（模型完全看不到）。
+ * [disabledTools] 里的工具不会出现在请求里（模型完全看不到）；
+ * [allowSelfSigned] 只对私有地址生效（见 [AiNetworkPolicy]），公网仍走系统证书校验。
  */
 data class AiConfig(
     val protocol: AiProtocol = AiProtocol.OPENAI_CHAT,
@@ -93,24 +117,28 @@ data class AiConfig(
     val baseUrl: String = AiPreset.DEEPSEEK.baseUrl,
     val model: String = AiPreset.DEEPSEEK.defaultModel,
     val temperature: Double = 0.6,
-    val maxOutputTokens: Int = 2048,
+    val maxOutputTokens: Int = 8192,
     val saveHistory: Boolean = true,
     val historyLimit: Int = 200,
     val allowCleartext: Boolean = false,
+    /** 信任自签 HTTPS（仅对私有地址生效）。 */
+    val allowSelfSigned: Boolean = false,
     val systemPrompt: String = "",
     /** 逗号分隔的禁用工具名。 */
     val disabledTools: String = "",
     /** 副作用工具（创建提醒等）执行前是否二次确认。 */
     val confirmSideEffects: Boolean = true,
     /** 单轮对话里最多允许的「工具往返」次数。 */
-    val maxToolRounds: Int = 4,
+    val maxToolRounds: Int = 6,
+    /** 推理等级：默认 Medium。 */
+    val reasoningEffort: AiReasoningEffort = AiReasoningEffort.MEDIUM,
 ) {
 
     fun normalized(): AiConfig = copy(
         baseUrl = baseUrl.trim().trimEnd('/'),
         model = model.trim(),
         temperature = temperature.coerceIn(0.0, 2.0),
-        maxOutputTokens = maxOutputTokens.coerceIn(64, 8192),
+        maxOutputTokens = maxOutputTokens.coerceIn(64, 65536),
         maxToolRounds = maxToolRounds.coerceIn(1, 8),
     )
 
@@ -235,10 +263,15 @@ const val MAX_TOOL_RESULT_CHARS: Int = 6000
  * 截断工具结果（只作用于给模型的文本，UI 摘要与卡片保持原样）。
  *
  * 与 Android `truncateToolResult` 同义：`max` 是字符数上限，超出时保留前缀并追加说明，
- * 让模型知道「还有更多」而不是误以为结果就这么点。
+ * 让模型知道「还有更多」而不是误以为结果就这么点。尾部说明约占 40 字符，
+ * 一并计入上限，避免超长结果悄悄突破 max。
  */
 fun truncateToolResult(text: String, max: Int = MAX_TOOL_RESULT_CHARS): String =
-    if (text.length <= max) text else text.take(max) + "\n…（结果已截断）"
+    if (text.length <= max) {
+        text
+    } else {
+        text.take((max - 40).coerceAtLeast(0)) + "\n…（结果已截断）"
+    }
 
 // ── 流式事件 ────────────────────────────────────────────────────────────────
 
@@ -275,7 +308,9 @@ data class AiEvent(
 // ── 错误 ────────────────────────────────────────────────────────────────────
 
 enum class AiErrorKind {
-    AUTH, RATE_LIMIT, INVALID_REQUEST, SERVER, NETWORK, TIMEOUT, PARSE, NO_CONFIG, CANCELLED
+    AUTH, RATE_LIMIT, INVALID_REQUEST, SERVER, NETWORK, TIMEOUT, PARSE, NO_CONFIG, CANCELLED,
+    /** TLS 握手/证书不受信任（常见于 https 访问 http 端口或自签证书）。 */
+    SSL,
 }
 
 data class AiError(
@@ -296,6 +331,9 @@ data class AiError(
             AiErrorKind.PARSE -> "响应解析失败：$message"
             AiErrorKind.NO_CONFIG -> "尚未配置：$message"
             AiErrorKind.CANCELLED -> "已取消"
+            AiErrorKind.SSL ->
+                "HTTPS 握手失败：该端口可能是 HTTP 服务，请把地址改成 http://；" +
+                    "自签 HTTPS 请安装内网 CA 或开启「信任自签证书」"
         }
 
     companion object {

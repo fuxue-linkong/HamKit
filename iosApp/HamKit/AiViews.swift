@@ -3,7 +3,8 @@ import Shared
 
 /// AI 助手对话页（对应 Android `AiAssistantScreen`）。
 ///
-/// 与 Android 的差异：没有图片附件、没有思考过程折叠、没有 token 用量展示；
+/// 与 Android 的差异：没有图片附件、没有 token 用量展示；
+/// 思考过程以折叠卡展示（推理等级 OFF 时为空）；
 /// 其余交互（流式输出、工具卡、卫星卡、副作用确认、历史抽屉）保持一致。
 struct AiAssistantView: View {
 
@@ -161,10 +162,15 @@ struct AiAssistantView: View {
             }
         case .assistant:
             VStack(alignment: .leading, spacing: 6) {
+                if !message.reasoning.isEmpty {
+                    ReasoningCard(text: message.reasoning, done: message.reasoningDone)
+                }
                 if message.text.isEmpty && message.isStreaming {
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.mini)
-                        Text("正在思考…").font(.footnote).foregroundStyle(.secondary)
+                        Text(message.reasoning.isEmpty ? "正在思考…" : "思考中，正文即将输出…")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
                 } else {
                     MarkdownLiteView(text: message.text)
@@ -279,7 +285,11 @@ struct AiAssistantView: View {
 
     private var modelLabel: String {
         let model = settingsStore.activeProfile.currentModelId
-        return model.isEmpty ? "选择模型" : model
+        let effort = settingsStore.global.reasoningEffort
+        let base = model.isEmpty ? "选择模型" : model
+        if effort == "OFF" || effort.isEmpty { return base }
+        let label = AiBridge.shared.reasoningEffortLabel(name: effort)
+        return "\(base) \(label)"
     }
 
     private var canSend: Bool {
@@ -300,6 +310,49 @@ struct AiAssistantView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
         .background(color.opacity(0.1))
+    }
+}
+
+// MARK: - 思考过程卡
+
+/// 折叠的推理过程卡（对齐 Android `ReasoningCardMiuix`）：正文输出后自动收起。
+private struct ReasoningCard: View {
+
+    let text: String
+    let done: Bool
+
+    @State private var expanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) { expanded.toggle() }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: done ? "brain.head.profile" : "brain")
+                        .font(.caption2)
+                    Text(done ? "思考过程" : "思考中…")
+                        .font(.caption2)
+                    Spacer()
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .font(.caption2)
+                }
+                .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            if expanded {
+                Text(text)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.secondary.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+        }
+        .padding(8)
+        .background(Color.secondary.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }
 
@@ -395,7 +448,8 @@ private struct MarkdownLiteView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            let segments = Self.segments(text)
+            // 模型偶尔把多个要点挤进同一行（"网格- 卫星：…"），先拆行再渲染
+            let segments = Self.segments(AiViews.normalizeInlineBullets(text))
             ForEach(Array(segments.indices), id: \.self) { index in
                 let segment = segments[index]
                 switch segment {
@@ -446,6 +500,49 @@ private struct MarkdownLiteView: View {
             result.append(inCode ? .code(buffer) : .prose(buffer))
         }
         return result.isEmpty ? [.prose(text)] : result
+    }
+}
+
+extension AiViews {
+
+    /// 把中文行内列表拆成多行：`网格- 卫星：…` → `网格\n- 卫星：…`。
+    ///
+    /// 对齐 Android `normalizeInlineBullets`（62aa805）：只命中「前一个字符是
+    /// 中文/右括号、`-` 后接 1-12 个中文 + 冒号」的模式，避免误伤数字范围（2-3）、
+    /// 英文连字符（FM-xxx）与 URL。代码块（```）内不处理。
+    static func normalizeInlineBullets(_ markdown: String) -> String {
+        guard markdown.contains("-") else { return markdown }
+        // 行内列表：中文/右括号 + 空白 + "- " + 短中文 + 冒号
+        let inlineList = try? NSRegularExpression(
+            pattern: "(?<=[\\x{4e00}-\\x{9fff}\\x{ff09}])\\s*-\\s+(?=[\\x{4e00}-\\x{9fff}]{1,12}[：:])"
+        )
+        // 行首 "-文字" 补空格（排除 "---" 分隔线）
+        let lineStart = try? NSRegularExpression(pattern: "^-(?!-)(\\S)", options: [.anchorsMatchLines])
+        let parts = markdown.components(separatedBy: "```")
+        var rebuilt: [String] = []
+        for (index, part) in parts.enumerated() {
+            if index % 2 == 1 {
+                rebuilt.append(part)
+                continue
+            }
+            var section = part
+            if let inlineList {
+                section = inlineList.stringByReplacingMatches(
+                    in: section,
+                    range: NSRange(section.startIndex..., in: section),
+                    withTemplate: "\n- "
+                )
+            }
+            if let lineStart {
+                section = lineStart.stringByReplacingMatches(
+                    in: section,
+                    range: NSRange(section.startIndex..., in: section),
+                    withTemplate: "- $1"
+                )
+            }
+            rebuilt.append(section)
+        }
+        return rebuilt.joined(separator: "```")
     }
 }
 
@@ -559,19 +656,30 @@ private struct AiModelSwitchView: View {
     var body: some View {
         NavigationStack {
             List {
+                // 推理等级：与 miuix 两级菜单对齐（iOS 用内联菜单表达）
+                Section("推理等级") {
+                    Picker("推理等级", selection: effortBinding) {
+                        ForEach(reasoningEfforts, id: \.name) { effort in
+                            Text(effort.label).tag(effort.name)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                }
+
                 if groups.isEmpty {
                     Text("没有匹配的模型")
                         .foregroundStyle(.secondary)
-                }
-                ForEach(groups) { group in
-                    Section(group.profile.name) {
-                        ForEach(group.entries) { entry in
-                            Button {
-                                switchTo(profileId: group.profile.id, modelId: entry.id)
-                            } label: {
-                                row(entry, profile: group.profile)
+                } else {
+                    ForEach(groups) { group in
+                        Section(group.profile.name) {
+                            ForEach(group.entries) { entry in
+                                Button {
+                                    switchTo(profileId: group.profile.id, modelId: entry.id)
+                                } label: {
+                                    row(entry, profile: group.profile)
+                                }
+                                .disabled(isStreaming)
                             }
-                            .disabled(isStreaming)
                         }
                     }
                 }
@@ -630,5 +738,26 @@ private struct AiModelSwitchView: View {
         if store.switchModel(profileId: profileId, modelId: modelId) {
             dismiss()
         }
+    }
+
+    private var reasoningEfforts: [(name: String, label: String)] {
+        AiBridge.shared.reasoningEffortNames()
+            .split(separator: ",")
+            .map { name in
+                let key = String(name)
+                return (key, AiBridge.shared.reasoningEffortLabel(name: key))
+            }
+    }
+
+    private var effortBinding: Binding<String> {
+        Binding(
+            get: {
+                let value = store.global.reasoningEffort
+                return value.isEmpty ? "MEDIUM" : value
+            },
+            set: { value in
+                store.updateGlobal { $0.reasoningEffort = value }
+            }
+        )
     }
 }

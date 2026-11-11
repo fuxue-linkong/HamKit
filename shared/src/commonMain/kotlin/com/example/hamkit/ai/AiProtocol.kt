@@ -16,6 +16,16 @@ internal interface AiStreamDecoder {
 
 internal object AiCodecs {
 
+    /**
+     * 请求的输出上限：取用户配置，但保证不小于推理预算，避免思考内容挤占正文。
+     * 与 Android `requestMaxTokens` 同义；Anthropic 上层会再钳到 64000。
+     */
+    internal fun requestMaxTokens(cfg: AiConfig, effort: AiReasoningEffort): Int {
+        val base = cfg.maxOutputTokens.coerceIn(64, 65_536)
+        val budgetFloor = if (effort == AiReasoningEffort.OFF) 0 else effort.budgetTokens + 1024
+        return maxOf(base, budgetFloor).coerceAtMost(65_536)
+    }
+
     fun headers(protocol: AiProtocol, apiKey: String): Map<String, String> {
         val key = apiKey.trim()
         return when (protocol) {
@@ -237,7 +247,7 @@ internal object AiCodecs {
         body.put("model", cfg.model)
         body.put("messages", array)
         body.put("temperature", cfg.temperature)
-        body.put("max_tokens", cfg.maxOutputTokens)
+        body.put("max_tokens", requestMaxTokens(cfg, cfg.reasoningEffort))
         body.put("stream", true)
         body.put("stream_options", Json.obj().put("include_usage", true))
         if (tools.isNotEmpty()) {
@@ -260,6 +270,13 @@ internal object AiCodecs {
                 },
             )
             body.put("tool_choice", "auto")
+        }
+        if (cfg.reasoningEffort != AiReasoningEffort.OFF) {
+            if (cfg.preset == AiPreset.DEEPSEEK) {
+                body.put("thinking", Json.obj().put("type", "enabled"))
+            } else {
+                body.put("reasoning_effort", cfg.reasoningEffort.apiValue.orEmpty())
+            }
         }
         return body.stringify()
     }
@@ -344,7 +361,16 @@ internal object AiCodecs {
 
         val body = Json.obj()
         body.put("model", cfg.model)
-        body.put("max_tokens", cfg.maxOutputTokens)
+        // budget_tokens 必须小于 max_tokens，开启思考时抬高请求内的上限
+        body.put("max_tokens", requestMaxTokens(cfg, cfg.reasoningEffort).coerceAtMost(64_000))
+        if (cfg.reasoningEffort != AiReasoningEffort.OFF) {
+            body.put(
+                "thinking",
+                Json.obj()
+                    .put("type", "enabled")
+                    .put("budget_tokens", cfg.reasoningEffort.budgetTokens),
+            )
+        }
         if (system.isNotBlank()) body.put("system", system)
         body.put("messages", array)
         body.put("temperature", cfg.temperature.coerceIn(0.0, 1.0))
@@ -446,9 +472,22 @@ internal object AiCodecs {
             )
         }
         body.put("contents", contents)
-        body.put("generationConfig", Json.obj()
-            .put("temperature", cfg.temperature)
-            .put("maxOutputTokens", cfg.maxOutputTokens))
+        body.put(
+            "generationConfig",
+            Json.obj()
+                .put("temperature", cfg.temperature)
+                .put("maxOutputTokens", requestMaxTokens(cfg, cfg.reasoningEffort))
+                .also { config ->
+                    if (cfg.reasoningEffort != AiReasoningEffort.OFF) {
+                        config.put(
+                            "thinkingConfig",
+                            Json.obj()
+                                .put("thinkingBudget", cfg.reasoningEffort.geminiBudget)
+                                .put("includeThoughts", true),
+                        )
+                    }
+                },
+        )
         if (tools.isNotEmpty()) {
             body.put(
                 "tools",

@@ -53,7 +53,31 @@ interface AiAppFacade {
 
     /** QSO 日志全量摘要（FT8 与手动记录同一库）。 */
     fun qsoRecords(): List<AiQsoSummary>
+
+    /**
+     * 强制重新获取定位（忽略缓存）；失败返回 null。默认实现退化为普通取值。
+     * 平台实现应触发一次真实的 GPS 刷新。
+     */
+    fun refreshLocation(): AiLocationInfo? = location()
+
+    /** 写入一条 QSO 日志，返回正数行 id；失败返回 -1。 */
+    fun addQso(draft: AiQsoDraft): Long = -1L
 }
+
+/** 待写入的 QSO 记录（字段与 Android `Ft8QsoRecord` / 内核 `QsoRecord` 对齐）。 */
+data class AiQsoDraft(
+    val callsign: String,
+    val grid: String? = null,
+    val reportSent: String = "-99",
+    val reportReceived: String = "-99",
+    val band: String = "40m",
+    val freqHz: Long = 7_074_000L,
+    val mode: String = "FT8",
+    val qsoTimeMs: Long = 0L,
+    val isComplete: Boolean = true,
+    val myGrid: String? = null,
+    val comment: String? = null,
+)
 
 /** 一条 FT8 解码（工具只读快照）。 */
 data class AiFt8Decode(
@@ -151,6 +175,7 @@ class AiToolbox(private val facade: AiAppFacade) : AiToolHost {
 
     private val tools: List<AiTool> = listOf(
         ZoneInfoTool,
+        RefreshLocationTool,
         SatellitePassesTool,
         SatelliteLiveTool,
         SatelliteTransmittersTool,
@@ -159,6 +184,7 @@ class AiToolbox(private val facade: AiAppFacade) : AiToolHost {
         Ft8ActivityTool,
         AprsStationsTool,
         QsoLogTool,
+        AddQsoLogTool,
         UtcTimeTool,
         OpenScreenTool,
         PassReminderTool,
@@ -210,33 +236,61 @@ private fun schema(vararg props: Triple<String, String, String>): String {
     return Json.obj().put("type", "object").put("properties", properties).stringify()
 }
 
-/** 名称/编号 → 唯一卫星；有歧义或找不到时返回统一的错误结果。 */
+/** 名称/编号 → 唯一卫星；歧义时自动取排序第一的候选（附带候选列表供纠正）。 */
 private sealed interface Lookup {
-    data class Found(val satellite: AiSatelliteInfo) : Lookup
+    data class Found(
+        val satellite: AiSatelliteInfo,
+        val autoMatched: Boolean = false,
+        val candidates: List<AiSatelliteInfo> = emptyList(),
+    ) : Lookup
+
     data class Failed(val message: String) : Lookup
 }
 
-private fun AiAppFacade.lookup(query: String): Lookup {
-    val all = satellites()
-    if (all.isEmpty()) return Lookup.Failed("卫星列表为空，请先刷新卫星数据")
+private fun resolveCandidates(facade: AiAppFacade, query: String): List<AiSatelliteInfo> {
+    val all = facade.satellites()
+    if (all.isEmpty()) return emptyList()
     val candidates = all.map { SatelliteNameMatcher.Candidate(it.norad, it.name) }
     return when (val resolution = SatelliteNameMatcher.resolve(query, candidates)) {
         is SatelliteNameMatcher.Resolution.Unique -> {
             val norad = resolution.candidate.catalogNumber
-            all.firstOrNull { it.norad == norad }
-                ?.let { Lookup.Found(it) }
-                ?: Lookup.Failed("没有找到卫星 \"$query\"")
+            all.filter { it.norad == norad }
         }
 
-        is SatelliteNameMatcher.Resolution.Ambiguous -> Lookup.Failed(
-            "卫星名称 \"$query\" 有歧义，请用 NORAD 编号指定：" +
-                resolution.candidates.take(5).joinToString("、") {
-                    "${it.name} (#${it.catalogNumber})"
-                }
+        // 名称歧义时用排序第一的候选，避免模型反复重试；结果里附带候选，可再用 norad_id 纠正
+        is SatelliteNameMatcher.Resolution.Ambiguous -> {
+            val norads = resolution.candidates.take(8).map { it.catalogNumber }.toSet()
+            all.filter { it.norad in norads }
+                .sortedBy { sat -> resolution.candidates.indexOfFirst { it.catalogNumber == sat.norad } }
+        }
+
+        SatelliteNameMatcher.Resolution.NotFound -> emptyList()
+    }
+}
+
+/**
+ * 从工具参数里解析卫星引用：norad_id 优先于名称（模型常把 NORAD 放进 norad_id，
+ * 避免 "ISS" 这类歧义）；两者都缺时返回统一错误。
+ */
+private fun satelliteQueryFromArgs(args: Json.Obj): String? {
+    val norad = args.int("norad_id")
+    if (norad != null && norad > 0) return norad.toString()
+    return args.str("satellite") ?: args.str("query")
+}
+
+private fun AiAppFacade.lookupFromArgs(args: Json.Obj): Lookup {
+    val query = satelliteQueryFromArgs(args)
+        ?: return Lookup.Failed("缺少卫星名称或 NORAD 编号（可传 satellite 或 norad_id）")
+    val candidates = resolveCandidates(this, query)
+    return when {
+        candidates.isEmpty() -> Lookup.Failed("没有找到卫星 \"$query\"，请给出名称或 NORAD 编号")
+        candidates.size > 1 -> Lookup.Found(
+            satellite = candidates.first(),
+            autoMatched = true,
+            candidates = candidates.take(8),
         )
 
-        SatelliteNameMatcher.Resolution.NotFound ->
-            Lookup.Failed("没有找到卫星 \"$query\"，请给出名称或 NORAD 编号")
+        else -> Lookup.Found(candidates.first())
     }
 }
 
@@ -496,18 +550,19 @@ private object SatellitePassesTool : AiTool() {
         name = "get_satellite_passes",
         title = "卫星过境预测",
         description = "查询指定卫星未来若干小时的过境：AOS/LOS、最大仰角、方位。" +
-            "卫星当前在境时返回本次过境（AOS 可能已过去），用 in_pass 与 los 判断剩余时间。",
+            "卫星当前在境时返回本次过境（AOS 可能已过去），用 in_pass 与 los 判断剩余时间。" +
+            "名称有歧义时优先传 norad_id。",
         parametersJson = schema(
             Triple("satellite", "string", "卫星名称或 NORAD 编号，如 ISS、25544"),
+            Triple("norad_id", "integer", "NORAD 编号，优先于名称"),
             Triple("hours", "integer", "预测时长（小时），默认 24，最大 72"),
             Triple("limit", "integer", "最多返回几次过境，默认 5"),
         ),
     )
 
     override fun execute(facade: AiAppFacade, args: Json.Obj): AiToolResult {
-        val query = args.str("satellite")
-            ?: return AiToolResult("缺少卫星名称或 NORAD 编号", "缺少参数", isError = true)
-        val satellite = when (val lookup = facade.lookup(query)) {
+        val lookup = facade.lookupFromArgs(args)
+        val satellite = when (lookup) {
             is Lookup.Found -> lookup.satellite
             is Lookup.Failed -> return AiToolResult(lookup.message, lookup.message, isError = true)
         }
@@ -520,6 +575,24 @@ private object SatellitePassesTool : AiTool() {
         val inPass = satellite.visible
         val text = Json.obj()
             .put("satellite", satellite.name)
+            .also { root ->
+                if (lookup is Lookup.Found && lookup.autoMatched) {
+                    root.put("auto_matched", true)
+                    root.put(
+                        "candidates",
+                        Json.Arr().also { arr ->
+                            lookup.candidates.forEach { candidate ->
+                                arr.add(
+                                    Json.obj()
+                                        .put("name", candidate.name)
+                                        .put("norad", candidate.norad),
+                                )
+                            }
+                        },
+                    )
+                    root.put("hint", "名称有歧义，已按排序第一处理；需要其它卫星请传 norad_id")
+                }
+            }
             .put(
                 "passes",
                 Json.arr().add(
@@ -561,16 +634,16 @@ private object SatelliteLiveTool : AiTool() {
     override val spec = AiToolSpec(
         name = "get_satellite_live",
         title = "卫星实时位置",
-        description = "按当前地面站坐标计算卫星实时方位/仰角/距离/星下点，以及下行多普勒。",
+        description = "按当前地面站坐标计算卫星实时方位/仰角/距离/星下点，以及下行多普勒。" +
+            "名称有歧义时优先传 norad_id。",
         parametersJson = schema(
             Triple("satellite", "string", "卫星名称或 NORAD 编号，如 ISS、25544"),
+            Triple("norad_id", "integer", "NORAD 编号，优先于名称"),
         ),
     )
 
     override fun execute(facade: AiAppFacade, args: Json.Obj): AiToolResult {
-        val query = args.str("satellite")
-            ?: return AiToolResult("缺少卫星名称或 NORAD 编号", "缺少参数", isError = true)
-        val satellite = when (val lookup = facade.lookup(query)) {
+        val satellite = when (val lookup = facade.lookupFromArgs(args)) {
             is Lookup.Found -> lookup.satellite
             is Lookup.Failed -> return AiToolResult(lookup.message, lookup.message, isError = true)
         }
@@ -629,16 +702,15 @@ private object SatelliteTransmittersTool : AiTool() {
     override val spec = AiToolSpec(
         name = "get_satellite_transmitters",
         title = "转发器频率",
-        description = "返回卫星转发器的上行/下行频率（Hz）、模式与状态。",
+        description = "返回卫星转发器的上行/下行频率（Hz）、模式与状态。名称有歧义时优先传 norad_id。",
         parametersJson = schema(
             Triple("satellite", "string", "卫星名称或 NORAD 编号，如 ISS、25544"),
+            Triple("norad_id", "integer", "NORAD 编号，优先于名称"),
         ),
     )
 
     override fun execute(facade: AiAppFacade, args: Json.Obj): AiToolResult {
-        val query = args.str("satellite")
-            ?: return AiToolResult("缺少卫星名称或 NORAD 编号", "缺少参数", isError = true)
-        val satellite = when (val lookup = facade.lookup(query)) {
+        val satellite = when (val lookup = facade.lookupFromArgs(args)) {
             is Lookup.Found -> lookup.satellite
             is Lookup.Failed -> return AiToolResult(lookup.message, lookup.message, isError = true)
         }
@@ -674,16 +746,15 @@ private object AmsatStatusTool : AiTool() {
     override val spec = AiToolSpec(
         name = "get_amsat_status",
         title = "AMSAT 状态",
-        description = "返回卫星最新的 AMSAT 状态报告（如“可操作”“遥测”）。",
+        description = "返回卫星最新的 AMSAT 状态报告（如“可操作”“遥测”）。名称有歧义时优先传 norad_id。",
         parametersJson = schema(
             Triple("satellite", "string", "卫星名称或 NORAD 编号"),
+            Triple("norad_id", "integer", "NORAD 编号，优先于名称"),
         ),
     )
 
     override fun execute(facade: AiAppFacade, args: Json.Obj): AiToolResult {
-        val query = args.str("satellite")
-            ?: return AiToolResult("缺少卫星名称或 NORAD 编号", "缺少参数", isError = true)
-        val satellite = when (val lookup = facade.lookup(query)) {
+        val satellite = when (val lookup = facade.lookupFromArgs(args)) {
             is Lookup.Found -> lookup.satellite
             is Lookup.Failed -> return AiToolResult(lookup.message, lookup.message, isError = true)
         }
@@ -732,9 +803,7 @@ private object PassReminderTool : AiTool() {
     )
 
     override fun execute(facade: AiAppFacade, args: Json.Obj): AiToolResult {
-        val query = args.str("satellite")
-            ?: return AiToolResult("缺少 satellite 参数", "缺少参数", isError = true)
-        val satellite = when (val lookup = facade.lookup(query)) {
+        val satellite = when (val lookup = facade.lookupFromArgs(args)) {
             is Lookup.Found -> lookup.satellite
             is Lookup.Failed -> return AiToolResult(lookup.message, lookup.message, isError = true)
         }
@@ -905,9 +974,12 @@ private object QsoLogTool : AiTool() {
     override val spec = AiToolSpec(
         name = "search_qso_log",
         title = "QSO 日志检索",
-        description = "按呼号与时间范围检索本机 QSO 日志（FT8 与手动记录都在同一库）。",
+        description = "按呼号与时间范围检索本机 QSO 日志（FT8 与手动记录都在同一库）。" +
+            "band/mode 可选过滤；组合频段（如 2m/70cm）只填主波段。",
         parametersJson = schema(
             Triple("callsign", "string", "按呼号过滤，可省略"),
+            Triple("band", "string", "按波段过滤，如 2m（可省略）"),
+            Triple("mode", "string", "按模式过滤，如 FM/FT8（可省略）"),
             Triple("days", "integer", "最近多少天，默认 30，最大 365"),
             Triple("max", "integer", "最多返回条数，默认 20，最大 100"),
         ),
@@ -922,10 +994,24 @@ private object QsoLogTool : AiTool() {
         val days = (args.int("days") ?: 30).coerceIn(1, 365)
         val max = (args.int("max") ?: 20).coerceIn(1, 100)
         val cutoff = facade.nowMs() - days * 24L * 60L * 60L * 1000L
+        val bandArg = args.str("band")
+        val bandFilter = if (bandArg != null) {
+            parseBand(bandArg) ?: return AiToolResult(
+                "无法识别波段：$bandArg。可用：${AiBand.entries.joinToString { it.display }}；" +
+                    "组合频段请只填主波段（如 2m），另一段写进备注",
+                "波段无效",
+                isError = true,
+            )
+        } else {
+            null
+        }
+        val modeFilter = args.str("mode")?.uppercase()?.takeIf { it.isNotEmpty() }
 
         val filtered = records
             .filter { record ->
                 (callsign == null || record.callsign.contains(callsign, ignoreCase = true)) &&
+                    (bandFilter == null || record.band == bandFilter.display) &&
+                    (modeFilter == null || record.mode.equals(modeFilter, ignoreCase = true)) &&
                     record.qsoTimeMs >= cutoff
             }
             .sortedByDescending { it.qsoTimeMs }
@@ -937,12 +1023,275 @@ private object QsoLogTool : AiTool() {
             .put("total", filtered.size)
             .put("returned", page.size)
             .put("days", days)
+            .also { root ->
+                bandFilter?.let { root.put("band", it.display) }
+                modeFilter?.let { root.put("mode", it) }
+            }
             .put("truncated", filtered.size > page.size)
             .put("records", array)
             .stringify()
         return AiToolResult(
             modelText = text,
             summary = "QSO ${page.size} 条（共 ${filtered.size}）",
+        )
+    }
+}
+
+// ── QSO 写入辅助（对齐 Android CommunityTools 的内部实现） ────────────────────
+
+/**
+ * 内核侧波段目录：与 Android `Ft8Band` 同名同频（displayName → 默认 FT8 拨号频率）。
+ * 不含 70cm——Ft8Band 没有 70cm；ISS/IO-86 的 FM 常用 2m 上行，组合频段映射到 2m。
+ */
+internal enum class AiBand(val display: String, val freqHz: Long) {
+    BAND_160M("160m", 1_840_000L),
+    BAND_80M("80m", 3_573_000L),
+    BAND_60M("60m", 5_357_000L),
+    BAND_40M("40m", 7_074_000L),
+    BAND_30M("30m", 10_136_000L),
+    BAND_20M("20m", 14_074_000L),
+    BAND_17M("17m", 18_100_000L),
+    BAND_15M("15m", 21_074_000L),
+    BAND_12M("12m", 24_915_000L),
+    BAND_10M("10m", 28_074_000L),
+    BAND_6M("6m", 50_313_000L),
+    BAND_2M("2m", 144_174_000L),
+}
+
+/**
+ * 波段解析：支持 40m / BAND_40M / 40M / 2m/70cm；空值默认 40m；
+ * 70cm/430/435/440 映射到 2m（与 Android parseBand 一致）。
+ */
+internal fun parseBand(raw: String?): AiBand? {
+    val value = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return AiBand.BAND_40M
+    val compact = value.replace(" ", "")
+    fun match(token: String): AiBand? = AiBand.entries.firstOrNull { band ->
+        band.display.equals(token, ignoreCase = true) ||
+            band.name.equals(token, ignoreCase = true) ||
+            band.name.removePrefix("BAND_").equals(token, ignoreCase = true)
+    }
+    // 先整体匹配（含 "2 m"）
+    match(compact)?.let { return it }
+    // 组合频段（2m/70cm）取第一个能识别的
+    compact.split('/', '、', ',', '，')
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .forEach { token -> match(token)?.let { return it } }
+    if (
+        compact.contains("70cm", ignoreCase = true) ||
+        compact.contains("430", ignoreCase = true) ||
+        compact.contains("435", ignoreCase = true) ||
+        compact.contains("440", ignoreCase = true)
+    ) {
+        return AiBand.BAND_2M
+    }
+    return null
+}
+
+/** 呼号规范化：去空格、大写，并校验常见格式（可选 /P、/M 等后缀）。 */
+internal fun normalizeCallsign(raw: String): String? {
+    val value = raw.trim().uppercase()
+    return value.takeIf { Regex("^[A-Z0-9]{3,12}(/[A-Z0-9]{1,3})?$").matches(it) }
+}
+
+/** ISO 8601（UTC，`yyyy-MM-ddTHH:mm:ssZ`）→ epoch 毫秒；解析失败返回 null。 */
+internal fun parseIsoUtc(iso: String): Long? {
+    val regex = Regex(
+        """^(\d{4})-(\d{2})-(\d{2})[Tt ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(?:[Zz]|[+-]\d{2}:?\d{2})?$""",
+    )
+    val match = regex.find(iso.trim()) ?: return null
+    val (year, month, day, hour, minute, second) = match.destructured
+    val seconds = runCatching {
+        daysFromCivil(year.toInt(), month.toInt(), day.toInt()) * 86_400L +
+            hour.toInt() * 3_600L + minute.toInt() * 60L + (second.toIntOrNull() ?: 0)
+    }.getOrNull() ?: return null
+    return seconds * 1000L
+}
+
+/** 公历年月日 → 自 epoch 起的天数（civil_from_days 的逆运算，Howard Hinnant）。 */
+private fun daysFromCivil(year: Int, month: Int, day: Int): Long {
+    val y = if (month <= 2) year - 1 else year
+    val era = floorDiv(y.toLong(), 400)
+    val yoe = y - era * 400
+    val m = month
+    val doy = (153 * (if (m > 2) m - 3 else m + 9) + 2) / 5 + day - 1
+    val doe = yoe * 365 + yoe / 4 - yoe / 100 + doy
+    return era * 146_097 + doe - 719_468
+}
+
+/** QSO 时间：优先 epoch 毫秒，其次 ISO 8601，最后当前时间。 */
+internal fun parseQsoTime(iso: String?, epochMs: Long?, nowMs: Long): Long =
+    epochMs?.takeIf { it > 0 }
+        ?: iso?.trim()?.takeIf { it.isNotEmpty() }?.let { parseIsoUtc(it) }
+        ?: nowMs
+
+/** 单条 QSO 参数 → 草稿；失败返回 null 并给出原因。 */
+internal fun buildQsoDraft(args: Json.Obj, nowMs: Long): Pair<AiQsoDraft?, String?> {
+    val rawCallsign = args.str("callsign") ?: return null to "缺少呼号"
+    val callsign = normalizeCallsign(rawCallsign)
+        ?: return null to "呼号格式不正确：$rawCallsign"
+    val rawBand = args.str("band")
+    val band = parseBand(rawBand)
+        ?: return null to "无法识别波段，可用：" + AiBand.entries.joinToString { it.display } +
+            "；组合频段请只填主波段（如 2m），另一段写进备注"
+    val mode = args.str("mode") ?: "FT8"
+    val qsoTime = parseQsoTime(
+        args.str("qso_time"),
+        (args["qso_time_epoch_ms"] as? Json.Num)?.value?.toLong(),
+        nowMs,
+    )
+    val draft = AiQsoDraft(
+        callsign = callsign,
+        grid = args.str("grid"),
+        reportSent = args.str("report_sent") ?: "-99",
+        reportReceived = args.str("report_received") ?: "-99",
+        band = band.display,
+        freqHz = (args["freq_hz"] as? Json.Num)?.value?.toLong() ?: band.freqHz,
+        mode = mode,
+        qsoTimeMs = qsoTime,
+        isComplete = true,
+        myGrid = args.str("my_grid"),
+        comment = buildList {
+            args.str("comment")?.takeIf { it.isNotBlank() }?.let(::add)
+            if (!rawBand.isNullOrBlank() && rawBand != band.display) {
+                add("波段：$rawBand")
+            }
+        }.joinToString("；").takeIf { it.isNotBlank() },
+    )
+    return draft to null
+}
+
+/** 写入 QSO 日志（写操作，执行前走二次确认）；支持单条与批量。 */
+private object AddQsoLogTool : AiTool() {
+
+    private const val MAX_BATCH = 30
+
+    override val spec = AiToolSpec(
+        name = "add_qso_log",
+        title = "记录 QSO",
+        description = "写入 QSO 日志（写操作，执行前会弹确认）。默认波段 40m、模式 FT8；" +
+            "用户一次给多条时用 records 数组一次写入。缺少呼号或波段时先问用户，不要编造信号报告。",
+        parametersJson = Json.obj()
+            .put("type", "object")
+            .put(
+                "properties",
+                Json.obj()
+                    .put("callsign", Json.obj().put("type", "string").put("description", "对方呼号，如 XX9XX"))
+                    .put("band", Json.obj().put("type", "string").put("description", "波段，如 40m/20m/2m，默认 40m"))
+                    .put("mode", Json.obj().put("type", "string").put("description", "模式，默认 FT8"))
+                    .put(
+                        "freq_hz",
+                        Json.obj().put("type", "integer").put("description", "频率 Hz，可省略"),
+                    )
+                    .put("report_sent", Json.obj().put("type", "string").put("description", "发出的信号报告，如 -12"))
+                    .put("report_received", Json.obj().put("type", "string").put("description", "收到的信号报告，如 -08"))
+                    .put("grid", Json.obj().put("type", "string").put("description", "对方网格"))
+                    .put("my_grid", Json.obj().put("type", "string").put("description", "本台网格"))
+                    .put("comment", Json.obj().put("type", "string").put("description", "备注"))
+                    .put(
+                        "qso_time",
+                        Json.obj().put("type", "string")
+                            .put("description", "通联时间，ISO 8601（如 2026-10-24T02:21:00Z），可省略"),
+                    )
+                    .put(
+                        "qso_time_epoch_ms",
+                        Json.obj().put("type", "integer")
+                            .put("description", "通联时间（epoch 毫秒），可省略；优先于 qso_time"),
+                    )
+                    .put(
+                        "records",
+                        Json.obj().put("type", "array")
+                            .put("description", "批量写入多条（可选，最多 30 条）；每项字段与单条一致")
+                            .put("items", Json.obj().put("type", "object")),
+                    ),
+            )
+            .stringify(),
+        risk = AiToolRisk.SIDE_EFFECT,
+    )
+
+    override fun execute(facade: AiAppFacade, args: Json.Obj): AiToolResult {
+        val nowMs = facade.nowMs()
+        val batch = args["records"] as? Json.Arr
+        if (batch != null && batch.items.isNotEmpty()) {
+            val limit = minOf(batch.items.size, MAX_BATCH)
+            val drafts = mutableListOf<AiQsoDraft>()
+            batch.items.take(limit).forEachIndexed { index, item ->
+                val obj = item.objOrNull()
+                    ?: return AiToolResult("第 ${index + 1} 条不是对象", "参数无效", isError = true)
+                val pair = buildQsoDraft(obj, nowMs)
+                val draft = pair.first
+                    ?: return AiToolResult("第 ${index + 1} 条：${pair.second}", "参数无效", isError = true)
+                drafts += draft
+            }
+            val ids = drafts.map { facade.addQso(it) }
+            if (ids.any { it <= 0 }) {
+                return AiToolResult("部分 QSO 写入失败", "写入失败", isError = true)
+            }
+            val json = Json.obj()
+                .put("saved", true)
+                .put("count", ids.size)
+                .also { if (batch.items.size > MAX_BATCH) it.put("truncated", true) }
+                .put(
+                    "ids",
+                    Json.Arr().also { arr -> ids.forEach { arr.add(Json.of(it.toDouble())) } },
+                )
+                .stringify()
+            return AiToolResult(
+                modelText = json,
+                summary = "已记录 ${ids.size} 条 QSO（首条 ${drafts.first().callsign}）",
+            )
+        }
+
+        val pair = buildQsoDraft(args, nowMs)
+        val draft = pair.first
+            ?: return AiToolResult(pair.second ?: "参数不正确", "参数无效", isError = true)
+        val id = facade.addQso(draft)
+        if (id <= 0) return AiToolResult("写入 QSO 日志失败", "写入失败", isError = true)
+
+        val json = Json.obj()
+            .put("saved", true)
+            .put("id", id)
+            .put("callsign", draft.callsign)
+            .put("band", draft.band)
+            .put("mode", draft.mode)
+            .put("qso_time", draft.qsoTimeMs)
+            .stringify()
+        return AiToolResult(
+            modelText = json,
+            summary = "已记录 QSO 与 ${draft.callsign}（${draft.band} ${draft.mode}）",
+        )
+    }
+}
+
+/** 强制重新获取定位（忽略缓存），用于“定位不准/重新定位”场景。 */
+private object RefreshLocationTool : AiTool() {
+
+    override val spec = AiToolSpec(
+        name = "refresh_location",
+        title = "重新定位",
+        description = "强制重新获取当前定位（会触发 GPS），返回 CQ/ITU 分区、网格与坐标。" +
+            "仅在用户明确说“重新定位/定位不准/刷新位置”时调用；普通位置问题用 get_zone_info。",
+        parametersJson = schema(),
+    )
+
+    override fun execute(facade: AiAppFacade, args: Json.Obj): AiToolResult {
+        val location = facade.refreshLocation()
+            ?: return AiToolResult(
+                "定位失败：请检查定位权限与 GPS 是否开启",
+                "定位失败",
+                isError = true,
+            )
+        val zone = ZoneResolver.resolve(location.latitude, location.longitude)
+        val json = Json.obj()
+            .put("lat", location.latitude)
+            .put("lon", location.longitude)
+            .put("cq_zone", zone.cqZone ?: 0)
+            .put("itu_zone", zone.ituZone ?: 0)
+            .put("grid", zone.maidenhead)
+            .stringify()
+        return AiToolResult(
+            modelText = json,
+            summary = "已重新定位：${zone.maidenhead}",
         )
     }
 }

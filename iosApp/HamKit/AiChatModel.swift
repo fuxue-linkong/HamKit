@@ -16,6 +16,10 @@ struct ChatMessageVM: Identifiable {
     var card: SatelliteCardVM?
     /// 流式输出中（用于显示光标/禁用发送）。
     var isStreaming: Bool
+    /// 推理过程文本（推理等级 OFF 时为空）。
+    var reasoning: String
+    /// 推理过程是否已结束（正文开始输出后为 true）。
+    var reasoningDone: Bool
 
     init(
         id: String = UUID().uuidString,
@@ -25,7 +29,9 @@ struct ChatMessageVM: Identifiable {
         toolSummary: String = "",
         isError: Bool = false,
         card: SatelliteCardVM? = nil,
-        isStreaming: Bool = false
+        isStreaming: Bool = false,
+        reasoning: String = "",
+        reasoningDone: Bool = false
     ) {
         self.id = id
         self.role = role
@@ -35,6 +41,8 @@ struct ChatMessageVM: Identifiable {
         self.isError = isError
         self.card = card
         self.isStreaming = isStreaming
+        self.reasoning = reasoning
+        self.reasoningDone = reasoningDone
     }
 }
 
@@ -211,7 +219,19 @@ final class AiChatModel: ObservableObject {
     fileprivate func handleDelta(_ text: String) {
         guard let id = streamingMessageId,
               let index = messages.firstIndex(where: { $0.id == id }) else { return }
+        if !messages[index].reasoning.isEmpty {
+            messages[index].reasoningDone = true
+        }
         messages[index].text += text
+        // 模型偶尔把 DSML 工具调用当正文输出，展示层实时剥掉（历史由内核兜底）
+        messages[index].text = AiBridge.shared.stripDsmlText(text: messages[index].text)
+    }
+
+    fileprivate func handleReasoningDelta(_ text: String) {
+        guard let id = streamingMessageId,
+              let index = messages.firstIndex(where: { $0.id == id }) else { return }
+        messages[index].reasoning += text
+        messages[index].reasoningDone = false
     }
 
     fileprivate func handleToolStarted(callId: String, name: String, title: String) {
@@ -245,6 +265,7 @@ final class AiChatModel: ObservableObject {
     fileprivate func handleCompleted(_ newMessages: [AiMessage], stop: AiStopReason) {
         kotlinMessages = newMessages
         isStreaming = false
+        let finishedId = streamingMessageId
         finishStreamingMessage()
 
         // 若模型本轮没有文本（只调了工具），补一条空的助手消息占位由下一轮填充
@@ -254,6 +275,11 @@ final class AiChatModel: ObservableObject {
             messages.append(assistant)
             isStreaming = true
             return
+        }
+        // 与 Android 一致：输出被长度截断时给一句「继续」的提示，方便接着生成
+        if stop.name == "MAX_TOKENS", let id = finishedId,
+           let index = messages.firstIndex(where: { $0.id == id }) {
+            messages[index].text += "\n\n> ⚠️ 输出达到长度上限，回复「继续」可接着生成"
         }
         persistIfNeeded()
     }
@@ -320,7 +346,7 @@ private final class EngineListener: NSObject, AiChatListener {
     }
 
     func onReasoningDelta(text: String) {
-        // 思考过程暂不展示（与 Android 一致：只在需要时折叠展示，这里先丢弃）
+        DispatchQueue.main.async { [weak self] in self?.model?.handleReasoningDelta(text) }
     }
 
     func onToolStarted(callId: String, name: String, title: String) {

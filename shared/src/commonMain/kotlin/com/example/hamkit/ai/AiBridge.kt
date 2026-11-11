@@ -47,10 +47,12 @@ object AiBridge {
             .put("saveHistory", cfg.saveHistory)
             .put("historyLimit", cfg.historyLimit)
             .put("allowCleartext", cfg.allowCleartext)
+            .put("allowSelfSigned", cfg.allowSelfSigned)
             .put("systemPrompt", cfg.systemPrompt)
             .put("disabledTools", cfg.disabledTools)
             .put("confirmSideEffects", cfg.confirmSideEffects)
             .put("maxToolRounds", cfg.maxToolRounds)
+            .put("reasoningEffort", cfg.reasoningEffort.name)
             .stringify()
     }
 
@@ -71,10 +73,12 @@ object AiBridge {
         saveHistory: Boolean,
         historyLimit: Int,
         allowCleartext: Boolean,
+        allowSelfSigned: Boolean,
         systemPrompt: String,
         disabledTools: String,
         confirmSideEffects: Boolean,
         maxToolRounds: Int,
+        reasoningEffort: String,
     ): String = configToJson(
         AiConfig(
             protocol = AiProtocol.fromName(protocolName),
@@ -86,10 +90,12 @@ object AiBridge {
             saveHistory = saveHistory,
             historyLimit = historyLimit,
             allowCleartext = allowCleartext,
+            allowSelfSigned = allowSelfSigned,
             systemPrompt = systemPrompt,
             disabledTools = disabledTools,
             confirmSideEffects = confirmSideEffects,
             maxToolRounds = maxToolRounds,
+            reasoningEffort = AiReasoningEffort.fromName(reasoningEffort),
         )
     )
 
@@ -105,13 +111,28 @@ object AiBridge {
             saveHistory = root["saveHistory"]?.boolOrNull() ?: defaults.saveHistory,
             historyLimit = root["historyLimit"]?.intOrNull() ?: defaults.historyLimit,
             allowCleartext = root["allowCleartext"]?.boolOrNull() ?: defaults.allowCleartext,
+            allowSelfSigned = root["allowSelfSigned"]?.boolOrNull() ?: defaults.allowSelfSigned,
             systemPrompt = root["systemPrompt"]?.stringOrNull() ?: "",
             disabledTools = root["disabledTools"]?.stringOrNull() ?: "",
             confirmSideEffects = root["confirmSideEffects"]?.boolOrNull()
                 ?: defaults.confirmSideEffects,
             maxToolRounds = root["maxToolRounds"]?.intOrNull() ?: defaults.maxToolRounds,
+            reasoningEffort = AiReasoningEffort.fromName(root["reasoningEffort"]?.stringOrNull()),
         ).normalized()
     }
+
+    /** 剥离模型误输出的 DSML 工具调用文本（Swift 侧流式展示时也用它）。 */
+    fun stripDsmlText(text: String): String = stripDsml(text)
+
+    /** 推理等级名称列表（逗号分隔，顺序即 UI 顺序）。 */
+    fun reasoningEffortNames(): String =
+        AiReasoningEffort.entries.joinToString(",") { it.name }
+
+    fun reasoningEffortLabel(name: String): String =
+        AiReasoningEffort.fromName(name).label
+
+    /** 内网地址判定（模型目录等平台请求的自签放行用）。 */
+    fun isPrivateHost(host: String): Boolean = AiNetworkPolicy.isPrivateHost(host)
 
     // ── 会话（历史持久化 + Markdown 导出） ─────────────────────────────────
 

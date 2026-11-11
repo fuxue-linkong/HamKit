@@ -37,6 +37,33 @@ final class LocationProvider: NSObject, ObservableObject, CLLocationManagerDeleg
         }
     }
 
+    /// 强制重新定位（忽略缓存）：异步发起一次新的 GPS 请求，结果经回调返回。
+    ///
+    /// `requestLocation()` 只在「拿到更新的位置」时回调，旧缓存不算数，
+    /// 与 Android `AiAppFacadeImpl.refreshLocation` 的语义一致：
+    /// AI 工具 `refresh_location` 用它把「定位不准」的场景兜住。
+    func refreshLocation(timeoutSeconds: TimeInterval = 20, completion: @escaping (CLLocationCoordinate2D?) -> Void) {
+        let startedAt = Date()
+        var finished = false
+        // 轮询 @Published coordinate：requestLocation 成功后会更新
+        func poll() {
+            if finished { return }
+            if let coordinate, Date().timeIntervalSince(startedAt) > 0.5 {
+                finished = true
+                completion(coordinate)
+                return
+            }
+            if Date().timeIntervalSince(startedAt) > timeoutSeconds {
+                finished = true
+                completion(nil)
+                return
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { poll() }
+        }
+        requestLocation()
+        poll()
+    }
+
     // MARK: - CLLocationManagerDelegate
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {

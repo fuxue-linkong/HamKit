@@ -18,10 +18,12 @@ class AiBridgeTest {
             maxOutputTokens = 4096,
             saveHistory = false,
             historyLimit = 50,
+            allowSelfSigned = true,
             systemPrompt = "自定义提示词",
             disabledTools = "noop,get_weather",
             confirmSideEffects = false,
             maxToolRounds = 3,
+            reasoningEffort = AiReasoningEffort.HIGH,
         )
         val restored = AiBridge.configFromJson(AiBridge.configToJson(config))
         assertEquals(AiProtocol.ANTHROPIC_MESSAGES, restored.protocol)
@@ -29,10 +31,12 @@ class AiBridgeTest {
         assertEquals("claude-test", restored.model)
         assertEquals(4096, restored.maxOutputTokens)
         assertEquals(false, restored.saveHistory)
+        assertEquals(true, restored.allowSelfSigned)
         assertEquals("自定义提示词", restored.systemPrompt)
         assertEquals("noop,get_weather", restored.disabledTools)
         assertEquals(false, restored.confirmSideEffects)
         assertEquals(3, restored.maxToolRounds)
+        assertEquals(AiReasoningEffort.HIGH, restored.reasoningEffort)
     }
 
     @Test
@@ -40,6 +44,20 @@ class AiBridgeTest {
         val restored = AiBridge.configFromJson("{not json")
         assertEquals(AiPreset.DEEPSEEK, restored.preset)
         assertEquals("deepseek-chat", restored.model)
+        assertEquals(AiReasoningEffort.MEDIUM, restored.reasoningEffort)
+    }
+
+    @Test
+    fun `config json with unknown effort falls back to medium`() {
+        val restored = AiBridge.configFromJson("""{"reasoningEffort":"ULTRA"}""")
+        assertEquals(AiReasoningEffort.MEDIUM, restored.reasoningEffort)
+    }
+
+    @Test
+    fun `reasoning effort metadata is exposed for settings ui`() {
+        assertEquals("OFF,LOW,MEDIUM,HIGH", AiBridge.reasoningEffortNames())
+        assertEquals("关闭", AiBridge.reasoningEffortLabel("OFF"))
+        assertEquals("Medium", AiBridge.reasoningEffortLabel("MEDIUM"))
     }
 
     @Test

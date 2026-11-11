@@ -109,10 +109,10 @@ enum MiuixAccent: String, CaseIterable, Identifiable {
     }
 }
 
-/// 主题设置：深浅模式 + 强调色，持久化在 UserDefaults。
+/// 主题设置：深浅模式 + 强调色 + 背景不透明度，持久化在 UserDefaults。
 ///
-/// 对应 Android 的 `SettingsStore.colorMode` / `keyColor`：改完立即生效，
-/// 不需要重启，也不需要重启导航栈。
+/// 对应 Android 的 `SettingsStore.colorMode` / `keyColor` / `backgroundAlpha`：
+/// 改完立即生效，不需要重启，也不需要重启导航栈。
 final class ThemeStore: ObservableObject {
 
     static let shared = ThemeStore()
@@ -125,13 +125,25 @@ final class ThemeStore: ObservableObject {
         didSet { defaults.set(accent.rawValue, forKey: Self.keyAccent) }
     }
 
+    /// 背景不透明度：1 不透明；0.5 半透明（系统壁纸透出，文字与卡片保持不透明）。
+    @Published var backgroundAlpha: Double {
+        didSet {
+            let clamped = min(max(backgroundAlpha, 0.5), 1)
+            if clamped != backgroundAlpha { backgroundAlpha = clamped }
+            defaults.set(clamped, forKey: Self.keyBackgroundAlpha)
+        }
+    }
+
     private let defaults = UserDefaults.standard
     private static let keyAppearance = "hamkit.theme.appearance"
     private static let keyAccent = "hamkit.theme.accent"
+    private static let keyBackgroundAlpha = "hamkit.theme.background-alpha"
 
     private init() {
         appearance = MiuixAppearance(rawValue: defaults.string(forKey: Self.keyAppearance) ?? "") ?? .system
         accent = MiuixAccent(rawValue: defaults.string(forKey: Self.keyAccent) ?? "") ?? .blue
+        let stored = defaults.object(forKey: Self.keyBackgroundAlpha) as? Double ?? 1
+        backgroundAlpha = min(max(stored, 0.5), 1)
     }
 
     /// 当前强调色（已按深浅模式解析）。
@@ -164,7 +176,19 @@ enum MiuixTheme {
     // MARK: - 颜色（自动跟随系统深浅色，对齐上游 light/darkColorScheme()）
 
     /// miuix `surface`：页面底色（Scaffold / 底栏 / 顶栏）。
-    static let background = dynamic(light: 0xF7F7F7, dark: 0x000000)
+    ///
+    /// 跟随「设置 → 背景不透明度」：降到 1 以下时半透明，系统壁纸透出
+    /// （对齐 Android `backgroundAlpha`，卡片与文字保持不透明）。
+    static var background: Color {
+        Color(UIColor { [alpha = ThemeStore.shared.backgroundAlpha] trait in
+            let hex = trait.userInterfaceStyle == .dark ? 0x000000 : 0xF7F7F7
+            let base = UIColor(hex: hex)
+            var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, opacity: CGFloat = 0
+            base.getRed(&red, green: &green, blue: &blue, alpha: &opacity)
+            return UIColor(red: red, green: green, blue: blue, alpha: alpha)
+        })
+    }
+
     /// miuix `surfaceContainer` / `surfaceVariant`：卡片底色。
     static let card = dynamic(light: 0xFFFFFF, dark: 0x242424)
     /// miuix `surfaceContainerHighest`：卡片内再一层（浅色 `#E8E8E8` / 深色 `#2D2D2D`）。

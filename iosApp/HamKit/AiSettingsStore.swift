@@ -72,7 +72,7 @@ struct AiProfile: Identifiable, Equatable, Codable {
             models: cleaned,
             selectedModelId: selected,
             temperature: min(max(temperature, 0), 2),
-            maxOutputTokens: min(max(maxOutputTokens, 64), 8192)
+            maxOutputTokens: min(max(maxOutputTokens, 64), 65536)
         )
     }
 
@@ -110,7 +110,7 @@ struct AiProfile: Identifiable, Equatable, Codable {
             ],
             selectedModelId: "m1",
             temperature: 0.6,
-            maxOutputTokens: 2048
+            maxOutputTokens: 8192
         )
     }
 
@@ -129,7 +129,11 @@ struct AiGlobalSettings: Equatable, Codable {
     var systemPrompt: String = ""
     var disabledTools: Set<String> = []
     var confirmSideEffects: Bool = true
-    var maxToolRounds: Int = 4
+    var maxToolRounds: Int = 6
+    /// 推理等级（OFF/LOW/MEDIUM/HIGH），对应 Android `AiConfig.reasoningEffort`。
+    var reasoningEffort: String = "MEDIUM"
+    /// 信任自签 HTTPS（内核只在私有地址上生效）。
+    var allowSelfSigned: Bool = false
 
     init() {}
 
@@ -139,7 +143,9 @@ struct AiGlobalSettings: Equatable, Codable {
         systemPrompt: String,
         disabledTools: Set<String>,
         confirmSideEffects: Bool,
-        maxToolRounds: Int
+        maxToolRounds: Int,
+        reasoningEffort: String = "MEDIUM",
+        allowSelfSigned: Bool = false
     ) {
         self.saveHistory = saveHistory
         self.historyLimit = historyLimit
@@ -147,6 +153,8 @@ struct AiGlobalSettings: Equatable, Codable {
         self.disabledTools = disabledTools
         self.confirmSideEffects = confirmSideEffects
         self.maxToolRounds = maxToolRounds
+        self.reasoningEffort = reasoningEffort
+        self.allowSelfSigned = allowSelfSigned
     }
 
     /// 手写解码：旧 JSON 缺字段时用默认值，避免升级后整个设置读不出来。
@@ -157,7 +165,9 @@ struct AiGlobalSettings: Equatable, Codable {
         systemPrompt = try container.decodeIfPresent(String.self, forKey: .systemPrompt) ?? ""
         disabledTools = try container.decodeIfPresent(Set<String>.self, forKey: .disabledTools) ?? []
         confirmSideEffects = try container.decodeIfPresent(Bool.self, forKey: .confirmSideEffects) ?? true
-        maxToolRounds = try container.decodeIfPresent(Int.self, forKey: .maxToolRounds) ?? 4
+        maxToolRounds = try container.decodeIfPresent(Int.self, forKey: .maxToolRounds) ?? 6
+        reasoningEffort = try container.decodeIfPresent(String.self, forKey: .reasoningEffort) ?? "MEDIUM"
+        allowSelfSigned = try container.decodeIfPresent(Bool.self, forKey: .allowSelfSigned) ?? false
     }
 }
 
@@ -172,13 +182,15 @@ struct AiSettings: Equatable {
     var baseUrl: String = "https://api.deepseek.com/v1"
     var model: String = "deepseek-chat"
     var temperature: Double = 0.6
-    var maxOutputTokens: Int = 2048
+    var maxOutputTokens: Int = 8192
     var saveHistory: Bool = true
     var historyLimit: Int = 200
     var systemPrompt: String = ""
     var disabledTools: Set<String> = []
     var confirmSideEffects: Bool = true
-    var maxToolRounds: Int = 4
+    var maxToolRounds: Int = 6
+    var reasoningEffort: String = "MEDIUM"
+    var allowSelfSigned: Bool = false
 
     init() {}
 
@@ -195,6 +207,8 @@ struct AiSettings: Equatable {
         disabledTools = global.disabledTools
         confirmSideEffects = global.confirmSideEffects
         maxToolRounds = global.maxToolRounds
+        reasoningEffort = global.reasoningEffort
+        allowSelfSigned = global.allowSelfSigned
     }
 
     var presetLabel: String { AiBridge.shared.presetLabel(name: preset) }
@@ -218,10 +232,12 @@ struct AiSettings: Equatable {
             saveHistory: saveHistory,
             historyLimit: Int32(historyLimit),
             allowCleartext: false,
+            allowSelfSigned: allowSelfSigned,
             systemPrompt: systemPrompt,
             disabledTools: disabledTools.sorted().joined(separator: ","),
             confirmSideEffects: confirmSideEffects,
-            maxToolRounds: Int32(maxToolRounds)
+            maxToolRounds: Int32(maxToolRounds),
+            reasoningEffort: reasoningEffort
         )
     }
 
@@ -244,6 +260,8 @@ struct AiSettings: Equatable {
         settings.systemPrompt = root["systemPrompt"] as? String ?? ""
         settings.confirmSideEffects = root["confirmSideEffects"] as? Bool ?? true
         settings.maxToolRounds = root["maxToolRounds"] as? Int ?? settings.maxToolRounds
+        settings.reasoningEffort = root["reasoningEffort"] as? String ?? settings.reasoningEffort
+        settings.allowSelfSigned = root["allowSelfSigned"] as? Bool ?? settings.allowSelfSigned
         let disabled = root["disabledTools"] as? String ?? ""
         settings.disabledTools = Set(disabled.split(separator: ",").map(String.init))
         return settings
@@ -561,6 +579,7 @@ final class AiSettingsStore: ObservableObject {
 ///
 /// 与 Android `AiModelList` 对齐：OpenAI / Anthropic 返回 `data[].id`，
 /// Gemini 返回 `models[].name`（去掉 `models/` 前缀）。
+/// 内网自签 HTTPS：仅当全局开关打开时对该请求挂 trustAll delegate。
 enum AiModelCatalog {
 
     /// 失败原因直接给 UI 展示。
@@ -578,7 +597,22 @@ enum AiModelCatalog {
         }
     }
 
-    static func fetch(profile: AiProfile, apiKey: String) async throws -> [String] {
+    private final class TrustAllDelegate: NSObject, URLSessionDelegate {
+        func urlSession(
+            _ session: URLSession,
+            didReceive challenge: URLAuthenticationChallenge,
+            completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+        ) {
+            if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+               let trust = challenge.protectionSpace.serverTrust {
+                completionHandler(.useCredential, URLCredential(trust: trust))
+            } else {
+                completionHandler(.performDefaultHandling, nil)
+            }
+        }
+    }
+
+    static func fetch(profile: AiProfile, apiKey: String, allowSelfSigned: Bool = false) async throws -> [String] {
         // 与 Android `AiModelList.fetch` 一致：先归一化 Base URL（去空白、去尾部 `/`），
         // 否则手工输入 `https://host/v1/` 会拼出 `.../v1//models`。
         let normalized = profile.normalized()
@@ -601,7 +635,20 @@ enum AiModelCatalog {
             request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         }
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        // 自签放行与对话流一致：只对内网地址生效（内核 AiNetworkPolicy 判定）
+        let trustAll = allowSelfSigned
+            && url.scheme?.lowercased() == "https"
+            && AiBridge.shared.isPrivateHost(host: url.host ?? "")
+        let data: Data
+        let response: URLResponse
+        if trustAll {
+            let delegate = TrustAllDelegate()
+            let session = URLSession(configuration: .ephemeral, delegate: delegate, delegateQueue: nil)
+            defer { session.finishTasksAndInvalidate() }
+            (data, response) = try await session.data(for: request)
+        } else {
+            (data, response) = try await URLSession.shared.data(for: request)
+        }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         let body = String(decoding: data, as: UTF8.self)
         guard (200..<300).contains(status) else {

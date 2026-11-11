@@ -418,6 +418,28 @@ struct ColorPaletteView: View {
                 }
             }
 
+            // 背景不透明度（对齐 miuix 3792b32/c914ba2：半透明后系统壁纸透出）
+            MiuixGroupCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "rectangle.inset.filled.on.rectangle")
+                            .font(.system(size: 17))
+                            .frame(width: 24)
+                            .foregroundStyle(MiuixTheme.text)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("背景不透明度 \(Int(theme.backgroundAlpha * 100))%")
+                                .font(.system(size: 17, weight: .medium))
+                                .foregroundStyle(MiuixTheme.text)
+                            Text("降低后系统壁纸会透出；文字与卡片保持不透明。")
+                                .font(.system(size: 14))
+                                .foregroundStyle(MiuixTheme.textSecondary)
+                        }
+                    }
+                    Slider(value: $theme.backgroundAlpha, in: 0.5...1, step: 0.05)
+                }
+                .padding(MiuixTheme.cardPadding)
+            }
+
             // 主题色
             MiuixGroupCard {
                 VStack(alignment: .leading, spacing: 14) {

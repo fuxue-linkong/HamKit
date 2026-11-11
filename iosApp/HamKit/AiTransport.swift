@@ -4,12 +4,14 @@ import Shared
 /// 共享内核的流式 HTTP 实现：URLSession + 增量 UTF-8 解码。
 ///
 /// 内核把「协议 + SSE 分帧」都做完了，这里只负责把响应体当文本流送进去。
-/// 两个坑必须处理：
+/// 三个坑必须处理：
 /// 1. **UTF-8 跨分片**：`didReceive data` 的分片边界可能落在一个汉字中间，
 ///    直接 `String(data:encoding:)` 会解出乱码，所以按「最后一个换行」切分，
 ///    只把完整行交给内核，残余字节留到下一次（SSE 帧一定以换行结尾）；
 /// 2. **HTTP 错误**：非 2xx 时不进入 SSE 解析，收完 body 后按错误回调，
-///    否则内核会拿一段错误 JSON 去当事件流解析。
+///    否则内核会拿一段错误 JSON 去当事件流解析；
+/// 3. **自签 HTTPS**：仅当内核判定该请求允许（用户开关 + 内网地址）时挂 trustAll
+///    delegate；公网请求永远走系统证书校验。
 final class AiURLSessionTransport: NSObject, AiStreamTransport {
 
     private let configuration: URLSessionConfiguration
@@ -38,8 +40,12 @@ final class AiURLSessionTransport: NSObject, AiStreamTransport {
             urlRequest.setValue(value, forHTTPHeaderField: key)
         }
 
-        // 每个请求一个 session：delegate 由 session 强引用，回调不会串到别的请求上
-        let delegate = AiStreamDelegate(listener: listener)
+        // 每个请求一个 session：delegate 由 session 强引用，回调不会串到别的请求上。
+        // allowSelfSigned 只由内核按「用户开关 + 内网地址」置位（见 AiHttpRequest）。
+        let delegate = AiStreamDelegate(
+            listener: listener,
+            trustAll: request.allowSelfSigned && url.scheme?.lowercased() == "https"
+        )
         let session = URLSession(
             configuration: configuration,
             delegate: delegate,
@@ -79,6 +85,8 @@ private final class AiStreamHandle: NSObject, AiRequestHandle {
 private final class AiStreamDelegate: NSObject, URLSessionDataDelegate {
 
     private let listener: AiStreamListener
+    /// 仅内网 + 用户显式开启时为 true（对齐 Android AiHttp.trustAll）。
+    private let trustAll: Bool
     private var buffer = Data()
     private var errorBody = Data()
     private var statusCode = 0
@@ -86,9 +94,24 @@ private final class AiStreamDelegate: NSObject, URLSessionDataDelegate {
     weak var task: URLSessionDataTask?
     weak var session: URLSession?
 
-    init(listener: AiStreamListener) {
+    init(listener: AiStreamListener, trustAll: Bool = false) {
         self.listener = listener
+        self.trustAll = trustAll
         super.init()
+    }
+
+    /// 自签证书放行：trustAll 已由上层限定为「内网 + 用户开关」，这里不再做地址判断。
+    func urlSession(
+        _ session: URLSession,
+        didReceive challenge: URLAuthenticationChallenge,
+        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+    ) {
+        if trustAll, challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+           let trust = challenge.protectionSpace.serverTrust {
+            completionHandler(.useCredential, URLCredential(trust: trust))
+        } else {
+            completionHandler(.performDefaultHandling, nil)
+        }
     }
 
     func urlSession(
@@ -127,6 +150,16 @@ private final class AiStreamDelegate: NSObject, URLSessionDataDelegate {
                 listener.onFailed(error: AiBridge.shared.cancelledError())
             } else if error.domain == NSURLErrorDomain && error.code == NSURLErrorTimedOut {
                 listener.onFailed(error: AiBridge.shared.networkError(detail: "请求超时"))
+            } else if Self.isSslFailure(error) {
+                // TLS 握手失败：大概率 https 打到 http 端口，或内网自签证书未受信
+                listener.onFailed(
+                    error: AiError(
+                        kind: AiErrorKind.ssl,
+                        message: error.localizedDescription,
+                        retryable: false,
+                        status: 0
+                    )
+                )
             } else {
                 listener.onFailed(
                     error: AiBridge.shared.networkError(detail: error.localizedDescription)
@@ -150,5 +183,17 @@ private final class AiStreamDelegate: NSObject, URLSessionDataDelegate {
             if !text.isEmpty { listener.onChunk(text: text) }
         }
         listener.onCompleted()
+    }
+
+    /// TLS/证书类失败（https 打到 http 端口、自签证书不受信等）。
+    private static func isSslFailure(_ error: NSError) -> Bool {
+        guard error.domain == NSURLErrorDomain else { return false }
+        switch error.code {
+        case NSURLErrorSecureConnectionFailed, NSURLErrorServerCertificateUntrusted,
+             NSURLErrorClientCertificateRejected, NSURLErrorClientCertificateRequired:
+            return true
+        default:
+            return false
+        }
     }
 }

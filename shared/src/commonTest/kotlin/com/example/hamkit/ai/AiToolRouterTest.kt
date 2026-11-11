@@ -23,6 +23,13 @@ class AiToolRouterTest {
     }
 
     @Test
+    fun `write intent routes to add qso log`() {
+        val route = AiToolRouter.route("帮我记一下刚才和 BH4XYZ 的通联")
+        assertTrue("add_qso_log" in route, "写入意图应路由到 add_qso_log：$route")
+        assertTrue("refresh_location" in AiToolRouter.route("定位好像不准了，重新定位一下"))
+    }
+
+    @Test
     fun `short ascii keywords respect word boundary`() {
         // mississippi 里含 iss，但不是一个词，不能路由到卫星工具
         val route = AiToolRouter.route("mississippi river")

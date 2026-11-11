@@ -133,6 +133,98 @@ class AiProtocolTest {
     }
 
     @Test
+    fun `request max tokens respects config and reasoning budget`() {
+        val cfg = AiConfig(maxOutputTokens = 8192)
+        // OFF 只用配置值
+        assertEquals(8192, AiCodecs.requestMaxTokens(cfg, AiReasoningEffort.OFF))
+        // 推理预算抬高上限：High = 4096 budget + 1024 余量
+        assertEquals(8192, AiCodecs.requestMaxTokens(cfg, AiReasoningEffort.MEDIUM))
+        assertEquals(8192, AiCodecs.requestMaxTokens(cfg, AiReasoningEffort.HIGH))
+        // 小配置被思考预算抬到 floor
+        assertEquals(3072, AiCodecs.requestMaxTokens(cfg.copy(maxOutputTokens = 1024), AiReasoningEffort.MEDIUM))
+        // 配置钳到 65536
+        assertEquals(65536, AiCodecs.requestMaxTokens(cfg.copy(maxOutputTokens = 999999), AiReasoningEffort.HIGH))
+    }
+
+    @Test
+    fun `openai body carries reasoning effort except deepseek uses thinking`() {
+        val body = AiCodecs.chatBody(
+            config = AiConfig(preset = AiPreset.OPENAI, reasoningEffort = AiReasoningEffort.HIGH),
+            system = "",
+            messages = listOf(AiMessage.user("hi")),
+            tools = emptyList(),
+        )
+        val json = Json.parse(body)!!.objOrNull()!!
+        assertEquals("high", json["reasoning_effort"]!!.stringOrNull())
+        // max_tokens 被思考预算抬高到 4096+1024（配置 8192 更大，保持 8192）
+        assertEquals(8192.0, (json["max_tokens"] as Json.Num).value)
+
+        val deepseekBody = AiCodecs.chatBody(
+            config = AiConfig(preset = AiPreset.DEEPSEEK, reasoningEffort = AiReasoningEffort.LOW),
+            system = "",
+            messages = listOf(AiMessage.user("hi")),
+            tools = emptyList(),
+        )
+        val deepseek = Json.parse(deepseekBody)!!.objOrNull()!!
+        assertEquals("enabled", deepseek["thinking"]!!.objOrNull()!!["type"]!!.stringOrNull())
+        assertTrue(!deepseek.fields.containsKey("reasoning_effort"))
+    }
+
+    @Test
+    fun `off effort omits thinking params entirely`() {
+        val body = AiCodecs.chatBody(
+            config = AiConfig(preset = AiPreset.OPENAI, reasoningEffort = AiReasoningEffort.OFF),
+            system = "",
+            messages = listOf(AiMessage.user("hi")),
+            tools = emptyList(),
+        )
+        val json = Json.parse(body)!!.objOrNull()!!
+        assertTrue(!json.fields.containsKey("reasoning_effort"))
+        assertTrue(!json.fields.containsKey("thinking"))
+    }
+
+    @Test
+    fun `anthropic body carries thinking budget and clamps max tokens`() {
+        val body = AiCodecs.chatBody(
+            config = AiConfig(
+                protocol = AiProtocol.ANTHROPIC_MESSAGES,
+                maxOutputTokens = 999999,
+                reasoningEffort = AiReasoningEffort.HIGH,
+            ),
+            system = "",
+            messages = listOf(AiMessage.user("hi")),
+            tools = emptyList(),
+        )
+        val json = Json.parse(body)!!.objOrNull()!!
+        // Anthropic 上限 64000
+        assertEquals(64000.0, (json["max_tokens"] as Json.Num).value)
+        val thinking = json["thinking"]!!.objOrNull()!!
+        assertEquals("enabled", thinking["type"]!!.stringOrNull())
+        assertEquals(4096.0, (thinking["budget_tokens"] as Json.Num).value)
+    }
+
+    @Test
+    fun `gemini body carries thinking config with dynamic budget for high`() {
+        val body = AiCodecs.chatBody(
+            config = AiConfig(protocol = AiProtocol.GEMINI, reasoningEffort = AiReasoningEffort.HIGH),
+            system = "",
+            messages = listOf(AiMessage.user("hi")),
+            tools = emptyList(),
+        )
+        val json = Json.parse(body)!!.objOrNull()!!
+        val thinking = json["generationConfig"]!!.objOrNull()!!["thinkingConfig"]!!.objOrNull()!!
+        assertEquals(-1.0, (thinking["thinkingBudget"] as Json.Num).value)
+        assertEquals(true, thinking["includeThoughts"]!!.boolOrNull())
+    }
+
+    @Test
+    fun `ssl errors carry actionable text`() {
+        val error = AiError(AiErrorKind.SSL, "certificate unknown")
+        assertTrue(error.displayText.contains("HTTP 服务"))
+        assertTrue(error.displayText.contains("自签"))
+    }
+
+    @Test
     fun `gemini body wraps messages in contents`() {
         val body = AiCodecs.chatBody(
             config = AiConfig(protocol = AiProtocol.GEMINI, baseUrl = "https://example.com"),
