@@ -24,12 +24,16 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -145,10 +149,31 @@ private fun SatelliteFilterContentMiuix(
             }
         }
 
-        // 工作模式
+        // 工作模式（C3 整改：60+ 模式加搜索过滤 + 已选计数）
         item {
+            var modeQuery by remember { mutableStateOf("") }
             MiuixFilterSectionCard(title = stringResource(R.string.filter_mode_section)) {
-                modeOptions.forEach { (value, label) ->
+                top.yukonga.miuix.kmp.basic.TextField(
+                    value = modeQuery,
+                    onValueChange = { modeQuery = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = stringResource(R.string.filter_mode_search),
+                    singleLine = true,
+                )
+                if (filter.modes.isNotEmpty()) {
+                    Spacer(Modifier.height(4.dp))
+                    MiuixText(
+                        text = "已选 ${filter.modes.size} 项",
+                        fontSize = 11.sp,
+                        color = colorScheme.primary,
+                    )
+                }
+                val visibleModes = if (modeQuery.isBlank()) {
+                    modeOptions
+                } else {
+                    modeOptions.filter { it.second.contains(modeQuery, ignoreCase = true) }
+                }
+                visibleModes.forEach { (value, label) ->
                     val selected = value in filter.modes
                     MiuixFilterSelectableRow(
                         label = label,
@@ -157,6 +182,14 @@ private fun SatelliteFilterContentMiuix(
                             val newModes = if (selected) filter.modes - value else filter.modes + value
                             onFilterChange(filter.copy(modes = newModes))
                         }
+                    )
+                }
+                if (visibleModes.isEmpty()) {
+                    MiuixText(
+                        text = stringResource(R.string.filter_mode_no_match),
+                        fontSize = 12.sp,
+                        color = colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.padding(vertical = 8.dp),
                     )
                 }
             }
@@ -331,10 +364,31 @@ private fun SatelliteFilterContentMaterial(
             }
         }
 
-        // 工作模式
+        // 工作模式（C3 整改：搜索过滤 + 已选计数，与 Miuix 版一致）
         item {
+            var modeQuery by remember { mutableStateOf("") }
             MaterialFilterSectionCard(title = stringResource(R.string.filter_mode_section)) {
-                modeOptions.forEach { (value, label) ->
+                OutlinedTextField(
+                    value = modeQuery,
+                    onValueChange = { modeQuery = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    placeholder = { Text(stringResource(R.string.filter_mode_search)) },
+                )
+                if (filter.modes.isNotEmpty()) {
+                    Text(
+                        text = "已选 ${filter.modes.size} 项",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+                val visibleModes = if (modeQuery.isBlank()) {
+                    modeOptions
+                } else {
+                    modeOptions.filter { it.second.contains(modeQuery, ignoreCase = true) }
+                }
+                visibleModes.forEach { (value, label) ->
                     val selected = value in filter.modes
                     FilterCheckRowMaterial(
                         label = label,
@@ -343,6 +397,14 @@ private fun SatelliteFilterContentMaterial(
                             val newModes = if (selected) filter.modes - value else filter.modes + value
                             onFilterChange(filter.copy(modes = newModes))
                         }
+                    )
+                }
+                if (visibleModes.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.filter_mode_no_match),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 8.dp),
                     )
                 }
             }

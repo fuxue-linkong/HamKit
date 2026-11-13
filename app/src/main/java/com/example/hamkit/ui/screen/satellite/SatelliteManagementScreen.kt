@@ -874,10 +874,12 @@ private fun SatelliteManagementItem(
                     )
                 }
                 null -> {
-                    TimeBadge(
-                        label = stringResource(R.string.no_pass_window),
-                        value = stringResource(R.string.no_pass_hint),
-                        isActive = false
+                    // E5 整改：无过境占位降饱和度（避免与真实时间徽章等重导致扫读误判）
+                    Text(
+                        text = stringResource(R.string.no_pass_hint),
+                        fontSize = 11.sp,
+                        color = colorScheme.onSurfaceVariantSummary.copy(alpha = 0.55f),
+                        modifier = Modifier.padding(vertical = 6.dp)
                     )
                 }
             }
@@ -942,14 +944,14 @@ private fun TransceiverRow(radio: RadioInfo) {
             )
             RadioStatusBadge(radio)
         }
-        // 频率 + 模式行
+        // 频率 + 模式行（E4 整改：统一为带单位格式，与详情页一致）
         val freqText = buildString {
             if (radio.downlinkHz != null) {
-                append("RX ${formatMHz(radio.downlinkHz)}")
+                append("RX ${formatMHz(radio.downlinkHz)} MHz")
             }
             if (radio.uplinkHz != null) {
                 if (isNotEmpty()) append("  ")
-                append("TX ${formatMHz(radio.uplinkHz)}")
+                append("TX ${formatMHz(radio.uplinkHz)} MHz")
             }
             if (isNotEmpty() && radio.displayMode.isNotBlank()) append("  ")
             if (radio.displayMode.isNotBlank()) append(radio.displayMode)
@@ -1024,12 +1026,13 @@ private fun TimeBadge(label: String, value: String, isActive: Boolean) {
             .background(containerColor)
             .padding(horizontal = 10.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
+        // E5 整改：label/value 分两个 Text 排（中英混排基线对齐），label 加淡分隔
         Text(
-            text = "$label：",
+            text = label,
             fontSize = 11.sp,
-            color = contentColor
+            color = contentColor.copy(alpha = 0.75f)
         )
         Text(
             text = value,

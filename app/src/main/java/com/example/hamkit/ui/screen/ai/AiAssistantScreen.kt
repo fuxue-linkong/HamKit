@@ -8,6 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -134,12 +135,15 @@ import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Place
+import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.SatelliteAlt
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -315,7 +319,12 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
             }
 
             if (state.messages.isEmpty()) {
-                EmptyStateMiuix(onPick = { prompt -> viewModel.onInputChange(prompt) })
+                // B7 整改：键盘弹出时隐藏空态（避免与输入框争抢可视区），空态交给内部滚动
+                if (imeBottom == 0.dp) {
+                    EmptyStateMiuix(onPick = { prompt -> viewModel.onInputChange(prompt) })
+                } else {
+                    Spacer(Modifier.weight(1f))
+                }
             } else {
                 LazyColumn(
                     modifier = Modifier
@@ -454,8 +463,10 @@ private fun EmptyStateMiuix(onPick: (String) -> Unit) {
         stringResource(R.string.ai_sample_4),
     )
     Column(
+        // B7 整改：小屏/横屏下空态整体可滚动，避免超出可视区
         modifier = Modifier
             .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 24.dp, vertical = 28.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -969,13 +980,35 @@ private fun ModelPickerPopupMiuix(
     }
     val activeEntry = profiles.firstOrNull { it.id == activeProfileId }?.currentEntry
 
+    // C7 整改：入场动画（fade+scale，右下角原点），替代硬编码偏移的瞬间弹出
+    var shown by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { shown = true }
+    val popupAlpha by animateFloatAsState(
+        targetValue = if (shown) 1f else 0f,
+        animationSpec = tween(120),
+        label = "popupAlpha",
+    )
+    val popupScale by animateFloatAsState(
+        targetValue = if (shown) 1f else 0.92f,
+        animationSpec = tween(120),
+        label = "popupScale",
+    )
     Popup(
         alignment = Alignment.BottomEnd,
         offset = IntOffset(0, -56),
         onDismissRequest = onDismiss,
         properties = PopupProperties(focusable = true),
     ) {
-        Card(modifier = Modifier.width(260.dp)) {
+        Card(
+            modifier = Modifier
+                .width(260.dp)
+                .graphicsLayer {
+                    alpha = popupAlpha
+                    scaleX = popupScale
+                    scaleY = popupScale
+                    transformOrigin = TransformOrigin(1f, 1f) // 右下角为缩放原点
+                },
+        ) {
             Column(Modifier.padding(6.dp)) {
                 when (page) {
                     0 -> {
@@ -1468,34 +1501,58 @@ private fun SatelliteCardMiuix(data: SatelliteCardData) {
     val navigator = LocalNavigator.current
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // E3 整改：默认折叠为「名称 + 在境状态 + 最大仰角」摘要行，点击展开完整数据
+            var expanded by remember(data.catalogNumber) { mutableStateOf(false) }
+            val inPassNow = data.passes.any { it.isInPass }
+            val maxElev = data.passes.maxOfOrNull { it.maxElevation }?.toInt()
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clickable { expanded = !expanded },
+            ) {
                 Text(
                     data.name,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f),
                 )
-                Text(
-                    "#${data.catalogNumber}",
-                    fontSize = 10.sp,
-                    color = colorScheme.onSurfaceVariantSummary,
+                if (inPassNow) {
+                    Text(
+                        "在境",
+                        fontSize = 10.sp,
+                        color = colorScheme.primary,
+                        modifier = Modifier.padding(end = 6.dp),
+                    )
+                }
+                maxElev?.let {
+                    Text(
+                        "最大 ${it}°",
+                        fontSize = 10.sp,
+                        color = colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.padding(end = 6.dp),
+                    )
+                }
+                Icon(
+                    if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                    contentDescription = null,
+                    tint = colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.size(16.dp),
                 )
             }
-            if (data.modes.isNotEmpty() || data.amsatStatus != null) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.padding(top = 3.dp),
-                ) {
-                    if (data.modes.isNotEmpty()) {
-                        Text(
-                            data.modes.joinToString(" · "),
-                            fontSize = 10.sp,
-                            color = colorScheme.onSurfaceVariantSummary,
-                        )
-                    }
-                    data.amsatStatus?.let {
-                        Text(it, fontSize = 10.sp, color = colorScheme.primary)
-                    }
+            if (!expanded) return@Column
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(top = 3.dp),
+            ) {
+                if (data.modes.isNotEmpty()) {
+                    Text(
+                        data.modes.joinToString(" · "),
+                        fontSize = 10.sp,
+                        color = colorScheme.onSurfaceVariantSummary,
+                    )
+                }
+                data.amsatStatus?.let {
+                    Text(it, fontSize = 10.sp, color = colorScheme.primary)
                 }
             }
 

@@ -12,6 +12,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
@@ -125,6 +126,7 @@ import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Place
+import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.SatelliteAlt
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Stop
@@ -290,7 +292,10 @@ fun AiAssistantScreenMaterial(bottomInnerPadding: Dp = 0.dp) {
             }
 
             if (state.messages.isEmpty()) {
-                EmptyStateMaterial(onPick = { prompt -> viewModel.onInputChange(prompt) })
+                // B7 整改：键盘弹出时隐藏空态（与 Miuix 版一致）
+                if (imeBottom == 0.dp) {
+                    EmptyStateMaterial(onPick = { prompt -> viewModel.onInputChange(prompt) })
+                }
                 Spacer(Modifier.weight(1f))
             } else {
                 LazyColumn(
@@ -430,8 +435,10 @@ private fun EmptyStateMaterial(onPick: (String) -> Unit) {
         stringResource(R.string.ai_sample_4),
     )
     Column(
+        // B7 整改：小屏下空态整体可滚动（与 Miuix 版一致）
         modifier = Modifier
             .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 24.dp, vertical = 28.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -1496,37 +1503,61 @@ private fun SatelliteCardMaterial(data: SatelliteCardData) {
         ),
     ) {
         Column(Modifier.padding(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // E3 整改：默认折叠为「名称 + 在境状态 + 最大仰角」摘要行（与 Miuix 版一致）
+            var expanded by remember(data.catalogNumber) { mutableStateOf(false) }
+            val inPassNow = data.passes.any { it.isInPass }
+            val maxElev = data.passes.maxOfOrNull { it.maxElevation }?.toInt()
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clickable { expanded = !expanded },
+            ) {
                 Text(
                     data.name,
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f),
                 )
-                Text(
-                    "#${data.catalogNumber}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                if (inPassNow) {
+                    Text(
+                        "在境",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(end = 6.dp),
+                    )
+                }
+                maxElev?.let {
+                    Text(
+                        "最大 ${it}°",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(end = 6.dp),
+                    )
+                }
+                Icon(
+                    if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp),
                 )
             }
-            if (data.modes.isNotEmpty() || data.amsatStatus != null) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.padding(top = 3.dp),
-                ) {
-                    if (data.modes.isNotEmpty()) {
-                        Text(
-                            data.modes.joinToString(" · "),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    data.amsatStatus?.let {
-                        Text(
-                            it,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
+            if (!expanded) return@Column
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(top = 3.dp),
+            ) {
+                if (data.modes.isNotEmpty()) {
+                    Text(
+                        data.modes.joinToString(" · "),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                data.amsatStatus?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
                 }
             }
 

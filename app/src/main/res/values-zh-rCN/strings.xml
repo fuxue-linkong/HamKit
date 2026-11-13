@@ -122,6 +122,8 @@
     <string name="ai_sample_3">ISS 的 SSTV 活动一般用什么模式？</string>
     <string name="ai_sample_4">ISS 什么时候过境？</string>
     <string name="ai_settings_title">AI 助手设置</string>
+    <string name="filter_mode_search">搜索模式</string>
+    <string name="filter_mode_no_match">无匹配模式</string>
     <string name="ai_settings_save">保存设置</string>
     <string name="ai_settings_test">测试连接</string>
     <string name="ai_settings_testing">测试中…</string>

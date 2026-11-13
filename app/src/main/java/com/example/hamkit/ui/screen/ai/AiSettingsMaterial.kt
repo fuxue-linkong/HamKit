@@ -70,6 +70,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialog
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.material3.Switch
@@ -891,8 +892,14 @@ private fun ModelPickerDialogMaterial(
                                 )
                             }
                             if (profiles.size > 1) {
-                                TextButton(onClick = { onDelete(profile.id) }) {
-                                    Text(stringResource(R.string.ai_model_delete))
+                                // C6 整改：删除降为行尾低饱和图标（与 Miuix 版一致）
+                                IconButton(onClick = { onDelete(profile.id) }) {
+                                    Icon(
+                                        Icons.Rounded.Delete,
+                                        contentDescription = stringResource(R.string.ai_model_delete),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(16.dp),
+                                    )
                                 }
                             }
                         }

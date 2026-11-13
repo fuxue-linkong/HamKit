@@ -141,19 +141,21 @@ fun SatelliteDetailMaterial(catalogNumber: Int, onBack: () -> Unit = {}) {
                 }
             }
 
-            // 多普勒频率
-            DetailCardMaterial {
-                val downlink = liveInfo?.dopplerDownlinkHz
-                val uplink = liveInfo?.dopplerUplinkHz
-                DetailRowMaterial(
-                    label = "下行频率",
-                    value = downlink?.let { formatFrequencyHz(it) } ?: "数据不可用"
-                )
-                Spacer(Modifier.height(6.dp))
-                DetailRowMaterial(
-                    label = "上行频率",
-                    value = uplink?.let { formatFrequencyHz(it) } ?: "数据不可用"
-                )
+            // 多普勒频率（E6 整改：无数据时整卡隐藏，与 Miuix 版一致）
+            if (liveInfo?.dopplerDownlinkHz != null || liveInfo?.dopplerUplinkHz != null) {
+                DetailCardMaterial {
+                    val downlink = liveInfo?.dopplerDownlinkHz
+                    val uplink = liveInfo?.dopplerUplinkHz
+                    downlink?.let {
+                        DetailRowMaterial(label = "下行频率", value = formatFrequencyHz(it))
+                    }
+                    if (downlink != null && uplink != null) {
+                        Spacer(Modifier.height(6.dp))
+                    }
+                    uplink?.let {
+                        DetailRowMaterial(label = "上行频率", value = formatFrequencyHz(it))
+                    }
+                }
             }
 
             // 转发器列表（多收发器：名称 + 频率 + 模式 + 状态）
@@ -226,7 +228,7 @@ fun SatelliteDetailMaterial(catalogNumber: Int, onBack: () -> Unit = {}) {
                 }
             }
 
-            // 操作按钮
+            // 操作按钮（B8 整改：主按钮 + 次级降级权重，与 Miuix 版一致）
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -248,7 +250,11 @@ fun SatelliteDetailMaterial(catalogNumber: Int, onBack: () -> Unit = {}) {
                     onClick = dropUnlessResumed {
                         navigator.push(Route.SatelliteMap(catalogNumber))
                     },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Map,
