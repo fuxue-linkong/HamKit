@@ -41,8 +41,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -124,6 +126,18 @@ fun SatelliteManagementMiuix() {
     val blurActive = backdrop != null
     val barColor = if (blurActive) Color.Transparent else colorScheme.surface
     val scrollBehavior = MiuixScrollBehavior()
+    // C2 整改：提醒切换后消费 ViewModel 的一次性反馈消息，用 Snackbar 显示
+    val snackbarHostState = remember { top.yukonga.miuix.kmp.basic.SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(Unit) {
+        snapshotFlow { mainViewModel.reminderFeedback.value }
+            .collect { feedback ->
+                if (feedback != null) {
+                    snackbarHostState.showSnackbar(feedback)
+                    mainViewModel.consumeReminderFeedback()
+                }
+            }
+    }
 
     Scaffold(
         topBar = {
@@ -147,6 +161,9 @@ fun SatelliteManagementMiuix() {
             }
         },
         popupHost = { },
+        snackbarHost = {
+            top.yukonga.miuix.kmp.basic.SnackbarHost(state = snackbarHostState)
+        },
         contentWindowInsets = WindowInsets.systemBars
             .add(WindowInsets.displayCutout)
             .only(WindowInsetsSides.Horizontal)
@@ -1066,12 +1083,13 @@ private fun Chip(text: String, bgColor: Color, contentColor: Color) {
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(8.dp))
+            // E1 整改：内边距 8×3dp→8×5dp、字号 11sp→12sp，提升可读性
             .background(bgColor)
-            .padding(horizontal = 8.dp, vertical = 3.dp)
+            .padding(horizontal = 8.dp, vertical = 5.dp)
     ) {
         Text(
             text = text,
-            fontSize = 11.sp,
+            fontSize = 12.sp,
             color = contentColor,
             fontWeight = FontWeight.Medium
         )

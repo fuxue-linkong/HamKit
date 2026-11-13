@@ -44,6 +44,7 @@ import com.example.hamkit.data.ai.AiProtocol
 import com.example.hamkit.ui.LocalUiMode
 import com.example.hamkit.ui.UiMode
 import com.example.hamkit.ui.appViewModel
+import com.example.hamkit.ui.component.dialog.rememberConfirmDialog
 import com.example.hamkit.ui.viewmodel.AiSettingsViewModel
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
@@ -98,6 +99,10 @@ fun AiSettingsScreenMiuix(onBack: () -> Unit = {}) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var keyInput by remember { mutableStateOf("") }
     var showModelPicker by remember { mutableStateOf(false) }
+    // C4 整改：清除历史是破坏性操作，必须二次确认
+    val clearHistoryConfirm = rememberConfirmDialog(
+        onConfirm = { viewModel.clearHistory() },
+    )
 
     Scaffold(
         topBar = {
@@ -192,10 +197,22 @@ fun AiSettingsScreenMiuix(onBack: () -> Unit = {}) {
                         checked = state.config.saveHistory,
                         onCheckedChange = viewModel::setSaveHistory,
                     )
+                    // C4：字符串在组合期解析后传给 onClick，回调内不能调用 @Composable
+                    val clearTitle = stringResource(R.string.ai_settings_clear_history)
+                    val clearDesc = stringResource(R.string.ai_settings_clear_history_hint)
+                    val clearLabel = stringResource(R.string.ai_settings_clear)
+                    val cancelLabel = stringResource(R.string.cancel)
                     ArrowPreference(
-                        title = stringResource(R.string.ai_settings_clear_history),
-                        summary = stringResource(R.string.ai_settings_clear_history_hint),
-                        onClick = viewModel::clearHistory,
+                        title = clearTitle,
+                        summary = clearDesc,
+                        onClick = {
+                            clearHistoryConfirm.showConfirm(
+                                title = clearTitle,
+                                content = clearDesc,
+                                confirm = clearLabel,
+                                dismiss = cancelLabel,
+                            )
+                        },
                     )
                 }
             }

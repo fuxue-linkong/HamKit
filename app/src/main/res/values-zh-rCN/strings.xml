@@ -105,6 +105,7 @@
     <string name="ai_history_title">对话历史</string>
     <string name="ai_history_empty">还没有历史会话</string>
     <string name="ai_export">导出</string>
+    <string name="ai_export_done">会话已导出</string>
     <string name="ai_delete">删除</string>
     <string name="ai_close">关闭</string>
     <string name="ai_allow">允许</string>

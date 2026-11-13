@@ -45,6 +45,7 @@ import com.example.hamkit.data.ai.AiPreset
 import com.example.hamkit.data.ai.tool.AiToolRegistry
 import com.example.hamkit.data.ai.AiProtocol
 import com.example.hamkit.ui.appViewModel
+import com.example.hamkit.ui.component.dialog.rememberConfirmDialog
 import com.example.hamkit.ui.component.material.SwitchItem
 import com.example.hamkit.ui.viewmodel.AiSettingsUiState
 import com.example.hamkit.ui.viewmodel.AiSettingsViewModel
@@ -76,6 +77,10 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var keyInput by remember { mutableStateOf("") }
     var showModelPicker by remember { mutableStateOf(false) }
+    // C4 整改：清除历史是破坏性操作，必须二次确认
+    val clearHistoryConfirm = rememberConfirmDialog(
+        onConfirm = { viewModel.clearHistory() },
+    )
 
     Scaffold(
         topBar = {
@@ -163,13 +168,25 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
                         checked = state.config.saveHistory,
                         onCheckedChange = viewModel::setSaveHistory,
                     )
+                    // C4：字符串在组合期解析后传给 onClick，回调内不能调用 @Composable
+                    val clearTitle = stringResource(R.string.ai_settings_clear_history)
+                    val clearDesc = stringResource(R.string.ai_settings_clear_history_hint)
+                    val clearLabel = stringResource(R.string.ai_settings_clear)
+                    val cancelLabel = stringResource(R.string.cancel)
                     Row(Modifier.padding(horizontal = 14.dp), Arrangement.SpaceBetween) {
                         Text(
-                            stringResource(R.string.ai_settings_clear_history),
+                            clearTitle,
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.weight(1f),
                         )
-                        TextButton(onClick = viewModel::clearHistory) { Text(stringResource(R.string.ai_settings_clear)) }
+                        TextButton(onClick = {
+                            clearHistoryConfirm.showConfirm(
+                                title = clearTitle,
+                                content = clearDesc,
+                                confirm = clearLabel,
+                                dismiss = cancelLabel,
+                            )
+                        }) { Text(clearLabel) }
                     }
                 }
             }
