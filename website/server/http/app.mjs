@@ -84,10 +84,12 @@ export function securityHeaders(config, urlPath = '/') {
     headers['strict-transport-security'] = 'max-age=31536000; includeSubDomains';
   }
   const isAdmin = urlPath.startsWith('/admin') || urlPath.startsWith('/account');
+  // M-5（2026-11 安全审计）：全部页面脚本均为外联文件（/assets/*.js），
+  // 无内联 <script> 与内联事件处理器，script-src 无需 'unsafe-inline'；
+  // 移除后任何注入点产生的内联 JS 都会被 CSP 拦截，恢复 CSP 的 XSS 兜底能力。
   const csp = [
     "default-src 'self'",
-    // 现有站点脚本是内联 IIFE，故允许内联脚本；后台页面暂无内联脚本需求
-    "script-src 'self' 'unsafe-inline'",
+    "script-src 'self'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: https:",
     "font-src 'self' data:",

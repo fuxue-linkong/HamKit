@@ -94,7 +94,10 @@ private fun streamRequest(
     parser: StreamParser,
     allowSelfSigned: Boolean = false,
 ): Flow<AiEvent> = flow {
-    val call = AiHttp.streaming(allowSelfSigned).newCall(builder.build())
+    val request = builder.build()
+    // trustAll 客户端仅限私有地址：把请求 URL 交给 AiHttp 做强制校验
+    // （OkHttp 5 的 Request.url 已是 HttpUrl，无需再解析）
+    val call = AiHttp.streaming(allowSelfSigned, request.url).newCall(request)
     try {
         val response = call.execute()
         response.use { resp ->
@@ -130,7 +133,9 @@ private suspend fun probeRequest(
 ): AiProbeResult = withContext(Dispatchers.IO) {
     val started = System.currentTimeMillis()
     val call = try {
-        AiHttp.blocking.newCall(build())
+        val request = build()
+        // trustAll 客户端仅限私有地址：把请求 URL 交给 AiHttp 做强制校验
+        AiHttp.blocking(allowSelfSigned, request.url).newCall(request)
     } catch (t: Throwable) {
         return@withContext AiProbeResult(false, 0, AiError.fromThrowable(t))
     }
@@ -414,7 +419,9 @@ object OpenAiChatClient : AiProtocolClient {
                 )
                 .build()
             try {
-                AiHttp.blocking.newCall(request).execute().use { resp ->
+                // probeTools 沿用 cfg 的自签设置；URL 同样交 AiHttp 强制私网校验
+                AiHttp.blocking(cfg.allowSelfSigned, request.url)
+                    .newCall(request).execute().use { resp ->
                     when {
                         resp.isSuccessful -> true
                         resp.code == 400 || resp.code == 422 -> false
