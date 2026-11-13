@@ -108,7 +108,10 @@ fun SatelliteRadarMaterial(catalogNumber: Int, onBack: () -> Unit = {}) {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                // B4 整改：限宽 460dp 与雷达图/数据卡同轴（与 Miuix 版一致）
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 460.dp),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(

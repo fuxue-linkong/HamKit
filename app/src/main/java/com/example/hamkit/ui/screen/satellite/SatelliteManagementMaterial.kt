@@ -400,65 +400,46 @@ private fun SatelliteOverviewCardMaterial(
                 placeholder = { Text(stringResource(R.string.filter_search_hint)) }
             )
 
-            // 描述 + 统计
-            Text(
-                text = stringResource(R.string.satellite_management_desc),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            // B6 整改：删除描述文字；统计与筛选入口合并为一行（与 Miuix 版一致）
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                ManagementStatMaterial(
-                    label = stringResource(R.string.satellite_count, totalCount),
-                    value = totalCount.toString(),
-                    modifier = Modifier.weight(1f)
-                )
-                ManagementStatMaterial(
-                    label = stringResource(R.string.satellite_categorized_count),
-                    value = categorizedCount.toString(),
-                    modifier = Modifier.weight(1f)
-                )
-                ManagementStatMaterial(
-                    label = stringResource(R.string.satellite_category_count),
-                    value = categoryCount.toString(),
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            // 筛选 / 分类入口
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Start,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // 筛选按钮：始终固定在左侧
+                InlineStatMaterial(
+                    label = stringResource(R.string.satellite_count, totalCount),
+                    value = totalCount.toString()
+                )
+                InlineStatMaterial(
+                    label = stringResource(R.string.satellite_categorized_count),
+                    value = categorizedCount.toString()
+                )
+                InlineStatMaterial(
+                    label = stringResource(R.string.satellite_category_count),
+                    value = categoryCount.toString()
+                )
+                Spacer(Modifier.weight(1f))
                 SatelliteFilterButtonMaterial(
                     filter = filter,
                     onClick = onShowFilterDialog
                 )
-
-                // 分类入口：紧邻筛选按钮，视觉语言一致
                 SatelliteCategoryButtonMaterial(
                     active = filter.categoryIds.isNotEmpty(),
                     onClick = onShowCategoryManager
                 )
+            }
 
-                // 计数文字：激活时从按钮右侧淡入，不改变按钮位置
-                androidx.compose.animation.AnimatedVisibility(
-                    modifier = Modifier.weight(1f, fill = false),
-                    visible = filter.isActive && totalCount > 0,
-                    enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandHorizontally(),
-                    exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkHorizontally()
-                ) {
-                    Text(
-                        text = stringResource(R.string.satellite_count_filtered, filteredCount, totalCount),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 12.dp)
-                    )
-                }
+            // 筛选激活计数：保留在操作行下方
+            androidx.compose.animation.AnimatedVisibility(
+                visible = filter.isActive && totalCount > 0,
+                enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically(),
+                exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkVertically()
+            ) {
+                Text(
+                    text = stringResource(R.string.satellite_count_filtered, filteredCount, totalCount),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
             // 数据源刷新操作
@@ -496,6 +477,25 @@ private fun SatelliteOverviewCardMaterial(
                 }
             )
         }
+    }
+}
+
+/** B6：行内统计（紧凑变体），供概览卡单行布局使用。 */
+@Composable
+private fun InlineStatMaterial(label: String, value: String) {
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.Bottom) {
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 2.dp)
+        )
     }
 }
 
@@ -743,12 +743,20 @@ private fun SatelliteItemMaterial(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     if (pass != null) {
-                        Text(
-                            text = "${pass.maxElevation.toInt()}°",
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            color = cardContentColor
-                        )
+                        // A6 整改：仰角从裸文本改为 chip 徽章（与 Miuix 版一致）
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(MaterialTheme.colorScheme.primaryContainer)
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = "仰角 ${pass.maxElevation.toInt()}°",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
                     }
                     IconButton(onClick = onOpenCategoryPicker, modifier = Modifier.size(48.dp)) {
                         Icon(

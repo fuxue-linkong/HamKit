@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.runtime.Composable
@@ -131,11 +132,12 @@ fun SatelliteMapMiuix(catalogNumber: Int, onBack: () -> Unit = {}) {
                     .weight(1f)
             )
 
-            // 底部实时信息面板
+            // 底部实时信息面板（B5 整改：顶部 16dp 圆角，面板感更明确）
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp, vertical = 8.dp),
+                cornerRadius = 16.dp,
                 colors = CardDefaults.defaultColors(
                     color = colorScheme.surface.copy(alpha = 0.9f)
                 )
@@ -146,6 +148,13 @@ fun SatelliteMapMiuix(catalogNumber: Int, onBack: () -> Unit = {}) {
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
+                    // B5 整改：倒计时（关键信息）提为第一行主视觉，指标行放第二行
+                    Text(
+                        text = formatPassCountdown(session.aosTime, session.losTime, nowMillis),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colorScheme.primary
+                    )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
@@ -165,27 +174,6 @@ fun SatelliteMapMiuix(catalogNumber: Int, onBack: () -> Unit = {}) {
                         MapInfoTextMiuix(
                             label = "高度",
                             value = liveInfo?.altitudeKm?.let { "%.0f km".format(it) } ?: "--"
-                        )
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        // D7 整改：倒计时定级为次级信息（与详情页 DetailRow 同规格：
-                        // label 13sp + 值 14sp SemiBold），在境时用 primary 色标记状态
-                        val inPass = nowMillis >= (session.aosTime?.toEpochMilli() ?: Long.MAX_VALUE) &&
-                            nowMillis < (session.losTime?.toEpochMilli() ?: Long.MIN_VALUE)
-                        Text(
-                            text = "倒计时",
-                            fontSize = 13.sp,
-                            color = colorScheme.onSurfaceVariantSummary
-                        )
-                        Text(
-                            text = formatPassCountdown(session.aosTime, session.losTime, nowMillis),
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (inPass) colorScheme.primary else colorScheme.onSurface
                         )
                     }
                 }

@@ -36,6 +36,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -250,22 +251,11 @@ private fun MiuixFilterSelectableRow(label: String, selected: Boolean, onClick: 
             fontSize = 14.sp,
             color = colorScheme.onSurface
         )
-        Box(
-            modifier = Modifier
-                .size(20.dp)
-                .clip(RoundedCornerShape(4.dp))
-                .background(if (selected) colorScheme.primary else colorScheme.onSurfaceVariantSummary.copy(alpha = 0.3f)),
-            contentAlignment = Alignment.Center
-        ) {
-            if (selected) {
-                MiuixText(
-                    text = "✓",
-                    fontSize = 13.sp,
-                    color = colorScheme.onPrimary,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
+        // A11 整改：自绘 ✓ 方框换 miuix Checkbox（库组件自带语义与主题适配）
+        top.yukonga.miuix.kmp.basic.Checkbox(
+            state = if (selected) ToggleableState.On else ToggleableState.Off,
+            onClick = null, // 语义上移到行级 toggleable
+        )
     }
 }
 
@@ -286,22 +276,11 @@ private fun MiuixFilterSwitchRow(label: String, checked: Boolean, onClick: () ->
             fontSize = 14.sp,
             color = colorScheme.onSurface
         )
-        Box(
-            modifier = Modifier
-                .size(width = 40.dp, height = 22.dp)
-                .clip(RoundedCornerShape(11.dp))
-                .background(if (checked) colorScheme.primary else colorScheme.onSurfaceVariantSummary.copy(alpha = 0.3f)),
-            contentAlignment = Alignment.CenterStart
-        ) {
-            Box(
-                modifier = Modifier
-                    .padding(start = 2.dp)
-                    .size(18.dp)
-                    .clip(CircleShape)
-                    .background(Color.White)
-                    .then(if (checked) Modifier.offset(x = 18.dp) else Modifier)
-            )
-        }
+        // A10 整改：自绘 Box 开关（40×22dp、无动画、纯白滑块）换 miuix 库 Switch
+        top.yukonga.miuix.kmp.basic.Switch(
+            checked = checked,
+            onCheckedChange = null, // 语义上移到行级 toggleable
+        )
     }
 }
 
