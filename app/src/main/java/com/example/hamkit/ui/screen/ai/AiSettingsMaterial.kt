@@ -14,9 +14,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -36,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -47,6 +51,7 @@ import com.example.hamkit.data.ai.AiProtocol
 import com.example.hamkit.ui.appViewModel
 import com.example.hamkit.ui.component.dialog.rememberConfirmDialog
 import com.example.hamkit.ui.component.material.SwitchItem
+import com.example.hamkit.ui.theme.SafeColors
 import com.example.hamkit.ui.viewmodel.AiSettingsUiState
 import com.example.hamkit.ui.viewmodel.AiSettingsViewModel
 import androidx.compose.foundation.clickable
@@ -122,26 +127,34 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
                     onDismiss = { showModelPicker = false },
                 )
             }
-            ModelConfigCardMaterial(
+            // B2 整改：原单卡拆为三卡——服务商与连接 / 模型列表 / API Key
+            ConnectionCardMaterial(
                 state = state,
-                keyInput = keyInput,
-                onKeyInputChange = { keyInput = it },
                 onNameChange = viewModel::setProfileName,
                 onPreset = viewModel::selectPreset,
                 onProtocol = viewModel::selectProtocol,
                 onBaseUrl = viewModel::setBaseUrl,
+                onSave = { viewModel.save() },
+                onCancel = viewModel::resetToSaved,
+                onAddProvider = viewModel::addProfile,
+                onTestConnection = viewModel::testConnection,
+            )
+            ModelEntriesCardMaterial(
+                state = state,
                 onModelChange = viewModel::updateModel,
                 onModelDelete = viewModel::deleteModel,
                 onModelAdd = viewModel::addModel,
                 onModelSelect = viewModel::selectModel,
                 onFetchModels = viewModel::fetchModels,
+            )
+            ApiKeyCardMaterial(
+                state = state,
+                keyInput = keyInput,
+                onKeyInputChange = { keyInput = it },
                 onSaveKey = {
                     viewModel.saveKey(keyInput)
                     keyInput = ""
                 },
-                onSave = { viewModel.save() },
-                onCancel = viewModel::resetToSaved,
-                onAddProvider = viewModel::addProfile,
             )
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -245,61 +258,14 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
                 }
             }
 
-            Row {
-                Button(
-                    onClick = viewModel::testConnection,
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !state.testing,
-                ) {
-                    Text(if (state.testing) "测试中…" else stringResource(R.string.ai_settings_test))
-                }
-            }
-
             McpCardMaterial(
                 state = state,
                 onToggle = viewModel::setMcpEnabled,
                 onPort = viewModel::setMcpPort,
                 onResetToken = viewModel::resetMcpToken,
             )
-            ResultTextMaterial(state)
             Spacer(Modifier.height(24.dp))
         }
-    }
-}
-
-@Composable
-private fun ResultTextMaterial(state: AiSettingsUiState) {
-    state.notice?.let { notice ->
-        Text(
-            notice,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.primary,
-        )
-    }
-    state.error?.let { error ->
-        Text(
-            error,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.error,
-        )
-    }
-    state.probe?.toolsSupported?.let { supported ->
-        Text(
-            if (supported) stringResource(R.string.ai_settings_tool_ok) else stringResource(R.string.ai_settings_tool_unsupported),
-            style = MaterialTheme.typography.bodySmall,
-            color = if (supported) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-    state.probe?.let { probe ->
-        Text(
-            if (probe.ok) {
-                stringResource(R.string.ai_settings_probe_ok, probe.latencyMs.toInt())
-            } else {
-                stringResource(R.string.ai_settings_probe_fail, probe.error?.message ?: "?")
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = if (probe.ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-        )
     }
 }
 
@@ -411,24 +377,21 @@ private fun ActiveModelCardMaterial(state: AiSettingsUiState, onSwitch: () -> Un
     }
 }
 
+/**
+ * B2 整改：原 ModelConfigCardMaterial 拆卡之一——「服务商与连接」，
+ * 含 B3 的「测试连接」按钮 + 就近结果反馈。
+ */
 @Composable
-private fun ModelConfigCardMaterial(
+private fun ConnectionCardMaterial(
     state: AiSettingsUiState,
-    keyInput: String,
-    onKeyInputChange: (String) -> Unit,
     onNameChange: (String) -> Unit,
     onPreset: (AiPreset) -> Unit,
     onProtocol: (AiProtocol) -> Unit,
     onBaseUrl: (String) -> Unit,
-    onModelChange: (String, String, String) -> Unit,
-    onModelDelete: (String) -> Unit,
-    onModelAdd: () -> Unit,
-    onModelSelect: (String) -> Unit,
-    onFetchModels: () -> Unit,
-    onSaveKey: () -> Unit,
     onSave: () -> Unit,
     onCancel: () -> Unit,
     onAddProvider: () -> Unit,
+    onTestConnection: () -> Unit,
 ) {
     var customApi by remember { mutableStateOf(false) }
     val activeName = state.profiles.firstOrNull { it.id == state.activeProfileId }?.name.orEmpty()
@@ -439,7 +402,7 @@ private fun ModelConfigCardMaterial(
     ) {
         Column(Modifier.padding(16.dp)) {
             Text(
-                stringResource(R.string.ai_models_title),
+                stringResource(R.string.ai_settings_connection_section),
                 style = MaterialTheme.typography.titleSmall,
             )
             Spacer(Modifier.height(10.dp))
@@ -534,7 +497,163 @@ private fun ModelConfigCardMaterial(
                 singleLine = true,
             )
 
+            Spacer(Modifier.height(14.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                TextButton(
+                    onClick = onCancel,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp),
+                ) {
+                    Text(stringResource(R.string.ai_model_cancel))
+                }
+                Button(
+                    onClick = onSave,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp),
+                    enabled = !state.saving,
+                ) {
+                    Text(
+                        if (state.saving) {
+                            stringResource(R.string.ai_model_saving)
+                        } else {
+                            stringResource(R.string.ai_model_save)
+                        },
+                    )
+                }
+            }
+
             Spacer(Modifier.height(12.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .dashedBorderMaterial(MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+                    .clickable(onClick = onAddProvider)
+                    .padding(vertical = 14.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    stringResource(R.string.ai_model_provider_add),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+
+            // B3 整改：测试连接按钮 + 结果就近显示（状态色容器条）
+            Spacer(Modifier.height(12.dp))
+            DividerMaterial()
+            Spacer(Modifier.height(10.dp))
+            Button(
+                onClick = onTestConnection,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !state.testing,
+            ) {
+                if (state.testing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(
+                    if (state.testing) {
+                        stringResource(R.string.ai_settings_testing)
+                    } else {
+                        stringResource(R.string.ai_settings_test)
+                    },
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            state.error?.let { error ->
+                ProbeNoticeMaterial(
+                    text = error,
+                    container = SafeColors.statusColors(SafeColors.StatusTone.ERROR).container,
+                )
+            }
+            state.notice?.let { notice ->
+                ProbeNoticeMaterial(
+                    text = notice,
+                    container = SafeColors.statusColors(SafeColors.StatusTone.SUCCESS).container,
+                )
+            }
+            state.probe?.let { probe ->
+                ProbeNoticeMaterial(
+                    text = if (probe.ok) {
+                        stringResource(R.string.ai_settings_probe_ok, probe.latencyMs.toInt())
+                    } else {
+                        stringResource(R.string.ai_settings_probe_fail, probe.error?.message ?: "?")
+                    },
+                    container = if (probe.ok) {
+                        SafeColors.statusColors(SafeColors.StatusTone.SUCCESS).container
+                    } else {
+                        SafeColors.statusColors(SafeColors.StatusTone.ERROR).container
+                    },
+                )
+                probe.toolsSupported?.let { supported ->
+                    ProbeNoticeMaterial(
+                        text = if (supported) {
+                            stringResource(R.string.ai_settings_tool_ok)
+                        } else {
+                            stringResource(R.string.ai_settings_tool_unsupported)
+                        },
+                        container = if (supported) {
+                            SafeColors.statusColors(SafeColors.StatusTone.SUCCESS).container
+                        } else {
+                            SafeColors.statusColors(SafeColors.StatusTone.INFO).container
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** B3：探针/反馈信息条（Material 版）。 */
+@Composable
+private fun ProbeNoticeMaterial(text: String, container: Color) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(container)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+    )
+    Spacer(Modifier.height(6.dp))
+}
+
+/**
+ * B2 拆卡之二——「模型列表」（Material 版）。
+ */
+@Composable
+private fun ModelEntriesCardMaterial(
+    state: AiSettingsUiState,
+    onModelChange: (String, String, String) -> Unit,
+    onModelDelete: (String) -> Unit,
+    onModelAdd: () -> Unit,
+    onModelSelect: (String) -> Unit,
+    onFetchModels: () -> Unit,
+) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                stringResource(R.string.ai_models_title),
+                style = MaterialTheme.typography.titleSmall,
+            )
+            Spacer(Modifier.height(10.dp))
+
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     stringResource(R.string.ai_model_catalog),
@@ -651,7 +770,31 @@ private fun ModelConfigCardMaterial(
             TextButton(onClick = onModelAdd) {
                 Text(stringResource(R.string.ai_model_new))
             }
-            DividerMaterial()
+        }
+    }
+}
+
+/**
+ * B2 拆卡之三——「API Key」（Material 版），C5：密码变换 + 可见性切换。
+ */
+@Composable
+private fun ApiKeyCardMaterial(
+    state: AiSettingsUiState,
+    keyInput: String,
+    onKeyInputChange: (String) -> Unit,
+    onSaveKey: () -> Unit,
+) {
+    var showKey by remember { mutableStateOf(false) }
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                stringResource(R.string.ai_settings_key_section),
+                style = MaterialTheme.typography.titleSmall,
+            )
             Spacer(Modifier.height(6.dp))
             Text(
                 stringResource(R.string.ai_settings_key_hint),
@@ -668,63 +811,30 @@ private fun ModelConfigCardMaterial(
                     MaterialTheme.colorScheme.error
                 },
             )
+            Spacer(Modifier.height(8.dp))
             OutlinedTextField(
                 value = keyInput,
                 onValueChange = onKeyInputChange,
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("API Key") },
                 singleLine = true,
+                visualTransformation = if (showKey) {
+                    VisualTransformation.None
+                } else {
+                    PasswordVisualTransformation()
+                },
+                trailingIcon = {
+                    IconButton(onClick = { showKey = !showKey }) {
+                        Icon(
+                            imageVector = if (showKey) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                            contentDescription = null,
+                        )
+                    }
+                },
             )
             Spacer(Modifier.height(8.dp))
-            TextButton(onClick = onSaveKey, enabled = keyInput.isNotBlank()) {
+            Button(onClick = onSaveKey, enabled = keyInput.isNotBlank()) {
                 Text(stringResource(R.string.ai_settings_save_key))
-            }
-
-            Spacer(Modifier.height(14.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                TextButton(
-                    onClick = onCancel,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(44.dp),
-                ) {
-                    Text(stringResource(R.string.ai_model_cancel))
-                }
-                Button(
-                    onClick = onSave,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(44.dp),
-                    enabled = !state.saving,
-                ) {
-                    Text(
-                        if (state.saving) {
-                            stringResource(R.string.ai_model_saving)
-                        } else {
-                            stringResource(R.string.ai_model_save)
-                        },
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(12.dp))
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .dashedBorderMaterial(MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
-                    .clickable(onClick = onAddProvider)
-                    .padding(vertical = 14.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    stringResource(R.string.ai_model_provider_add),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                )
             }
         }
     }

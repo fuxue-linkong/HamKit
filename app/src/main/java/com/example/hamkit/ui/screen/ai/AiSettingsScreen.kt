@@ -23,6 +23,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,6 +48,7 @@ import com.example.hamkit.ui.UiMode
 import com.example.hamkit.ui.appViewModel
 import com.example.hamkit.ui.component.dialog.rememberConfirmDialog
 import com.example.hamkit.ui.viewmodel.AiSettingsViewModel
+import com.example.hamkit.ui.theme.SafeColors
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
@@ -65,6 +68,8 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.layout.Box
 import com.example.hamkit.ui.viewmodel.AiSettingsUiState
@@ -153,26 +158,34 @@ fun AiSettingsScreenMiuix(onBack: () -> Unit = {}) {
                     onDismiss = { showModelPicker = false },
                 )
             }
-            ModelConfigCardMiuix(
+            // B2 整改：原单卡近 10 个逻辑分区拆为三卡——服务商与连接 / 模型列表 / API Key
+            ConnectionCardMiuix(
                 state = state,
-                keyInput = keyInput,
-                onKeyInputChange = { keyInput = it },
                 onNameChange = viewModel::setProfileName,
                 onPreset = viewModel::selectPreset,
                 onProtocol = viewModel::selectProtocol,
                 onBaseUrl = viewModel::setBaseUrl,
+                onSave = { viewModel.save() },
+                onCancel = viewModel::resetToSaved,
+                onAddProvider = viewModel::addProfile,
+                onTestConnection = viewModel::testConnection,
+            )
+            ModelEntriesCardMiuix(
+                state = state,
                 onModelChange = viewModel::updateModel,
                 onModelDelete = viewModel::deleteModel,
                 onModelAdd = viewModel::addModel,
                 onModelSelect = viewModel::selectModel,
                 onFetchModels = viewModel::fetchModels,
+            )
+            ApiKeyCardMiuix(
+                state = state,
+                keyInput = keyInput,
+                onKeyInputChange = { keyInput = it },
                 onSaveKey = {
                     viewModel.saveKey(keyInput)
                     keyInput = ""
                 },
-                onSave = { viewModel.save() },
-                onCancel = viewModel::resetToSaved,
-                onAddProvider = viewModel::addProfile,
             )
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column {
@@ -278,26 +291,12 @@ fun AiSettingsScreenMiuix(onBack: () -> Unit = {}) {
                 }
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Button(
-                    onClick = viewModel::testConnection,
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !state.testing,
-                ) {
-                    Text(if (state.testing) "测试中…" else stringResource(R.string.ai_settings_test))
-                }
-            }
-
             McpCardMiuix(
                 state = state,
                 onToggle = viewModel::setMcpEnabled,
                 onPort = viewModel::setMcpPort,
                 onResetToken = viewModel::resetMcpToken,
             )
-            ProbeResultMiuix(state)
             Spacer(Modifier.height(24.dp))
         }
     }
@@ -400,35 +399,6 @@ private fun ChipMiuix(text: String, selected: Boolean, onClick: () -> Unit) {
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp),
     )
-}
-
-@Composable
-private fun ProbeResultMiuix(state: com.example.hamkit.ui.viewmodel.AiSettingsUiState) {
-    val probe = state.probe
-    state.notice?.let { notice ->
-        Text(notice, fontSize = 11.sp, color = colorScheme.primary)
-    }
-    state.error?.let { error ->
-        Text(error, fontSize = 11.sp, color = colorScheme.error)
-    }
-    probe?.toolsSupported?.let { supported ->
-        Text(
-            if (supported) stringResource(R.string.ai_settings_tool_ok) else stringResource(R.string.ai_settings_tool_unsupported),
-            fontSize = 11.sp,
-            color = if (supported) colorScheme.primary else colorScheme.onSurfaceVariantSummary,
-        )
-    }
-    if (probe != null) {
-        Text(
-            if (probe.ok) {
-                stringResource(R.string.ai_settings_probe_ok, probe.latencyMs.toInt())
-            } else {
-                stringResource(R.string.ai_settings_probe_fail, probe.error?.message ?: "?")
-            },
-            fontSize = 11.sp,
-            color = if (probe.ok) colorScheme.primary else colorScheme.error,
-        )
-    }
 }
 
 @Composable
@@ -537,31 +507,29 @@ private fun ActiveModelCardMiuix(state: AiSettingsUiState, onSwitch: () -> Unit)
     }
 }
 
+/**
+ * B2 整改：原 ModelConfigCardMiuix 拆卡之一——「服务商与连接」。
+ * 预设/协议 tab、名称、Base URL、保存/取消、新增服务商，
+ * 以及 B3 整改的「测试连接」按钮 + 就近结果反馈。
+ */
 @Composable
-private fun ModelConfigCardMiuix(
+private fun ConnectionCardMiuix(
     state: AiSettingsUiState,
-    keyInput: String,
-    onKeyInputChange: (String) -> Unit,
     onNameChange: (String) -> Unit,
     onPreset: (AiPreset) -> Unit,
     onProtocol: (AiProtocol) -> Unit,
     onBaseUrl: (String) -> Unit,
-    onModelChange: (String, String, String) -> Unit,
-    onModelDelete: (String) -> Unit,
-    onModelAdd: () -> Unit,
-    onModelSelect: (String) -> Unit,
-    onFetchModels: () -> Unit,
-    onSaveKey: () -> Unit,
     onSave: () -> Unit,
     onCancel: () -> Unit,
     onAddProvider: () -> Unit,
+    onTestConnection: () -> Unit,
 ) {
     var customApi by remember { mutableStateOf(false) }
     val activeName = state.profiles.firstOrNull { it.id == state.activeProfileId }?.name.orEmpty()
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
             Text(
-                stringResource(R.string.ai_models_title),
+                stringResource(R.string.ai_settings_connection_section),
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -659,7 +627,142 @@ private fun ModelConfigCardMiuix(
                 maxLines = 1,
             )
 
+            Spacer(Modifier.height(14.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                TextButton(
+                    text = stringResource(R.string.ai_model_cancel),
+                    onClick = onCancel,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp),
+                )
+                Button(
+                    onClick = onSave,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp),
+                    enabled = !state.saving,
+                    colors = ButtonDefaults.buttonColorsPrimary(),
+                ) {
+                    Text(
+                        if (state.saving) {
+                            stringResource(R.string.ai_model_saving)
+                        } else {
+                            stringResource(R.string.ai_model_save)
+                        },
+                    )
+                }
+            }
+
             Spacer(Modifier.height(12.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .dashedBorder(colorScheme.onSurface.copy(alpha = 0.22f))
+                    .clickable(onClick = onAddProvider)
+                    .padding(vertical = 14.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    stringResource(R.string.ai_model_provider_add),
+                    fontSize = 12.sp,
+                    color = colorScheme.primary,
+                )
+            }
+
+            // B3 整改：测试连接按钮 + 结果就近显示（原先结果堆在页面底部，反馈不可见）
+            Spacer(Modifier.height(12.dp))
+            DividerMiuix()
+            Spacer(Modifier.height(10.dp))
+            Button(
+                onClick = onTestConnection,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !state.testing,
+                colors = ButtonDefaults.buttonColorsPrimary(),
+            ) {
+                Text(if (state.testing) stringResource(R.string.ai_settings_testing) else stringResource(R.string.ai_settings_test))
+            }
+            Spacer(Modifier.height(8.dp))
+            // 用状态色容器增强可读性（B3 建议：success/error container 背景条）
+            state.error?.let { error ->
+                ProbeNoticeMiuix(text = error, container = SafeColors.statusColors(SafeColors.StatusTone.ERROR).container)
+            }
+            state.notice?.let { notice ->
+                ProbeNoticeMiuix(text = notice, container = SafeColors.statusColors(SafeColors.StatusTone.SUCCESS).container)
+            }
+            state.probe?.let { probe ->
+                ProbeNoticeMiuix(
+                    text = if (probe.ok) {
+                        stringResource(R.string.ai_settings_probe_ok, probe.latencyMs.toInt())
+                    } else {
+                        stringResource(R.string.ai_settings_probe_fail, probe.error?.message ?: "?")
+                    },
+                    container = if (probe.ok) {
+                        SafeColors.statusColors(SafeColors.StatusTone.SUCCESS).container
+                    } else {
+                        SafeColors.statusColors(SafeColors.StatusTone.ERROR).container
+                    },
+                )
+                probe.toolsSupported?.let { supported ->
+                    ProbeNoticeMiuix(
+                        text = if (supported) {
+                            stringResource(R.string.ai_settings_tool_ok)
+                        } else {
+                            stringResource(R.string.ai_settings_tool_unsupported)
+                        },
+                        container = if (supported) {
+                            SafeColors.statusColors(SafeColors.StatusTone.SUCCESS).container
+                        } else {
+                            SafeColors.statusColors(SafeColors.StatusTone.INFO).container
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** B3：探针/反馈信息条，用状态色容器包裹（替代裸文本堆在页尾）。 */
+@Composable
+private fun ProbeNoticeMiuix(text: String, container: Color) {
+    Text(
+        text = text,
+        fontSize = 11.sp,
+        color = colorScheme.onSurface,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(container)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+    )
+    Spacer(Modifier.height(6.dp))
+}
+
+/**
+ * B2 拆卡之二——「模型列表」：模型目录获取 + 模型条目编辑。
+ */
+@Composable
+private fun ModelEntriesCardMiuix(
+    state: AiSettingsUiState,
+    onModelChange: (String, String, String) -> Unit,
+    onModelDelete: (String) -> Unit,
+    onModelAdd: () -> Unit,
+    onModelSelect: (String) -> Unit,
+    onFetchModels: () -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                stringResource(R.string.ai_models_title),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.height(10.dp))
+
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     stringResource(R.string.ai_model_catalog),
@@ -775,7 +878,29 @@ private fun ModelConfigCardMiuix(
                 text = stringResource(R.string.ai_model_new),
                 onClick = onModelAdd,
             )
-            DividerMiuix()
+        }
+    }
+}
+
+/**
+ * B2 拆卡之三——「API Key」：Key 提示 + 已存掩码 + 密码输入（C5 整改）。
+ */
+@Composable
+private fun ApiKeyCardMiuix(
+    state: AiSettingsUiState,
+    keyInput: String,
+    onKeyInputChange: (String) -> Unit,
+    onSaveKey: () -> Unit,
+) {
+    // C5 整改：Key 输入框加密码变换 + 可见性切换
+    var showKey by remember { mutableStateOf(false) }
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                stringResource(R.string.ai_settings_key_section),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
             Spacer(Modifier.height(6.dp))
             Text(
                 stringResource(R.string.ai_settings_key_hint),
@@ -783,76 +908,40 @@ private fun ModelConfigCardMiuix(
                 color = colorScheme.onSurfaceVariantSummary,
             )
             Spacer(Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    state.keyMasked?.let { "已保存：$it" } ?: stringResource(R.string.ai_settings_not_saved),
-                    fontSize = 11.sp,
-                    color = if (state.hasKey) colorScheme.onSurfaceVariantSummary else colorScheme.error,
-                    modifier = Modifier.weight(1f),
-                )
-            }
+            Text(
+                state.keyMasked?.let { "已保存：$it" } ?: stringResource(R.string.ai_settings_not_saved),
+                fontSize = 11.sp,
+                color = if (state.hasKey) colorScheme.onSurfaceVariantSummary else colorScheme.error,
+            )
+            Spacer(Modifier.height(8.dp))
             TextField(
                 value = keyInput,
                 onValueChange = onKeyInputChange,
                 modifier = Modifier.fillMaxWidth(),
                 maxLines = 1,
+                visualTransformation = if (showKey) {
+                    VisualTransformation.None
+                } else {
+                    PasswordVisualTransformation()
+                },
+                trailingIcon = {
+                    IconButton(onClick = { showKey = !showKey }) {
+                        Icon(
+                            imageVector = if (showKey) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                            contentDescription = null,
+                            tint = colorScheme.onSurfaceVariantSummary,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                },
             )
             Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(
-                    onClick = onSaveKey,
-                    enabled = keyInput.isNotBlank(),
-                    colors = ButtonDefaults.buttonColorsPrimary(),
-                ) {
-                    Text(stringResource(R.string.ai_settings_save_key))
-                }
-            }
-
-            Spacer(Modifier.height(14.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            Button(
+                onClick = onSaveKey,
+                enabled = keyInput.isNotBlank(),
+                colors = ButtonDefaults.buttonColorsPrimary(),
             ) {
-                TextButton(
-                    text = stringResource(R.string.ai_model_cancel),
-                    onClick = onCancel,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(44.dp),
-                )
-                Button(
-                    onClick = onSave,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(44.dp),
-                    enabled = !state.saving,
-                    colors = ButtonDefaults.buttonColorsPrimary(),
-                ) {
-                    Text(
-                        if (state.saving) {
-                            stringResource(R.string.ai_model_saving)
-                        } else {
-                            stringResource(R.string.ai_model_save)
-                        },
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(12.dp))
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .dashedBorder(colorScheme.onSurface.copy(alpha = 0.22f))
-                    .clickable(onClick = onAddProvider)
-                    .padding(vertical = 14.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    stringResource(R.string.ai_model_provider_add),
-                    fontSize = 12.sp,
-                    color = colorScheme.primary,
-                )
+                Text(stringResource(R.string.ai_settings_save_key))
             }
         }
     }
