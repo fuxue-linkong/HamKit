@@ -68,6 +68,8 @@ import com.example.hamkit.data.ai.AiSessionSummary
 import com.example.hamkit.data.ai.tool.AiCard
 import com.example.hamkit.data.ai.tool.SatelliteCardData
 import com.example.hamkit.data.ai.tool.ZoneCardData
+import com.example.hamkit.ui.component.StatCell
+import com.example.hamkit.ui.component.StatEmphasis
 import com.example.hamkit.ui.component.markdown.MarkdownPalette
 import com.example.hamkit.ui.component.markdown.MarkdownText
 import com.example.hamkit.ui.screen.ai.component.SatelliteRadar
@@ -1404,14 +1406,12 @@ private fun InfoCardMiuix(title: String, detail: String) {
 
 @Composable
 private fun MetricMiuix(label: String, value: String, compact: Boolean = false) {
-    Column {
-        Text(label, fontSize = 9.5.sp, color = colorScheme.onSurfaceVariantSummary)
-        Text(
-            value,
-            fontSize = if (compact) 14.sp else 16.sp,
-            fontWeight = FontWeight.SemiBold,
-        )
-    }
+    // D6/E2 整改：原 label 9.5sp 低于无障碍最小字号，统一收敛到 StatCell.Inline（11sp）
+    StatCell(
+        label = label,
+        value = value,
+        emphasis = StatEmphasis.Inline
+    )
 }
 
 @Composable

@@ -43,6 +43,8 @@ import com.example.hamkit.data.sstv.SstvSatelliteLink
 import com.example.hamkit.ui.LocalMainViewModel
 import com.example.hamkit.ui.UiMode
 import com.example.hamkit.ui.LocalUiMode
+import com.example.hamkit.ui.component.StatCell
+import com.example.hamkit.ui.component.StatEmphasis
 import com.example.hamkit.ui.navigation3.LocalNavigator
 import com.example.hamkit.ui.navigation3.Route
 import com.example.hamkit.ui.theme.LocalCardAlpha
@@ -357,36 +359,22 @@ private fun SatelliteLivePanelMiuix(liveInfo: SatelliteLiveInfo?) {
 
 @Composable
 private fun LiveBigNumberMiuix(label: String, value: String, modifier: Modifier = Modifier) {
-    Column(modifier = modifier) {
-        Text(
-            text = value,
-            fontSize = 30.sp,
-            fontWeight = FontWeight.Bold,
-            color = colorScheme.primary
-        )
-        Text(
-            text = label,
-            fontSize = 12.sp,
-            color = colorScheme.onSurfaceVariantSummary
-        )
-    }
+    StatCell(
+        label = label,
+        value = value,
+        emphasis = StatEmphasis.Hero,
+        modifier = modifier
+    )
 }
 
 @Composable
 private fun LiveSmallNumberMiuix(label: String, value: String, modifier: Modifier = Modifier) {
-    Column(modifier = modifier) {
-        Text(
-            text = value,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = colorScheme.onSurface
-        )
-        Text(
-            text = label,
-            fontSize = 12.sp,
-            color = colorScheme.onSurfaceVariantSummary
-        )
-    }
+    StatCell(
+        label = label,
+        value = value,
+        emphasis = StatEmphasis.Inline,
+        modifier = modifier
+    )
 }
 
 // ---- 通用卡片 ----

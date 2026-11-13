@@ -50,6 +50,8 @@ import com.example.hamkit.data.satellite.RadioInfo
 import com.example.hamkit.data.satellite.SatelliteLiveInfo
 import com.example.hamkit.data.sstv.SstvSatelliteLink
 import com.example.hamkit.ui.LocalMainViewModel
+import com.example.hamkit.ui.component.StatCell
+import com.example.hamkit.ui.component.StatEmphasis
 import com.example.hamkit.ui.navigation3.LocalNavigator
 import com.example.hamkit.ui.navigation3.Route
 import com.example.hamkit.ui.theme.LocalCardAlpha
@@ -315,36 +317,22 @@ private fun SatelliteLivePanelMaterial(liveInfo: SatelliteLiveInfo?) {
 
 @Composable
 private fun LiveBigNumberMaterial(label: String, value: String, modifier: Modifier = Modifier) {
-    Column(modifier = modifier) {
-        Text(
-            text = value,
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
+    StatCell(
+        label = label,
+        value = value,
+        emphasis = StatEmphasis.Hero,
+        modifier = modifier
+    )
 }
 
 @Composable
 private fun LiveSmallNumberMaterial(label: String, value: String, modifier: Modifier = Modifier) {
-    Column(modifier = modifier) {
-        Text(
-            text = value,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
+    StatCell(
+        label = label,
+        value = value,
+        emphasis = StatEmphasis.Inline,
+        modifier = modifier
+    )
 }
 
 // ---- 通用卡片 ----

@@ -37,6 +37,8 @@ import com.example.hamkit.data.satellite.SatelliteLiveInfo
 import com.example.hamkit.ui.LocalMainViewModel
 import com.example.hamkit.ui.UiMode
 import com.example.hamkit.ui.LocalUiMode
+import com.example.hamkit.ui.component.StatCell
+import com.example.hamkit.ui.component.StatEmphasis
 import com.example.hamkit.ui.theme.SafeColors
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
@@ -207,19 +209,12 @@ fun SatelliteRadarMiuix(catalogNumber: Int, onBack: () -> Unit = {}) {
 
 @Composable
 private fun RadarStatMiuix(label: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = value,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = colorScheme.onSurface
-        )
-        Text(
-            text = label,
-            fontSize = 11.sp,
-            color = colorScheme.onSurfaceVariantSummary
-        )
-    }
+    StatCell(
+        label = label,
+        value = value,
+        emphasis = StatEmphasis.Inline,
+        alignment = Alignment.CenterHorizontally
+    )
 }
 
 @Composable

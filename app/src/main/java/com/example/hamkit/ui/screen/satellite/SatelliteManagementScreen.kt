@@ -64,6 +64,8 @@ import com.example.hamkit.data.satellite.SatelliteStatusTracker
 import com.example.hamkit.ui.LocalMainViewModel
 import com.example.hamkit.ui.applyFilterToItems
 import com.example.hamkit.ui.isSatelliteSourceExpired
+import com.example.hamkit.ui.component.StatCell
+import com.example.hamkit.ui.component.StatEmphasis
 import com.example.hamkit.ui.navigation3.LocalNavigator
 import com.example.hamkit.ui.navigation3.Route
 import com.example.hamkit.ui.theme.LocalCardAlpha
@@ -535,19 +537,12 @@ private fun ActionRow(
 
 @Composable
 private fun ManagementStat(label: String, value: String, modifier: Modifier = Modifier) {
-    Column(modifier = modifier) {
-        Text(
-            text = value,
-            fontSize = 22.sp,
-            fontWeight = FontWeight.Bold,
-            color = colorScheme.primary
-        )
-        Text(
-            text = label,
-            fontSize = 12.sp,
-            color = colorScheme.onSurfaceVariantSummary
-        )
-    }
+    StatCell(
+        label = label,
+        value = value,
+        emphasis = StatEmphasis.Primary,
+        modifier = modifier
+    )
 }
 
 // ---- 筛选入口 ----
