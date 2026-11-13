@@ -939,13 +939,14 @@ private fun TransceiverRowM(radio: RadioInfo) {
             )
             RadioStatusBadgeM(radio)
         }
+        // E4 整改：统一为带单位格式，与详情页一致
         val freqText = buildString {
             if (radio.downlinkHz != null) {
-                append("RX ${formatMHzM(radio.downlinkHz)}")
+                append("RX ${formatMHzM(radio.downlinkHz)} MHz")
             }
             if (radio.uplinkHz != null) {
                 if (isNotEmpty()) append("  ")
-                append("TX ${formatMHzM(radio.uplinkHz)}")
+                append("TX ${formatMHzM(radio.uplinkHz)} MHz")
             }
             if (isNotEmpty() && radio.displayMode.isNotBlank()) append("  ")
             if (radio.displayMode.isNotBlank()) append(radio.displayMode)

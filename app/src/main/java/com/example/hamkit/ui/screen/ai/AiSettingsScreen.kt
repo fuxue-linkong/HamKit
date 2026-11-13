@@ -80,6 +80,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.window.Dialog
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
@@ -1022,10 +1023,21 @@ private fun ModelPickerDialogMiuix(
                                 )
                             }
                             if (profiles.size > 1) {
-                                TextButton(
-                                    text = stringResource(R.string.ai_model_delete),
-                                    onClick = { onDelete(profile.id) },
-                                )
+                                // C6 整改：删除从 TextButton 降为行尾低饱和图标，降低误触概率与视觉权重
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .clickable { onDelete(profile.id) },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        Icons.Rounded.Delete,
+                                        contentDescription = stringResource(R.string.ai_model_delete),
+                                        tint = colorScheme.onSurfaceVariantSummary,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                }
                             }
                         }
                     }

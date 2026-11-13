@@ -475,6 +475,8 @@
     <string name="aprs_license_cancel" translatable="false">暂不连接</string>
     <string name="ai_title">AI assistant</string>
     <string name="ai_settings_title">AI assistant settings</string>
+    <string name="filter_mode_search">Search modes</string>
+    <string name="filter_mode_no_match">No matching mode</string>
     <string name="ai_new_chat">New chat</string>
     <string name="ai_history">History</string>
     <string name="ai_settings">Settings</string>

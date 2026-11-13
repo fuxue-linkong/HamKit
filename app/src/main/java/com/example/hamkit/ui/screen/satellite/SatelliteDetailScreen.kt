@@ -165,19 +165,21 @@ fun SatelliteDetailMiuix(catalogNumber: Int, onBack: () -> Unit = {}) {
                 }
             }
 
-            // 多普勒频率
-            DetailCardMiuix {
-                val downlink = liveInfo?.dopplerDownlinkHz
-                val uplink = liveInfo?.dopplerUplinkHz
-                DetailRowMiuix(
-                    label = "下行频率",
-                    value = downlink?.let { formatFrequencyHz(it) } ?: "数据不可用"
-                )
-                Spacer(Modifier.height(6.dp))
-                DetailRowMiuix(
-                    label = "上行频率",
-                    value = uplink?.let { formatFrequencyHz(it) } ?: "数据不可用"
-                )
+            // 多普勒频率（E6 整改：无数据时整卡隐藏，负面信息不再占整卡）
+            if (liveInfo?.dopplerDownlinkHz != null || liveInfo?.dopplerUplinkHz != null) {
+                DetailCardMiuix {
+                    val downlink = liveInfo?.dopplerDownlinkHz
+                    val uplink = liveInfo?.dopplerUplinkHz
+                    downlink?.let {
+                        DetailRowMiuix(label = "下行频率", value = formatFrequencyHz(it))
+                    }
+                    if (downlink != null && uplink != null) {
+                        Spacer(Modifier.height(6.dp))
+                    }
+                    uplink?.let {
+                        DetailRowMiuix(label = "上行频率", value = formatFrequencyHz(it))
+                    }
+                }
             }
 
             // 转发器列表（多收发器：名称 + 频率 + 模式 + 状态）
@@ -251,7 +253,7 @@ fun SatelliteDetailMiuix(catalogNumber: Int, onBack: () -> Unit = {}) {
                 }
             }
 
-            // 操作按钮
+            // 操作按钮（B8 整改：主按钮 + 次级 outlined 降级权重；清理无效 Spacer(0)）
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -268,7 +270,6 @@ fun SatelliteDetailMiuix(catalogNumber: Int, onBack: () -> Unit = {}) {
                         contentDescription = null,
                         tint = colorScheme.onPrimary
                     )
-                    Spacer(Modifier.height(0.dp))
                     Text("打开雷达图")
                 }
                 Button(
@@ -276,14 +277,16 @@ fun SatelliteDetailMiuix(catalogNumber: Int, onBack: () -> Unit = {}) {
                         navigator.push(Route.SatelliteMap(catalogNumber))
                     },
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColorsPrimary()
+                    colors = ButtonDefaults.buttonColors(
+                        color = colorScheme.secondaryContainer,
+                        contentColor = colorScheme.onSecondaryContainer
+                    )
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Map,
                         contentDescription = null,
-                        tint = colorScheme.onPrimary
+                        tint = colorScheme.onSecondaryContainer
                     )
-                    Spacer(Modifier.height(0.dp))
                     Text("打开地图")
                 }
             }
