@@ -38,6 +38,8 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.sp
 import com.example.hamkit.R
+import com.example.hamkit.ui.theme.SafeColors
+import com.example.hamkit.ui.theme.isInDarkTheme
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -47,10 +49,10 @@ private const val STROKE_WIDTH = 6f
 private const val SWEEP_DURATION_MS = 8_000
 private val PI_2 = PI / 2.0
 
-private val AIM_COLOR = Color(0xFFBA1A1A)
-private val PRIMARY_COLOR = Color(0xFF4CAF50)
-private val RADAR_COLOR = Color(0xFF546E7A)
-private val ECLIPSED_COLOR = Color(0xFFF44336)
+// 绘制色默认值统一走 SafeColors 令牌（深浅色模式各自取变体），
+// 调用方可通过参数覆盖（如 AI 卡片复用时传入主题色）。
+private val RADAR_COLOR_LIGHT = Color(0xFF546E7A)
+private val RADAR_COLOR_DARK = Color(0xFF90A4AE)
 
 @Composable
 fun RadarView(
@@ -66,7 +68,11 @@ fun RadarView(
     shouldShowSweep: Boolean = true,
     shouldUseCompass: Boolean = false,
     shouldFlipRadar: Boolean = false,
-    sweepColor: Color = PRIMARY_COLOR,
+    sweepColor: Color = SafeColors.successIcon,
+    trackColor: Color = SafeColors.infoIcon,
+    eclipsedDotColor: Color = SafeColors.statusColors(SafeColors.StatusTone.ERROR).foreground,
+    radarColor: Color = if (isInDarkTheme()) RADAR_COLOR_DARK else RADAR_COLOR_LIGHT,
+    aimColor: Color = SafeColors.statusColors(SafeColors.StatusTone.INFO).foreground.copy(alpha = 0.6f),
     modifier: Modifier = Modifier,
 ) {
     val pulseTransition = rememberInfiniteTransition(label = "pulseScale")
@@ -121,21 +127,21 @@ fun RadarView(
 
         rotate(rotation) {
             if (shouldShowSweep) cachedSweepBrush?.let { drawSweep(center, sweepDegrees, radius, it) }
-            drawRadar(radius, RADAR_COLOR)
+            drawRadar(radius, radarColor)
             drawElevationLabels(radius, sweepColor, measurer)
             translate(center.x, center.y) {
-                drawTrack(trackPath, trackEffect, AIM_COLOR, sweepColor)
+                drawTrack(trackPath, trackEffect, trackColor, sweepColor)
                 if (azimuthDeg != null && elevationDeg != null && elevationDeg > 0.0) {
-                    drawPosition(azimuthDeg, elevationDeg, radius, isEclipsed, pulseRadius, sweepColor)
+                    drawPosition(azimuthDeg, elevationDeg, radius, isEclipsed, pulseRadius, sweepColor, eclipsedDotColor)
                 }
                 if (sunAzimuthDeg != null && sunElevationDeg != null && sunElevationDeg > 0.0) {
                     drawBodyIcon(sunAzimuthDeg, sunElevationDeg, radius, sweepColor, sunPainter, 52f)
                 }
                 if (moonAzimuthDeg != null && moonElevationDeg != null && moonElevationDeg > 0.0) {
-                    drawBodyIcon(moonAzimuthDeg, moonElevationDeg, radius, RADAR_COLOR, moonPainter, 52f)
+                    drawBodyIcon(moonAzimuthDeg, moonElevationDeg, radius, radarColor, moonPainter, 52f)
                 }
                 if (shouldUseCompass && phoneAzimuthDeg != null) {
-                    drawAim(phoneAzimuthDeg.toDouble(), radius, AIM_COLOR)
+                    drawAim(phoneAzimuthDeg.toDouble(), radius, aimColor)
                 }
             }
         }
@@ -171,10 +177,10 @@ private fun DrawScope.drawTrack(path: Path, effect: PathEffect, color: Color, ef
 
 private fun DrawScope.drawPosition(
     azimuthDeg: Double, elevationDeg: Double, radius: Float,
-    isEclipsed: Boolean, posRadius: Float, color: Color,
+    isEclipsed: Boolean, posRadius: Float, color: Color, eclipsedColor: Color,
 ) {
     val pos = sph2Cart(azimuthDeg, elevationDeg, radius)
-    val dotColor = if (isEclipsed) ECLIPSED_COLOR else color
+    val dotColor = if (isEclipsed) eclipsedColor else color
     drawCircle(dotColor, 16f, pos)
     if (!isEclipsed) drawCircle(dotColor.copy(alpha = 1f - (posRadius / 64f)), posRadius, pos)
 }

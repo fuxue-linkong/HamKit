@@ -1029,10 +1029,11 @@ private fun StatusChip(status: String, isStatusInherited: Boolean = false) {
         else -> status
     }
     val displayText = if (isStatusInherited) "$baseText *" else baseText
+    val errorStatus = SafeColors.statusColors(SafeColors.StatusTone.ERROR)
     val (bgColor, contentColor) = when (status) {
         "Heard" -> colorScheme.primaryContainer to colorScheme.onPrimaryContainer
         "Telemetry Only" -> colorScheme.secondaryContainer to colorScheme.onSecondaryContainer
-        "Not Heard" -> SafeColors.errorContainer to SafeColors.errorIcon
+        "Not Heard" -> errorStatus.container to errorStatus.onContainer
         "Crew Active" -> colorScheme.tertiaryContainer to colorScheme.onTertiaryContainer
         else -> colorScheme.surfaceVariant to colorScheme.onSurfaceVariantSummary
     }
@@ -1043,11 +1044,12 @@ private fun StatusChip(status: String, isStatusInherited: Boolean = false) {
 
 @Composable
 private fun ModeChip(mode: String) {
+    val errorStatus = SafeColors.statusColors(SafeColors.StatusTone.ERROR)
     val (bgColor, contentColor) = when (mode.uppercase()) {
         "FM" -> colorScheme.primaryContainer to colorScheme.onPrimaryContainer
         "SSTV" -> colorScheme.secondaryContainer to colorScheme.onSecondaryContainer
         "DSTAR" -> colorScheme.tertiaryContainer to colorScheme.onTertiaryContainer
-        "CW" -> SafeColors.errorContainer to SafeColors.errorIcon
+        "CW" -> errorStatus.container to errorStatus.onContainer
         else -> colorScheme.surfaceVariant to colorScheme.onSurfaceVariantSummary
     }
     Chip(text = mode, bgColor = bgColor, contentColor = contentColor)
@@ -1121,17 +1123,18 @@ private fun SegmentCell(segment: SegmentStatus, modifier: Modifier = Modifier) {
         null -> stringResource(R.string.status_no_data)
         else -> segment.status
     }
+    val errorStatus = SafeColors.statusColors(SafeColors.StatusTone.ERROR)
     val bgColor = when (segment.status) {
         "Heard" -> colorScheme.primaryContainer
         "Telemetry Only" -> colorScheme.secondaryContainer
-        "Not Heard" -> SafeColors.errorContainer
+        "Not Heard" -> errorStatus.container
         "Crew Active" -> colorScheme.tertiaryContainer
         else -> colorScheme.surfaceVariant
     }
     val contentColor = when (segment.status) {
         "Heard" -> colorScheme.onPrimaryContainer
         "Telemetry Only" -> colorScheme.onSecondaryContainer
-        "Not Heard" -> SafeColors.errorIcon
+        "Not Heard" -> errorStatus.onContainer
         "Crew Active" -> colorScheme.onTertiaryContainer
         else -> colorScheme.onSurfaceVariantSummary
     }

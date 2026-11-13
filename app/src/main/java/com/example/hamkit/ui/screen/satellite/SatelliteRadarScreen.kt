@@ -37,6 +37,7 @@ import com.example.hamkit.data.satellite.SatelliteLiveInfo
 import com.example.hamkit.ui.LocalMainViewModel
 import com.example.hamkit.ui.UiMode
 import com.example.hamkit.ui.LocalUiMode
+import com.example.hamkit.ui.theme.SafeColors
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
@@ -139,7 +140,11 @@ fun SatelliteRadarMiuix(catalogNumber: Int, onBack: () -> Unit = {}) {
                 Text(
                     text = if (eclipsed) "● 蚀中" else "● 日照中",
                     fontSize = 13.sp,
-                    color = if (eclipsed) Color(0xFFF44336) else Color(0xFF4CAF50)
+                    color = if (eclipsed) {
+                        SafeColors.statusColors(SafeColors.StatusTone.ERROR).foreground
+                    } else {
+                        SafeColors.statusColors(SafeColors.StatusTone.SUCCESS).foreground
+                    }
                 )
             }
 

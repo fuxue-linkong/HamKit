@@ -47,6 +47,7 @@ import com.example.hamkit.ui.navigation3.LocalNavigator
 import com.example.hamkit.ui.navigation3.Route
 import com.example.hamkit.ui.theme.LocalCardAlpha
 import com.example.hamkit.ui.theme.LocalEnableBlur
+import com.example.hamkit.ui.theme.SafeColors
 import com.example.hamkit.ui.util.BlurredBar
 import com.example.hamkit.ui.util.rememberBlurBackdrop
 import top.yukonga.miuix.kmp.basic.Button
@@ -196,7 +197,11 @@ fun SatelliteDetailMiuix(catalogNumber: Int, onBack: () -> Unit = {}) {
             // 蚀状态 + 星下点 + 相位
             DetailCardMiuix {
                 val eclipsed = liveInfo?.isEclipsed ?: false
-                val eclipseColor = if (eclipsed) Color(0xFFF44336) else Color(0xFF4CAF50)
+                val eclipseColor = if (eclipsed) {
+                    SafeColors.statusColors(SafeColors.StatusTone.ERROR).foreground
+                } else {
+                    SafeColors.statusColors(SafeColors.StatusTone.SUCCESS).foreground
+                }
                 DetailRowMiuix(
                     label = "日照状态",
                     value = if (eclipsed) "蚀中（地影）" else "日照中",
@@ -343,7 +348,9 @@ private fun SatelliteLivePanelMiuix(liveInfo: SatelliteLiveInfo?) {
                 "○ 在地平线以下"
             },
             fontSize = 13.sp,
-            color = if (liveInfo.isAboveHorizon) Color(0xFF4CAF50) else colorScheme.onSurfaceVariantSummary
+            color = if (liveInfo.isAboveHorizon) {
+                SafeColors.statusColors(SafeColors.StatusTone.SUCCESS).foreground
+            } else colorScheme.onSurfaceVariantSummary
         )
     }
 }
@@ -453,8 +460,8 @@ private fun SatelliteDetailPlaceholderCard(content: @Composable () -> Unit) {
 private fun TransceiverDetailRowMiuix(radio: RadioInfo) {
     val title = if (radio.inverted) "INV: ${radio.displayName}" else radio.displayName
     val (statusText, statusColor) = when (radio.status) {
-        RadioInfo.STATUS_ACTIVE -> "活跃" to Color(0xFF4CAF50)
-        RadioInfo.STATUS_FUTURE -> "未启用" to Color(0xFF42A5F5)
+        RadioInfo.STATUS_ACTIVE -> "活跃" to SafeColors.statusColors(SafeColors.StatusTone.SUCCESS).foreground
+        RadioInfo.STATUS_FUTURE -> "未启用" to SafeColors.statusColors(SafeColors.StatusTone.INFO).foreground
         else -> "停用" to colorScheme.onSurfaceVariantSummary
     }
     Column(modifier = Modifier.fillMaxWidth()) {
