@@ -19,6 +19,11 @@ signing-report/
 *.txt
 *.png
 ui.xml
+# 负例外：App 资源目录的图片必须入库（*.png 全局忽略曾导致
+# ic_launcher_foreground 未被跟踪、CI 资源链接失败的教训）
+!app/src/main/res/**/*.png
+!docs/**/*.png
+!images/*.png
 /.codex
 /.kotlin
 /.trae
