@@ -10,10 +10,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
@@ -33,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -234,7 +237,9 @@ private fun MiuixFilterSelectableRow(label: String, selected: Boolean, onClick: 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            // A12 整改：48dp 最小触控区 + 语义化 Role（对齐 MiuixCheckRow 范式）
+            .heightIn(min = 48.dp)
+            .toggleable(value = selected, role = Role.Checkbox, onValueChange = { onClick() })
             .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
@@ -269,7 +274,9 @@ private fun MiuixFilterSwitchRow(label: String, checked: Boolean, onClick: () ->
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            // A12 整改：48dp 最小触控区 + 语义化 Role（对齐 MiuixCheckRow 范式）
+            .heightIn(min = 48.dp)
+            .toggleable(value = checked, role = Role.Switch, onValueChange = { onClick() })
             .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
@@ -438,8 +445,9 @@ private fun FilterCheckRowMaterial(label: String, checked: Boolean, onToggle: ()
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onToggle)
-            .padding(vertical = 4.dp),
+            // 触控区专项：48dp 最小触控区 + Checkbox 语义（与 Miuix 版同范式）
+            .heightIn(min = 48.dp)
+            .toggleable(value = checked, role = Role.Checkbox, onValueChange = { onToggle() }),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
@@ -451,7 +459,7 @@ private fun FilterCheckRowMaterial(label: String, checked: Boolean, onToggle: ()
         )
         Checkbox(
             checked = checked,
-            onCheckedChange = { onToggle() },
+            onCheckedChange = null, // 语义已上移到行级 toggleable，避免双重触发
             colors = CheckboxDefaults.colors(
                 checkedColor = MaterialTheme.colorScheme.primary
             )
@@ -464,8 +472,9 @@ private fun FilterSwitchRowMaterial(label: String, checked: Boolean, onToggle: (
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onToggle)
-            .padding(vertical = 4.dp),
+            // 触控区专项：48dp 最小触控区 + Switch 语义
+            .heightIn(min = 48.dp)
+            .toggleable(value = checked, role = Role.Switch, onValueChange = { onToggle() }),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
@@ -476,7 +485,7 @@ private fun FilterSwitchRowMaterial(label: String, checked: Boolean, onToggle: (
         )
         Switch(
             checked = checked,
-            onCheckedChange = { onToggle() },
+            onCheckedChange = null, // 语义已上移到行级 toggleable
             colors = SwitchDefaults.colors(
                 checkedTrackColor = MaterialTheme.colorScheme.primary
             )

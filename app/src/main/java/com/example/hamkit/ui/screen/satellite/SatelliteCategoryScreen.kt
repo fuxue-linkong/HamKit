@@ -422,7 +422,8 @@ private fun MiuixCategoryRow(
         }
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+            // 触控区专项：4dp→8dp，重命名/删除两个 IconButton 间距过近易误触
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             MiuixIconButton(onClick = onRename) {
                 MiuixIcon(
@@ -654,7 +655,11 @@ fun SatelliteCategoryManagerDialogMaterial(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                // 触控区专项：4dp→8dp（与 Miuix 版一致）
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
                                 IconButton(onClick = {
                                     editingId = category.id
                                     editingName = category.name
