@@ -68,6 +68,8 @@ fun RadarView(
     shouldShowSweep: Boolean = true,
     shouldUseCompass: Boolean = false,
     shouldFlipRadar: Boolean = false,
+    /** D9：紧凑模式（AI 卡片复用）——细描边、隐藏仰角标签，保持同一套绘制语言 */
+    compact: Boolean = false,
     sweepColor: Color = SafeColors.successIcon,
     trackColor: Color = SafeColors.infoIcon,
     eclipsedDotColor: Color = SafeColors.statusColors(SafeColors.StatusTone.ERROR).foreground,
@@ -75,6 +77,7 @@ fun RadarView(
     aimColor: Color = SafeColors.statusColors(SafeColors.StatusTone.INFO).foreground.copy(alpha = 0.6f),
     modifier: Modifier = Modifier,
 ) {
+    val strokeWidth = if (compact) 3f else STROKE_WIDTH
     val pulseTransition = rememberInfiniteTransition(label = "pulseScale")
     val pulseRadius by pulseTransition.animateFloat(
         initialValue = 16f,
@@ -127,12 +130,12 @@ fun RadarView(
 
         rotate(rotation) {
             if (shouldShowSweep) cachedSweepBrush?.let { drawSweep(center, sweepDegrees, radius, it) }
-            drawRadar(radius, radarColor)
-            drawElevationLabels(radius, sweepColor, measurer)
+            drawRadar(radius, radarColor, strokeWidth)
+            if (!compact) drawElevationLabels(radius, sweepColor, measurer)
             translate(center.x, center.y) {
-                drawTrack(trackPath, trackEffect, trackColor, sweepColor)
+                drawTrack(trackPath, trackEffect, trackColor, sweepColor, strokeWidth)
                 if (azimuthDeg != null && elevationDeg != null && elevationDeg > 0.0) {
-                    drawPosition(azimuthDeg, elevationDeg, radius, isEclipsed, pulseRadius, sweepColor, eclipsedDotColor)
+                    drawPosition(azimuthDeg, elevationDeg, radius, isEclipsed, pulseRadius, sweepColor, eclipsedDotColor, compact)
                 }
                 if (sunAzimuthDeg != null && sunElevationDeg != null && sunElevationDeg > 0.0) {
                     drawBodyIcon(sunAzimuthDeg, sunElevationDeg, radius, sweepColor, sunPainter, 52f)
@@ -150,13 +153,13 @@ fun RadarView(
 
 // ── Look4Sat 风格绘制函数 ──
 
-private fun DrawScope.drawRadar(radius: Float, color: Color) {
+private fun DrawScope.drawRadar(radius: Float, color: Color, strokeWidth: Float = STROKE_WIDTH) {
     val step = radius / CIRCLES
     for (i in 0 until CIRCLES) {
-        drawCircle(color, radius - step * i, style = Stroke(STROKE_WIDTH))
+        drawCircle(color, radius - step * i, style = Stroke(strokeWidth))
     }
-    drawLine(color, Offset(center.x - radius, center.y), Offset(center.x + radius, center.y), STROKE_WIDTH)
-    drawLine(color, Offset(center.x, center.y - radius), Offset(center.x, center.y + radius), STROKE_WIDTH)
+    drawLine(color, Offset(center.x - radius, center.y), Offset(center.x + radius, center.y), strokeWidth)
+    drawLine(color, Offset(center.x, center.y - radius), Offset(center.x, center.y + radius), strokeWidth)
 }
 
 private fun DrawScope.drawElevationLabels(radius: Float, color: Color, measurer: TextMeasurer) {
@@ -169,19 +172,24 @@ private fun DrawScope.drawElevationLabels(radius: Float, color: Color, measurer:
     }
 }
 
-private fun DrawScope.drawTrack(path: Path, effect: PathEffect, color: Color, effectColor: Color) {
+private fun DrawScope.drawTrack(
+    path: Path, effect: PathEffect, color: Color, effectColor: Color,
+    strokeWidth: Float = STROKE_WIDTH,
+) {
     if (path.isEmpty) return
-    drawPath(path, color, style = Stroke(STROKE_WIDTH))
-    drawPath(path, effectColor, style = Stroke(pathEffect = effect))
+    drawPath(path, color, style = Stroke(strokeWidth))
+    drawPath(path, effectColor, style = Stroke(strokeWidth, pathEffect = effect))
 }
 
 private fun DrawScope.drawPosition(
     azimuthDeg: Double, elevationDeg: Double, radius: Float,
     isEclipsed: Boolean, posRadius: Float, color: Color, eclipsedColor: Color,
+    compact: Boolean = false,
 ) {
     val pos = sph2Cart(azimuthDeg, elevationDeg, radius)
     val dotColor = if (isEclipsed) eclipsedColor else color
-    drawCircle(dotColor, 16f, pos)
+    val dotRadius = if (compact) 9f else 16f
+    drawCircle(dotColor, dotRadius, pos)
     if (!isEclipsed) drawCircle(dotColor.copy(alpha = 1f - (posRadius / 64f)), posRadius, pos)
 }
 

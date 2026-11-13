@@ -23,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -166,11 +167,27 @@ fun SatelliteMapMiuix(catalogNumber: Int, onBack: () -> Unit = {}) {
                             value = liveInfo?.altitudeKm?.let { "%.0f km".format(it) } ?: "--"
                         )
                     }
-                    Text(
-                        text = formatPassCountdown(session.aosTime, session.losTime, nowMillis),
-                        fontSize = 12.sp,
-                        color = colorScheme.onSurfaceVariantSummary
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        // D7 整改：倒计时定级为次级信息（与详情页 DetailRow 同规格：
+                        // label 13sp + 值 14sp SemiBold），在境时用 primary 色标记状态
+                        val inPass = nowMillis >= (session.aosTime?.toEpochMilli() ?: Long.MAX_VALUE) &&
+                            nowMillis < (session.losTime?.toEpochMilli() ?: Long.MIN_VALUE)
+                        Text(
+                            text = "倒计时",
+                            fontSize = 13.sp,
+                            color = colorScheme.onSurfaceVariantSummary
+                        )
+                        Text(
+                            text = formatPassCountdown(session.aosTime, session.losTime, nowMillis),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (inPass) colorScheme.primary else colorScheme.onSurface
+                        )
+                    }
                 }
             }
         }

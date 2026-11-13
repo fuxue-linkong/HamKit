@@ -81,8 +81,14 @@ fun SatelliteDetailMaterial(catalogNumber: Int, onBack: () -> Unit = {}) {
 
     Scaffold(
         topBar = {
+            // D5 整改：顶栏滚动时保持 surface 底色（对齐 Miuix 版 BlurredBar 的
+            // surface 0.87 混合观感——Material 侧按 SettingsMaterial 惯例用 scrolledContainerColor 实现）
             TopAppBar(
                 title = { Text(session.satelliteName) },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    scrolledContainerColor = MaterialTheme.colorScheme.surface,
+                ),
                 navigationIcon = {
                     IconButton(onClick = dropUnlessResumed { onBack() }) {
                         Icon(
