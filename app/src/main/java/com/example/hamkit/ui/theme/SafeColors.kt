@@ -1,5 +1,6 @@
 package com.example.hamkit.ui.theme
 
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import kotlin.math.abs
@@ -20,6 +21,12 @@ object SafeColors {
     /** 成功状态 - 容器背景色（浅绿，避免肉色/肤色） */
     val successContainer: Color = Color(0xFFDFFAE4)
 
+    /** 成功状态 - 深色模式图标色 */
+    val successIconDark: Color = Color(0xFF4ADE80)
+
+    /** 成功状态 - 深色模式容器背景色 */
+    val successContainerDark: Color = Color(0xFF0B2E16)
+
     /** 错误状态 - 图标色（明亮红，避免深红/酒红） */
     val errorIcon: Color = Color(0xFFF72727)
 
@@ -31,6 +38,15 @@ object SafeColors {
 
     /** 错误状态 - 深色模式容器背景色 */
     val errorContainerDark: Color = Color(0xFF310808)
+
+    /** 警告状态 - 图标色（琥珀，light/dark 通用） */
+    val warningIcon: Color = Color(0xFFFFA726)
+
+    /** 警告状态 - 容器背景色（浅琥珀） */
+    val warningContainer: Color = Color(0xFFFFF3E0)
+
+    /** 警告状态 - 深色模式容器背景色 */
+    val warningContainerDark: Color = Color(0xFF33240D)
 
     // ==================== 信息指示色（蓝色系）====================
 
@@ -127,5 +143,54 @@ object SafeColors {
 
         // 回退：选取关键色种子中的第一个（红色 400）
         return keyColorSeed.first()
+    }
+
+    // ==================== 主题感知状态色（token 读取入口） ====================
+
+    /**
+     * 状态色令牌的语义枚举。
+     * 界面统一通过 [statusColor] / [statusContainer] 读取，禁止直接取用单一模式变体。
+     */
+    enum class StatusTone { SUCCESS, ERROR, INFO, WARNING }
+
+    /**
+     * 主题感知的状态色三件套（前景 / 容器背景 / 容器前景）。
+     */
+    data class StatusColors(
+        val foreground: Color,
+        val container: Color,
+        val onContainer: Color,
+    )
+
+    /**
+     * 读取主题感知的状态色。
+     *
+     * @param tone 状态语义（成功/错误/信息/警告）
+     */
+    @Composable
+    fun statusColors(tone: StatusTone): StatusColors {
+        val dark = isInDarkTheme()
+        return when (tone) {
+            StatusTone.SUCCESS -> StatusColors(
+                foreground = if (dark) successIconDark else successIcon,
+                container = if (dark) successContainerDark else successContainer,
+                onContainer = if (dark) successIconDark else Color(0xFF0B4A20),
+            )
+            StatusTone.ERROR -> StatusColors(
+                foreground = errorIcon,
+                container = if (dark) errorContainerDark else errorContainer,
+                onContainer = if (dark) errorIcon else Color(0xFF8C1616),
+            )
+            StatusTone.INFO -> StatusColors(
+                foreground = if (dark) infoIconDark else infoIcon,
+                container = if (dark) infoContainerDark else infoContainer,
+                onContainer = if (dark) infoIconDark else Color(0xFF0B4A7A),
+            )
+            StatusTone.WARNING -> StatusColors(
+                foreground = warningIcon,
+                container = if (dark) warningContainerDark else warningContainer,
+                onContainer = if (dark) warningIcon else Color(0xFF8A5A00),
+            )
+        }
     }
 }

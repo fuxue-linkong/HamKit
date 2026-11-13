@@ -43,6 +43,7 @@ import androidx.lifecycle.compose.dropUnlessResumed
 import com.example.hamkit.R
 import com.example.hamkit.data.satellite.SatelliteLiveInfo
 import com.example.hamkit.ui.LocalMainViewModel
+import com.example.hamkit.ui.theme.SafeColors
 
 /**
  * 卫星雷达图页（Material3 风格）。
@@ -118,7 +119,11 @@ fun SatelliteRadarMaterial(catalogNumber: Int, onBack: () -> Unit = {}) {
                 Text(
                     text = if (eclipsed) "● 蚀中" else "● 日照中",
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (eclipsed) Color(0xFFF44336) else Color(0xFF4CAF50)
+                    color = if (eclipsed) {
+                        SafeColors.statusColors(SafeColors.StatusTone.ERROR).foreground
+                    } else {
+                        SafeColors.statusColors(SafeColors.StatusTone.SUCCESS).foreground
+                    }
                 )
             }
 
