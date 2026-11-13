@@ -739,7 +739,8 @@ private fun SatelliteItemMaterial(
                 }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    // C2 整改：4dp→8dp，消除密集行内 IconButton 误触（与 Miuix 版一致）
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     if (pass != null) {
                         Text(

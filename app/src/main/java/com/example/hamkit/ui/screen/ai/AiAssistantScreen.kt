@@ -492,6 +492,8 @@ private fun EmptyStateMiuix(onPick: (String) -> Unit) {
                         colorScheme.surfaceVariant.copy(alpha = 0.5f),
                         RoundedCornerShape(12.dp),
                     )
+                    // 触控区专项：48dp 最小可点高度
+                    .heightIn(min = 48.dp)
                     .clickable { onPick(sample) }
                     .padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,

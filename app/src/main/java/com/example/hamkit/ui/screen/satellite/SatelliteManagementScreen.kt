@@ -735,7 +735,9 @@ private fun SatelliteManagementItem(
                 }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    // C2 整改：4dp→8dp，密集行内三个 IconButton 各自带 48dp 命中区，
+                    // 4dp 间距下实际可点边界相互侵入，8dp 消除误触
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     if (pass != null) {
                         Text(
