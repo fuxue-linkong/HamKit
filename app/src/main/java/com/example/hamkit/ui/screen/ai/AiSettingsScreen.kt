@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -33,8 +34,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -55,6 +59,7 @@ import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.Text
@@ -111,10 +116,14 @@ fun AiSettingsScreenMiuix(onBack: () -> Unit = {}) {
         onConfirm = { viewModel.clearHistory() },
     )
 
+    // 顶栏随滚动收起大标题，内容不再在大标题下方被硬边裁切（与 About/色板/APRS 设置页一致）
+    val scrollBehavior = MiuixScrollBehavior()
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = stringResource(R.string.ai_settings_title),
+                scrollBehavior = scrollBehavior,
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -135,6 +144,7 @@ fun AiSettingsScreenMiuix(onBack: () -> Unit = {}) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .nestedScroll(scrollBehavior.nestedScrollConnection)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1099,17 +1109,22 @@ private fun McpCardMiuix(
                 Spacer(Modifier.height(8.dp))
                 Text("Token", fontSize = 10.sp, color = colorScheme.onSurfaceVariantSummary)
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    // A9 续：Token 单行省略，长值不再把右侧按钮挤出卡片
                     Text(
                         state.mcpToken,
-                        fontSize = 10.sp,
+                        fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),
                     )
-                    TextButton(
+                    Spacer(Modifier.width(8.dp))
+                    InlineTextButton(
                         text = "复制",
                         onClick = { clipboard.setText(AnnotatedString(state.mcpToken)) },
                     )
-                    TextButton(
+                    Spacer(Modifier.width(6.dp))
+                    InlineTextButton(
                         text = "重置",
                         onClick = resetTokenConfirm::show,
                     )
@@ -1124,7 +1139,7 @@ private fun McpCardMiuix(
                         maxLines = 1,
                     )
                     Spacer(Modifier.width(8.dp))
-                    TextButton(
+                    InlineTextButton(
                         text = "应用",
                         onClick = { onPort(portInput.toIntOrNull() ?: state.mcpPort) },
                     )
@@ -1141,6 +1156,29 @@ private fun McpCardMiuix(
             )
         }
     }
+}
+
+/**
+ * 卡片内联动作按钮：[TextButton] 默认规格是 58dp 最小宽度 + 16×13dp 内边距 + 大号按钮字，
+ * 放进 Token/端口这类密集信息行时，视觉上会比旁边的正文大一号、把字段挤扁。
+ * 这里保持 40dp 最小高度（沿用 Miuix 默认，不回退触控区），只收窄宽度、内边距与字号。
+ */
+@Composable
+private fun InlineTextButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    TextButton(
+        text = text,
+        onClick = onClick,
+        modifier = modifier,
+        minWidth = 48.dp,
+        minHeight = 40.dp,
+        cornerRadius = 10.dp,
+        insideMargin = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+        textStyle = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium),
+    )
 }
 
 @Composable
