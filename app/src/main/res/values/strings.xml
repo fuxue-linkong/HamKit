@@ -489,6 +489,7 @@
     <string name="ai_history_title">Chat history</string>
     <string name="ai_history_empty">No conversations yet</string>
     <string name="ai_export">Export</string>
+    <string name="ai_export_done">Conversation exported</string>
     <string name="ai_delete">Delete</string>
     <string name="ai_close">Close</string>
     <string name="ai_allow">Allow</string>

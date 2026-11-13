@@ -60,6 +60,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -113,6 +114,17 @@ fun SatelliteManagementMaterial() {
     var showFilterDialog by rememberSaveable { mutableStateOf(false) }
     var showCategoryManager by rememberSaveable { mutableStateOf(false) }
     var categoryPickerTarget by remember { mutableStateOf<Int?>(null) }
+    // C2 整改：提醒切换后消费 ViewModel 的一次性反馈消息，用 Snackbar 显示
+    val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
+    LaunchedEffect(Unit) {
+        snapshotFlow { mainViewModel.reminderFeedback.value }
+            .collect { feedback ->
+                if (feedback != null) {
+                    snackbarHostState.showSnackbar(feedback)
+                    mainViewModel.consumeReminderFeedback()
+                }
+            }
+    }
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
 
@@ -131,7 +143,10 @@ fun SatelliteManagementMaterial() {
                 scrollBehavior = scrollBehavior
             )
         },
-        contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
+        contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
+        snackbarHost = {
+            com.example.hamkit.ui.component.material.SnackBarHost(hostState = snackbarHostState)
+        }
     ) { innerPadding ->
         SatelliteManagementContentMaterial(
             locationState = locationState,
@@ -1065,12 +1080,14 @@ private fun ChipM(text: String, bgColor: Color, contentColor: Color) {
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(8.dp))
+            // E1 整改：内边距 8×3dp→8×5dp、字号对齐 labelSmall+Medium，与 Miuix 版同规格
             .background(bgColor)
-            .padding(horizontal = 8.dp, vertical = 3.dp)
+            .padding(horizontal = 8.dp, vertical = 5.dp)
     ) {
         Text(
             text = text,
             style = MaterialTheme.typography.labelSmall,
+            fontSize = 12.sp,
             color = contentColor,
             fontWeight = FontWeight.Medium
         )

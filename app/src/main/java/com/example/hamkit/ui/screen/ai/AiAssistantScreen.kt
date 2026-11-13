@@ -45,7 +45,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import com.example.hamkit.ui.component.dialog.rememberConfirmDialog
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -202,19 +204,33 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
     ) { uris -> if (uris.isNotEmpty()) viewModel.addAttachments(uris) }
     var showHistory by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<AiSessionSummary?>(null) }
+    // D2 整改：删除会话确认统一走共享 ConfirmDialog（与 Material 版及全 App 一致）
+    val currentPendingDelete by rememberUpdatedState(pendingDelete)
+    val deleteSessionConfirm = rememberConfirmDialog(
+        onConfirm = {
+            currentPendingDelete?.let { viewModel.deleteSession(it.id) }
+            pendingDelete = null
+        },
+        onDismiss = { pendingDelete = null },
+    )
     var pendingExport by remember { mutableStateOf<String?>(null) }
+    // C1 整改：导出完成后给 Snackbar 反馈（Miuix 版）
+    val snackbarHostState = remember { top.yukonga.miuix.kmp.basic.SnackbarHostState() }
+    val exportDoneMessage = stringResource(R.string.ai_export_done)
     val exportPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("text/markdown"),
     ) { uri ->
         val content = pendingExport
+        var exported = false
         if (uri != null && content != null) {
             runCatching {
                 context.contentResolver.openOutputStream(uri)?.use { out ->
                     out.write(content.toByteArray(Charsets.UTF_8))
                 }
-            }
+            }.onSuccess { exported = true }
         }
         pendingExport = null
+        if (exported) scope.launch { snackbarHostState.showSnackbar(exportDoneMessage) }
     }
     val listState = rememberLazyListState()
     // 底部导航是 pager 外层 Scaffold 的 bottomBar，AI 页必须自己让出这段高度；
@@ -257,6 +273,9 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
             )
         },
         popupHost = { },
+        snackbarHost = {
+            top.yukonga.miuix.kmp.basic.SnackbarHost(state = snackbarHostState)
+        },
         contentWindowInsets = WindowInsets.systemBars
             .add(WindowInsets.displayCutout)
             .only(WindowInsetsSides.Horizontal),
@@ -330,19 +349,21 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
                     },
                 )
             }
-            pendingDelete?.let { session ->
-                AiConfirmDialogMiuix(
-                    request = AiConfirmRequest(
-                        id = session.id,
-                        title = stringResource(R.string.ai_history_delete_title),
-                        message = stringResource(R.string.ai_history_delete_desc),
-                    ),
-                    onApprove = {
-                        pendingDelete = null
-                        viewModel.deleteSession(session.id)
-                    },
-                    onDeny = { pendingDelete = null },
-                )
+            // D2：pendingDelete 触发共享确认弹窗（LaunchedEffect 保证 showConfirm 只调一次）。
+            // 字符串在组合期解析，LaunchedEffect 内不能调用 @Composable。
+            val deleteTitle = stringResource(R.string.ai_history_delete_title)
+            val deleteDesc = stringResource(R.string.ai_history_delete_desc)
+            val deleteLabel = stringResource(R.string.ai_delete)
+            val cancelLabel = stringResource(R.string.ai_cancel)
+            LaunchedEffect(pendingDelete?.id) {
+                if (pendingDelete != null) {
+                    deleteSessionConfirm.showConfirm(
+                        title = deleteTitle,
+                        content = deleteDesc,
+                        confirm = deleteLabel,
+                        dismiss = cancelLabel,
+                    )
+                }
             }
             ComposerMiuix(
                 modifier = Modifier.padding(bottom = bottomInset),

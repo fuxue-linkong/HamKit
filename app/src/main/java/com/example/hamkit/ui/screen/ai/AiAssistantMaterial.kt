@@ -58,7 +58,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import com.example.hamkit.ui.component.dialog.rememberConfirmDialog
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -185,19 +187,34 @@ fun AiAssistantScreenMaterial(bottomInnerPadding: Dp = 0.dp) {
     val scope = rememberCoroutineScope()
     var showHistory by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<AiSessionSummary?>(null) }
+    // D2 整改：删除确认弹窗统一走共享 ConfirmDialog，与 Miuix 版同一套视觉语言。
+    // 回调用 rememberUpdatedState 捕获最新 pendingDelete，避免闭包过期。
+    val currentPendingDelete by rememberUpdatedState(pendingDelete)
+    val deleteSessionConfirm = rememberConfirmDialog(
+        onConfirm = {
+            currentPendingDelete?.let { viewModel.deleteSession(it.id) }
+            pendingDelete = null
+        },
+        onDismiss = { pendingDelete = null },
+    )
     var pendingExport by remember { mutableStateOf<String?>(null) }
+    // C1 整改：导出完成后给 Snackbar 反馈（Material 版）
+    val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
+    val exportDoneMessage = stringResource(R.string.ai_export_done)
     val exportPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("text/markdown"),
     ) { uri ->
         val content = pendingExport
+        var exported = false
         if (uri != null && content != null) {
             runCatching {
                 context.contentResolver.openOutputStream(uri)?.use { out ->
                     out.write(content.toByteArray(Charsets.UTF_8))
                 }
-            }
+            }.onSuccess { exported = true }
         }
         pendingExport = null
+        if (exported) scope.launch { snackbarHostState.showSnackbar(exportDoneMessage) }
     }
     val listState = rememberLazyListState()
     // 与 Miuix 版一致：让出底部导航高度，键盘弹出时取 ime 与导航栏的较大值
@@ -246,6 +263,9 @@ fun AiAssistantScreenMaterial(bottomInnerPadding: Dp = 0.dp) {
                     }
                 },
             )
+        },
+        snackbarHost = {
+            com.example.hamkit.ui.component.material.SnackBarHost(hostState = snackbarHostState)
         },
     ) { padding ->
         Column(
@@ -312,23 +332,22 @@ fun AiAssistantScreenMaterial(bottomInnerPadding: Dp = 0.dp) {
                     },
                 )
             }
-            pendingDelete?.let { session ->
-                AlertDialog(
-                    onDismissRequest = { pendingDelete = null },
-                    title = { Text(stringResource(R.string.ai_history_delete_title)) },
-                    text = { Text(stringResource(R.string.ai_history_delete_desc)) },
-                    confirmButton = {
-                        Button(onClick = {
-                            pendingDelete = null
-                            viewModel.deleteSession(session.id)
-                        }) { Text(stringResource(R.string.ai_delete)) }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { pendingDelete = null }) {
-                            Text(stringResource(R.string.ai_cancel))
-                        }
-                    },
-                )
+            // D2：pendingDelete 触发确认弹窗；showConfirm 由 LaunchedEffect 保证只调一次，
+            // 确认/取消回调负责清空 pendingDelete（见上方 rememberConfirmDialog）。
+            // 字符串在组合期解析，LaunchedEffect 内不能调用 @Composable。
+            val deleteTitle = stringResource(R.string.ai_history_delete_title)
+            val deleteDesc = stringResource(R.string.ai_history_delete_desc)
+            val deleteLabel = stringResource(R.string.ai_delete)
+            val cancelLabel = stringResource(R.string.ai_cancel)
+            LaunchedEffect(pendingDelete?.id) {
+                if (pendingDelete != null) {
+                    deleteSessionConfirm.showConfirm(
+                        title = deleteTitle,
+                        content = deleteDesc,
+                        confirm = deleteLabel,
+                        dismiss = cancelLabel,
+                    )
+                }
             }
             ComposerMaterial(
                 modifier = Modifier.padding(bottom = bottomInset),
