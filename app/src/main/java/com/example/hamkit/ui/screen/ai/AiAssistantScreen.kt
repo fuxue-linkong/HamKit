@@ -259,6 +259,17 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
                             tint = colorScheme.primary,
                         )
                     }
+                    // D1 整改：补「新建会话」入口，与 Material 版顶栏动作对齐
+                    IconButton(
+                        onClick = viewModel::newSession,
+                        modifier = Modifier.clip(CircleShape),
+                    ) {
+                        Icon(
+                            Icons.Rounded.Add,
+                            contentDescription = stringResource(R.string.ai_new_chat_desc),
+                            tint = colorScheme.primary,
+                        )
+                    }
                     IconButton(
                         onClick = { navigator.push(Route.AiSettings) },
                         modifier = Modifier.clip(CircleShape),
@@ -1480,6 +1491,7 @@ private fun SatelliteCardMiuix(data: SatelliteCardData) {
                         primary = colorScheme.primary,
                         outline = colorScheme.onSurface.copy(alpha = 0.25f),
                         diameter = 112.dp,
+                        isEclipsed = live.isEclipsed,
                     )
                     Spacer(Modifier.width(12.dp))
                     Column(

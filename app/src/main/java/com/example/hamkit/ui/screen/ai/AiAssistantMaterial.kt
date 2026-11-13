@@ -597,7 +597,19 @@ private fun MessageItemMaterial(message: AiChatMessageUi) {
                         },
                     )
                     if (message.isStreaming) {
-                        Text("▍", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                        // D4 整改：流式光标统一呼吸动画（与 Miuix 版同一规格：500ms 反复 0.2↔1）
+                        val transition = rememberInfiniteTransition(label = "aiCursor")
+                        val alpha by transition.animateFloat(
+                            initialValue = 0.2f,
+                            targetValue = 1f,
+                            animationSpec = infiniteRepeatable(tween(500), RepeatMode.Reverse),
+                            label = "aiCursorAlpha",
+                        )
+                        Text(
+                            "▍",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = alpha),
+                        )
                     }
                 }
             }
@@ -1154,17 +1166,18 @@ private fun ReasoningCardMaterial(message: AiChatMessageUi) {
 
 @Composable
 private fun AttachmentChipMaterial(attachment: AiAttachment, onRemove: (String) -> Unit) {
+    // D3 整改：补齐 ERROR 状态（与 Miuix 版一致）；移除按钮对齐 Miuix 的 22dp 圆形 IconButton（A5）
+    val icon = when (attachment.kind) {
+        AiAttachmentKind.AUDIO -> Icons.Rounded.AudioFile
+        AiAttachmentKind.IMAGE -> Icons.Rounded.Image
+        else -> Icons.Rounded.Description
+    }
     Row(
         modifier = Modifier
-            .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
-            .padding(horizontal = 10.dp, vertical = 6.dp),
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f), RoundedCornerShape(50))
+            .padding(start = 8.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        val icon = when (attachment.kind) {
-            AiAttachmentKind.AUDIO -> Icons.Rounded.AudioFile
-            AiAttachmentKind.IMAGE -> Icons.Rounded.Image
-            else -> Icons.Rounded.Description
-        }
         Icon(
             icon,
             contentDescription = null,
@@ -1178,23 +1191,40 @@ private fun AttachmentChipMaterial(attachment: AiAttachment, onRemove: (String) 
             maxLines = 1,
             modifier = Modifier.widthIn(max = 120.dp),
         )
-        if (attachment.status == AiAttachmentStatus.PARSING) {
-            Spacer(Modifier.width(4.dp))
-            Text(
-                stringResource(R.string.ai_att_parsing),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+        when (attachment.status) {
+            AiAttachmentStatus.PARSING -> {
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    stringResource(R.string.ai_att_parsing),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            AiAttachmentStatus.ERROR -> {
+                Spacer(Modifier.width(4.dp))
+                Box(
+                    Modifier
+                        .size(6.dp)
+                        .background(MaterialTheme.colorScheme.error, CircleShape),
+                )
+            }
+            AiAttachmentStatus.READY -> Unit
+        }
+        Spacer(Modifier.width(2.dp))
+        Box(
+            modifier = Modifier
+                .size(22.dp)
+                .clip(CircleShape)
+                .clickable { onRemove(attachment.id) },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Rounded.Close,
+                contentDescription = stringResource(R.string.ai_remove_attachment),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(12.dp),
             )
         }
-        Spacer(Modifier.width(6.dp))
-        Text(
-            "×",
-            style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier
-                .clickable { onRemove(attachment.id) }
-                .padding(2.dp)
-                .semantics { contentDescription = "移除附件" },
-        )
     }
 }
 
@@ -1474,6 +1504,7 @@ private fun SatelliteCardMaterial(data: SatelliteCardData) {
                         primary = MaterialTheme.colorScheme.primary,
                         outline = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
                         diameter = 112.dp,
+                        isEclipsed = live.isEclipsed,
                     )
                     Spacer(Modifier.width(12.dp))
                     Column(

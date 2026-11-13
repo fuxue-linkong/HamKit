@@ -32,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.dropUnlessResumed
@@ -148,11 +149,26 @@ fun SatelliteMapMaterial(catalogNumber: Int, onBack: () -> Unit = {}) {
                             value = liveInfo?.altitudeKm?.let { "%.0f km".format(it) } ?: "--"
                         )
                     }
-                    Text(
-                        text = formatPassCountdown(session.aosTime, session.losTime, nowMillis),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        // D7 整改：倒计时定级为次级信息（与详情页 DetailRow 同规格），在境时用 primary 标记
+                        val inPass = nowMillis >= (session.aosTime?.toEpochMilli() ?: Long.MAX_VALUE) &&
+                            nowMillis < (session.losTime?.toEpochMilli() ?: Long.MIN_VALUE)
+                        Text(
+                            text = "倒计时",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = formatPassCountdown(session.aosTime, session.losTime, nowMillis),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (inPass) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                 }
             }
         }
