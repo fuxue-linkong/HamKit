@@ -194,20 +194,25 @@ jobs:
           fi
           echo "Using apksigner: $APKSIGNER"
 
-          # 验证 APK 签名有效性（v1+v2+v3 方案）
+          # 验证 APK 签名有效性并捕获输出。
+          # 注意：AGP 产出的 release APK 只签 v2 scheme（minSdk 26 无需 v1），
+          # 而 `keytool -printcert -jarfile` 只认 JAR（v1）签名，会报
+          # "Not a signed jar file"——指纹必须从 apksigner 的输出解析，
+          # 不能用 keytool。
           echo "=== Verify APK signature ==="
-          "$APKSIGNER" verify --verbose --print-certs "$APK_PATH"
+          APKSIGNER_OUT=$("$APKSIGNER" verify --verbose --print-certs "$APK_PATH")
+          echo "$APKSIGNER_OUT"
 
-          # 提取签名指纹用于跨版本一致性对比
+          # 从 apksigner 输出提取证书指纹（排除 public key digest 行）
           echo ""
           echo "=== Signature fingerprint ==="
-          FINGERPRINT_SHA1=$(keytool -printcert -jarfile "$APK_PATH" | grep -E "SHA-?1:" | head -1 | awk '{print $NF}')
-          FINGERPRINT_SHA256=$(keytool -printcert -jarfile "$APK_PATH" | grep -E "SHA-?256:" | head -1 | awk '{print $NF}')
+          FINGERPRINT_SHA1=$(echo "$APKSIGNER_OUT" | grep -E "certificate SHA-1 digest" | head -1 | awk '{print $NF}')
+          FINGERPRINT_SHA256=$(echo "$APKSIGNER_OUT" | grep -E "certificate SHA-256 digest" | head -1 | awk '{print $NF}')
           echo "SHA-1:   $FINGERPRINT_SHA1"
           echo "SHA-256: $FINGERPRINT_SHA256"
           if [ -z "$FINGERPRINT_SHA1" ] || [ -z "$FINGERPRINT_SHA256" ]; then
-            echo "::warning::指纹提取失败，输出 keytool 原始结果以便排查"
-            keytool -printcert -jarfile "$APK_PATH" || true
+            echo "::warning::指纹提取失败，输出 apksigner 完整结果以便排查"
+            echo "$APKSIGNER_OUT" || true
           fi
           echo "fingerprint_sha1=$FINGERPRINT_SHA1" >> "$GITHUB_OUTPUT"
           echo "fingerprint_sha256=$FINGERPRINT_SHA256" >> "$GITHUB_OUTPUT"
