@@ -188,3 +188,31 @@ SSTV、HF Fax、APRS、FT8、QSO 日志、提醒列表。
 - `:app:compileDebugKotlin` 通过；对外函数签名（`SstvMainScreen` / `SstvSettingsScreen` /
   `SstvTxScreen` / `SstvGalleryScreen`）与调用方均未改动。
 - 两套实现的 `uiState.*` 访问集合保持一致（主界面两侧均只读写同一组状态）。
+
+## 八、AI 与卫星模块 parity 清单（2026-11）
+
+> 来源：`docs/DESIGN_REVIEW_AI_SATELLITE.md` D 组（一致性）9 条，逐条跟踪。
+> 状态：✅ 已完成 · 🔧 本批整改 · 📋 待办。
+
+| # | 问题 | 状态 | 说明 |
+|---|------|------|------|
+| D1 | AI 聊天顶栏动作不一致：Miuix 只有 History+Settings，Material 多一个 Add（新建会话） | 📋 待办 | 二选一：Miuix 顶栏补「新建会话」入口，或两版统一去掉顶栏 Add、都收进历史面板 |
+| D2 | 删除会话确认弹窗分叉（Material `AlertDialog` vs Miuix 自绘） | ✅ 已完成（495ed4a9） | 两版统一走共享 `rememberConfirmDialog`（`ui/component/dialog/`，内部按风格分发） |
+| D3 | 附件 chip：Material 版缺 ERROR 状态（只有 PARSING），移除按钮实现不同（见审查 A5） | 📋 待办 | 以 Miuix 版为准补齐 ERROR 状态；移除按钮在触控区专项（第 6 步）统一 |
+| D4 | 流式光标：Miuix 有透明度呼吸动画，Material 是静态 "▍" | 📋 待办 | 统一为呼吸动画（几行 animateFloat 改动） |
+| D5 | 卫星详情页质感：Miuix 版有 BlurredBar + LocalCardAlpha，Material 版两者皆无 | 📋 待办 | Material 顶栏加 `surfaceColorAtElevation` 或接受差异并在此记录；至少统一卡片 alpha 行为 |
+| D6 | 「label+value 数字对」五处实现五种字号（Metric/RadarStat/MapInfoText/ManagementStat/LiveBigNumber） | ✅ 已完成（da657ea4） | 收敛为共享 `StatCell`（`ui/component/StatCell.kt`，Hero/Primary/Inline 三档，双皮肤共用规格） |
+| D7 | 倒计时格式：雷达页 14sp primary / 地图页 12sp 灰 / 详情页卡片 14sp，同一数据三种呈现 | 📋 待办 | 数据行已由 StatCell 统一（第 2 步）；倒计时本身的字号与颜色策略待定级 |
+| D8 | AI 设置页标题硬编码 "AI 助手设置" 未走 stringResource | ✅ 已完成（本批） | 新增 `ai_settings_title`（en/zh），两版均改 `stringResource` |
+| D9 | AI 卡片 `SatelliteRadar`（简化版）与卫星模块 `RadarView` 视觉规格完全不同 | 📋 待办 | 第 1 步已让 RadarView 支持主题色传参（sweepColor/trackColor 等）；AI 卡复用 RadarView（缩小尺寸 + 关 sweep/track）待办 |
+
+### 整改提交索引
+
+| 步骤 | 提交 | 覆盖条目 |
+|---|---|---|
+| 1 状态色令牌化 | `3c10c77d` | A1 / A2 / C8 |
+| 2 统一数字组件 | `da657ea4` | A7 / D6 / E2（部分） |
+| 3 公共弹窗/反馈 | `495ed4a9` | C4 / D2 / C1 / C2 / E1 |
+| 4 设置页重排 | `4d16052f` | B2 / B3 / C5 / C9 |
+| 5 parity 清单 | 本批 | D8（其余 D 组条目入册跟踪） |
+| 6 触控区专项 | 待办 | A5 / A12 / C2（间距部分） |
