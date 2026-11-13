@@ -26,9 +26,11 @@ on:
     branches:
       - miuix
     paths-ignore:
-      - 'README.md'
+      - '**/*.md'
       - 'docs/**'
-      - '.github/*.md'
+      - 'website/**'
+      - 'images/**'
+      - 'scripts/**'
       - 'log/**'
   workflow_dispatch:
 
@@ -41,8 +43,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.caching=true -Dorg.gradle.configuration-cache=true"
   GRADLE_VERSION: '9.4.1'
+# 说明：不再设置 GRADLE_OPTS=-Dorg.gradle.daemon=false。
+# 本 job 要连续跑两次 gradle（test → assembleRelease），保留 daemon 可复用
+# 热 JVM（JIT/配置缓存/Kotlin 编译器守护进程），第二次调用明显更快；
+# setup-gradle 会在 job 结束时自动停掉 daemon，不产生跨 job 泄漏。
+# caching / configuration-cache 已在 gradle.properties 中开启，无需重复注入。
 
 jobs:
   # 合并 test + build 为单 job：复用 Gradle 缓存和编译产物，节省 2-3 分钟
@@ -67,13 +73,16 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '21'
-          cache: gradle
+          # 不用 setup-java 的 cache: gradle —— 下面的 setup-gradle 已经缓存
+          # 整个 GRADLE_USER_HOME（含依赖 + wrapper），两处同时开会对 ~/.gradle
+          # 做两次还原/两次上传，白白多花几分钟缓存时间。
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: ${{ env.GRADLE_VERSION }}
-          cache-read-only: false # 可写缓存（行业惯例：分支构建可写）
+          # 主分支构建可写缓存；依赖缓存和构建缓存走 gradle 用户目录约定路径
+          cache-read-only: false
 
       # Robolectric SDK 缓存：避免 fresh runner 重新下载 android-all-34.jar（~50MB）
       # 失败原因之一是网络抖动导致下载 hang，触发 15 分钟超时
@@ -90,11 +99,10 @@ jobs:
         id: test
         run: |
           set -o pipefail
-          gradle :app:testDebugUnitTest \
+          ./gradlew :app:testDebugUnitTest \
             --console=plain \
             --continue \
-            --stacktrace \
-            --no-daemon 2>&1 | tee test-output.log
+            --stacktrace 2>&1 | tee test-output.log
 
       # 测试失败时上传报告，并标记跳过后续构建步骤
       - name: Upload test reports on failure
@@ -152,10 +160,9 @@ jobs:
           AMAP_WEB_KEY: ${{ secrets.AMAP_WEB_KEY }}
         run: |
           set -o pipefail
-          gradle assembleRelease \
+          ./gradlew assembleRelease \
             --console=plain \
-            --stacktrace \
-            --no-daemon 2>&1 | tee build.log
+            --stacktrace 2>&1 | tee build.log
 
       # 列出实际生成的 APK 路径（lsplugin.apksign 等插件可能重命名/移动 APK）
       - name: List generated APK files
@@ -223,52 +230,31 @@ jobs:
           - 指纹变化说明签名密钥被替换，用户必须先卸载旧版本再安装。
           EOF
 
-      - name: Upload Release APK
+      # 产物统一打包成一个 artifact 上传（原为 4 个 artifact 分开传，
+      # 每个都要走一遍压缩/上传 API，合并后显著省时）
+      - name: Upload Release APK bundle
+        id: upload_bundle
         if: steps.keystore.outputs.signed == 'true' && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: app-release-${{ github.run_id }}
           # 使用通配符：lsplugin.apksign 等插件可能把 APK 输出到非默认路径或改名
-          path: app/build/outputs/apk/**/*.apk
-          retention-days: 14
-          if-no-files-found: error
-
-      # R8 映射文件：线上崩溃栈回溯必需，与正式版产物一并保留
-      - name: Upload ProGuard mapping
-        if: steps.keystore.outputs.signed == 'true' && steps.build.outcome == 'success'
-        uses: actions/upload-artifact@v4
-        with:
-          name: mapping-release-${{ github.run_id }}
-          path: app/build/outputs/mapping/release/
+          path: |
+            app/build/outputs/apk/**/*.apk
+            app/build/outputs/mapping/release/
+            signing-report/signature-fingerprint.txt
           retention-days: 30
-          if-no-files-found: warn
-
-      - name: Upload signature report
-        if: steps.keystore.outputs.signed == 'true' && steps.build.outcome == 'success'
-        uses: actions/upload-artifact@v4
-        with:
-          name: signature-report-${{ github.run_id }}
-          path: signing-report/signature-fingerprint.txt
-          retention-days: 90
           if-no-files-found: error
 
-      - name: Upload build log
-        if: always() && steps.build.outcome != 'skipped'
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log-${{ github.run_id }}
-          path: build.log
-          retention-days: 7
-          if-no-files-found: warn
-
-      - name: Upload build reports on failure
+      - name: Upload build log on failure
+        # build.log 主要用于失败排查；成功时的关键信息已在 step summary 里
         if: failure() && steps.build.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
-          name: build-reports-${{ github.run_id }}
+          name: build-log-${{ github.run_id }}
           path: |
+            build.log
             app/build/reports
-            app/build/outputs
           retention-days: 14
           if-no-files-found: warn
 
@@ -317,38 +303,6 @@ jobs:
           elif [ "${{ steps.test.outcome }}" = "failure" ]; then
             echo "❌ Unit tests failed, build skipped." >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "❌ CI build failed, download build-reports artifact for details." >> "$GITHUB_STEP_SUMMARY"
+            echo "❌ CI build failed, download build-log artifact for details." >> "$GITHUB_STEP_SUMMARY"
           fi
 
-  # 状态通知：汇总构建结果
-  notify:
-    name: Status Notification
-    needs: [test-and-build]
-    if: always()
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    steps:
-      - name: Workflow status notification
-        run: |
-          echo "## Workflow Status" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Job | Status |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|------|------|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Test & Build Release | ${{ needs.test-and-build.result }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-
-          # cancelled 不属于「构建失败」：常见于新 push 顶掉旧 run（concurrency 取消），
-          # 此时上游 job 的实质步骤往往已全部成功，若判成失败会让整个 workflow 假红。
-          # 真正的失败只可能是 failure，其余（success / skipped / cancelled）都视为未失败。
-          result="${{ needs.test-and-build.result }}"
-          if [ "$result" = "failure" ]; then
-            echo "❌ Overall: failure" >> "$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
-          if [ "$result" = "cancelled" ]; then
-            echo "⚠️ Overall: cancelled (被新的推送取消，非构建失败)" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "✅ Overall: success" >> "$GITHUB_STEP_SUMMARY"
-          fi

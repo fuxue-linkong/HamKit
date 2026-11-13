@@ -10,11 +10,13 @@ name: Unit Tests
 on:
   push:
     branches:
-      - miuix
+      # miuix（主分支）的 push 由 ci.yml 全量跑（test + build），这里不再重复触发，
+      # 避免同一份提交把完全相同的 :app:testDebugUnitTest 跑两遍。
+      # 只有功能/修复分支的 push 才在此跑纯测试门禁。
       - 'fix/**'
       - 'feature/**'
     paths-ignore:
-      - 'README.md'
+      - '**/*.md'
       - 'docs/**'
       - '.github/*.md'
       - 'log/**'
@@ -55,8 +57,10 @@ concurrency:
 
 # 集中环境变量
 env:
-  GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.caching=true -Dorg.gradle.configuration-cache=true"
   GRADLE_VERSION: '9.4.1'
+# 不再设置 GRADLE_OPTS daemon=false：本工作流只跑一次 gradle，daemon 收益有限，
+# 但保留 daemon 与 gradle.properties（caching / configuration-cache）保持一致，
+# 且 setup-gradle 会在 job 结束时自动清理。
 
 jobs:
   test:
@@ -74,7 +78,7 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '21'
-          cache: gradle          # 启用 Gradle 依赖缓存
+          # 不用 setup-java 的 cache: gradle，避免与 setup-gradle 重复缓存 ~/.gradle
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -85,11 +89,10 @@ jobs:
       - name: Run unit tests
         run: |
           set -o pipefail
-          gradle :app:testDebugUnitTest \
+          ./gradlew :app:testDebugUnitTest \
             --console=plain \
             --continue \
-            --stacktrace \
-            --no-daemon 2>&1 | tee test-output.log
+            --stacktrace 2>&1 | tee test-output.log
 
       - name: Upload test reports on failure
         if: failure()
