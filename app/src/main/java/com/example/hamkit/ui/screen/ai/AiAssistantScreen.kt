@@ -104,6 +104,7 @@ import top.yukonga.miuix.kmp.basic.LinearProgressIndicator
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
+import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
@@ -156,6 +157,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.FileDownload
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.window.DialogProperties
 import java.util.Calendar
@@ -247,11 +249,15 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
         if (state.messages.isNotEmpty()) listState.scrollToItem(state.messages.lastIndex)
     }
 
+    // 顶栏随滚动收起大标题：否则内容会被大标题下的硬边裁切（与 About/色板/APRS 设置页一致）
+    val scrollBehavior = MiuixScrollBehavior()
+
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
                 title = stringResource(R.string.ai_title),
+                scrollBehavior = scrollBehavior,
                 actions = {
                     IconButton(
                         onClick = { viewModel.refreshSessions(); showHistory = true },
@@ -307,43 +313,53 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
                 return@Scaffold
             }
 
-            if (!state.hasKey) {
-                KeyGuideCardMiuix(onOpenSettings = { navigator.push(Route.AiSettings) })
-            }
-
-            // 最后一条消息已带错误时不再重复显示顶层错误卡
-            if (state.messages.lastOrNull()?.error == null) {
-                state.error?.let { message ->
-                    ErrorCardMiuix(message = message, onDismiss = viewModel::consumeError)
+            // 内容区吃满剩余高度：空态与消息列表都在这里消化，
+            // 输入框才不会被可滚动的空态挤扁（此前空态无 weight，会把 Composer 压成只剩一行提示）
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+            ) {
+                if (!state.hasKey) {
+                    KeyGuideCardMiuix(onOpenSettings = { navigator.push(Route.AiSettings) })
                 }
-            }
 
-            if (state.messages.isEmpty()) {
-                // B7 整改：键盘弹出时隐藏空态（避免与输入框争抢可视区），空态交给内部滚动
-                if (imeBottom == 0.dp) {
-                    EmptyStateMiuix(onPick = { prompt -> viewModel.onInputChange(prompt) })
+                // 最后一条消息已带错误时不再重复显示顶层错误卡
+                if (state.messages.lastOrNull()?.error == null) {
+                    state.error?.let { message ->
+                        ErrorCardMiuix(message = message, onDismiss = viewModel::consumeError)
+                    }
+                }
+
+                if (state.messages.isEmpty()) {
+                    // B7 整改：键盘弹出时隐藏空态（避免与输入框争抢可视区），空态交给内部滚动
+                    if (imeBottom == 0.dp) {
+                        EmptyStateMiuix(
+                            onPick = { prompt -> viewModel.onInputChange(prompt) },
+                            modifier = Modifier
+                                .weight(1f)
+                                .nestedScroll(scrollBehavior.nestedScrollConnection),
+                        )
+                    }
                 } else {
-                    Spacer(Modifier.weight(1f))
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .clipToBounds(),
-                    state = listState,
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                        start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp,
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    items(state.messages, key = { it.id }) { message ->
-                        MessageItemMiuix(message)
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .clipToBounds()
+                            .nestedScroll(scrollBehavior.nestedScrollConnection),
+                        state = listState,
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                            start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        items(state.messages, key = { it.id }) { message ->
+                            MessageItemMiuix(message)
+                        }
                     }
                 }
             }
-
-            if (state.messages.isEmpty()) Spacer(Modifier.weight(1f))
 
             state.pendingConfirm?.let { request ->
                 AiConfirmDialogMiuix(
@@ -386,7 +402,8 @@ fun AiAssistantScreenMiuix(bottomInnerPadding: Dp = 0.dp) {
                 }
             }
             ComposerMiuix(
-                modifier = Modifier.padding(bottom = bottomInset),
+                // 与底部导航栏/键盘之间留 8dp 呼吸位，避免输入框直接贴在导航栏上
+                modifier = Modifier.padding(bottom = bottomInset + 8.dp),
                 input = state.input,
                 streaming = state.isStreaming,
                 attachments = state.attachments,
@@ -455,7 +472,7 @@ private fun ErrorCardMiuix(message: String, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun EmptyStateMiuix(onPick: (String) -> Unit) {
+private fun EmptyStateMiuix(onPick: (String) -> Unit, modifier: Modifier = Modifier) {
     val samples = listOf(
         stringResource(R.string.ai_sample_1),
         stringResource(R.string.ai_sample_2),
@@ -464,7 +481,7 @@ private fun EmptyStateMiuix(onPick: (String) -> Unit) {
     )
     Column(
         // B7 整改：小屏/横屏下空态整体可滚动，避免超出可视区
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 24.dp, vertical = 28.dp),

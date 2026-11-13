@@ -282,33 +282,43 @@ fun AiAssistantScreenMaterial(bottomInnerPadding: Dp = 0.dp) {
                 return@Scaffold
             }
 
-            if (!state.hasKey) {
-                KeyGuideCardMaterial(onOpenSettings = { navigator.push(Route.AiSettings) })
-            }
-            if (state.messages.lastOrNull()?.error == null) {
-                state.error?.let { message ->
-                    ErrorCardMaterial(message = message, onDismiss = viewModel::consumeError)
+            // 内容区吃满剩余高度：空态与消息列表都在这里消化，
+            // 输入框才不会被可滚动的空态挤扁（与 Miuix 版一致）
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+            ) {
+                if (!state.hasKey) {
+                    KeyGuideCardMaterial(onOpenSettings = { navigator.push(Route.AiSettings) })
                 }
-            }
+                if (state.messages.lastOrNull()?.error == null) {
+                    state.error?.let { message ->
+                        ErrorCardMaterial(message = message, onDismiss = viewModel::consumeError)
+                    }
+                }
 
-            if (state.messages.isEmpty()) {
-                // B7 整改：键盘弹出时隐藏空态（与 Miuix 版一致）
-                if (imeBottom == 0.dp) {
-                    EmptyStateMaterial(onPick = { prompt -> viewModel.onInputChange(prompt) })
-                }
-                Spacer(Modifier.weight(1f))
-            } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .clipToBounds(),
-                    state = listState,
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    items(state.messages, key = { it.id }) { message ->
-                        MessageItemMaterial(message)
+                if (state.messages.isEmpty()) {
+                    // B7 整改：键盘弹出时隐藏空态（与 Miuix 版一致）
+                    if (imeBottom == 0.dp) {
+                        EmptyStateMaterial(
+                            onPick = { prompt -> viewModel.onInputChange(prompt) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .clipToBounds(),
+                        state = listState,
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        items(state.messages, key = { it.id }) { message ->
+                            MessageItemMaterial(message)
+                        }
                     }
                 }
             }
@@ -355,7 +365,8 @@ fun AiAssistantScreenMaterial(bottomInnerPadding: Dp = 0.dp) {
                 }
             }
             ComposerMaterial(
-                modifier = Modifier.padding(bottom = bottomInset),
+                // 与底部导航栏/键盘之间留 8dp 呼吸位（与 Miuix 版一致）
+                modifier = Modifier.padding(bottom = bottomInset + 8.dp),
                 input = state.input,
                 streaming = state.isStreaming,
                 attachments = state.attachments,
@@ -427,7 +438,7 @@ private fun ErrorCardMaterial(message: String, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun EmptyStateMaterial(onPick: (String) -> Unit) {
+private fun EmptyStateMaterial(onPick: (String) -> Unit, modifier: Modifier = Modifier) {
     val samples = listOf(
         stringResource(R.string.ai_sample_1),
         stringResource(R.string.ai_sample_2),
@@ -436,7 +447,7 @@ private fun EmptyStateMaterial(onPick: (String) -> Unit) {
     )
     Column(
         // B7 整改：小屏下空态整体可滚动（与 Miuix 版一致）
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 24.dp, vertical = 28.dp),
