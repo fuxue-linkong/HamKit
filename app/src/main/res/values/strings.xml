@@ -507,6 +507,9 @@
     <string name="ai_sample_4">When does ISS pass over me?</string>
     <string name="ai_settings_save">Save settings</string>
     <string name="ai_settings_test">Test connection</string>
+    <string name="ai_settings_testing">Testing…</string>
+    <string name="ai_settings_connection_section">Provider &amp; Connection</string>
+    <string name="ai_settings_key_section">API Key</string>
     <string name="ai_settings_clear_history">Clear all conversations</string>
     <string name="ai_settings_clear">Clear</string>
     <string name="ai_settings_save_key">Save key</string>
