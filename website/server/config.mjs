@@ -14,6 +14,24 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
+/**
+ * 从主会话密钥派生子用途密钥（2026-11 安全审计 M-4）。
+ *
+ * 背景：OAuth state/nonce Cookie 曾直接用 `SESSION_SECRET + '.oauth'` 当 HMAC
+ * 密钥 —— 字符串拼接不是密钥分离：两个用途的密钥材料线性相关，一处泄露即
+ * 拉低另一处的安全强度。HKDF（RFC 5869）用不同 info 标签派生出统计独立的密钥。
+ *
+ * @param {string|Buffer} secret 主密钥（SESSION_SECRET）
+ * @param {string} purpose 用途标签，如 'oauth-state'
+ * @returns {string} base64url 编码的 32 字节派生密钥
+ */
+export function deriveSubKey(secret, purpose) {
+  const ikm = Buffer.isBuffer(secret) ? secret : Buffer.from(String(secret), 'utf8');
+  return Buffer.from(
+    crypto.hkdfSync('sha256', ikm, Buffer.alloc(0), Buffer.from(`hamkit:${purpose}`, 'utf8'), 32),
+  ).toString('base64url');
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
