@@ -23,7 +23,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -33,6 +32,8 @@ import com.example.hamkit.data.satellite.SatelliteLiveInfo
 import com.example.hamkit.ui.LocalMainViewModel
 import com.example.hamkit.ui.UiMode
 import com.example.hamkit.ui.LocalUiMode
+import com.example.hamkit.ui.component.StatCell
+import com.example.hamkit.ui.component.StatEmphasis
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
@@ -178,17 +179,10 @@ fun SatelliteMapMiuix(catalogNumber: Int, onBack: () -> Unit = {}) {
 
 @Composable
 private fun MapInfoTextMiuix(label: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = value,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = colorScheme.onSurface
-        )
-        Text(
-            text = label,
-            fontSize = 11.sp,
-            color = colorScheme.onSurfaceVariantSummary
-        )
-    }
+    StatCell(
+        label = label,
+        value = value,
+        emphasis = StatEmphasis.Inline,
+        alignment = Alignment.CenterHorizontally
+    )
 }

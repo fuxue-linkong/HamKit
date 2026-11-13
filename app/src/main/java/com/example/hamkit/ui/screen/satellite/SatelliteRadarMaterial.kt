@@ -43,6 +43,8 @@ import androidx.lifecycle.compose.dropUnlessResumed
 import com.example.hamkit.R
 import com.example.hamkit.data.satellite.SatelliteLiveInfo
 import com.example.hamkit.ui.LocalMainViewModel
+import com.example.hamkit.ui.component.StatCell
+import com.example.hamkit.ui.component.StatEmphasis
 import com.example.hamkit.ui.theme.SafeColors
 
 /**
@@ -184,19 +186,12 @@ fun SatelliteRadarMaterial(catalogNumber: Int, onBack: () -> Unit = {}) {
 
 @Composable
 private fun RadarStatMaterial(label: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = value,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
+    StatCell(
+        label = label,
+        value = value,
+        emphasis = StatEmphasis.Inline,
+        alignment = Alignment.CenterHorizontally
+    )
 }
 
 @Composable

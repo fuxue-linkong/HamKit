@@ -82,6 +82,8 @@ import com.example.hamkit.data.ai.AiSessionSummary
 import com.example.hamkit.data.ai.tool.AiCard
 import com.example.hamkit.data.ai.tool.SatelliteCardData
 import com.example.hamkit.data.ai.tool.ZoneCardData
+import com.example.hamkit.ui.component.StatCell
+import com.example.hamkit.ui.component.StatEmphasis
 import com.example.hamkit.ui.component.markdown.MarkdownPalette
 import com.example.hamkit.ui.component.markdown.MarkdownText
 import com.example.hamkit.ui.screen.ai.component.SatelliteRadar
@@ -1392,17 +1394,12 @@ private fun InfoCardMaterial(title: String, detail: String) {
 
 @Composable
 private fun MetricMaterial(label: String, value: String, compact: Boolean = false) {
-    Column {
-        Text(
-            label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            value,
-            style = if (compact) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
-        )
-    }
+    // D6/E2 整改：label 统一收敛到 StatCell.Inline（11sp）
+    StatCell(
+        label = label,
+        value = value,
+        emphasis = StatEmphasis.Inline
+    )
 }
 
 @Composable

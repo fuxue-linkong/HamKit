@@ -83,6 +83,8 @@ import com.example.hamkit.ui.LocationUiState
 import com.example.hamkit.ui.SatelliteFilter
 import com.example.hamkit.ui.SatelliteUiState
 import com.example.hamkit.ui.LocalMainViewModel
+import com.example.hamkit.ui.component.StatCell
+import com.example.hamkit.ui.component.StatEmphasis
 import com.example.hamkit.ui.applyFilterToItems
 import com.example.hamkit.ui.isSatelliteSourceExpired
 import com.example.hamkit.ui.navigation3.LocalNavigator
@@ -522,19 +524,12 @@ private fun ActionRowMaterial(
 
 @Composable
 private fun ManagementStatMaterial(label: String, value: String, modifier: Modifier = Modifier) {
-    Column(modifier = modifier) {
-        Text(
-            text = value,
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
+    StatCell(
+        label = label,
+        value = value,
+        emphasis = StatEmphasis.Primary,
+        modifier = modifier
+    )
 }
 
 // ---- 筛选入口 ----
