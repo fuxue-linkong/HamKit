@@ -90,7 +90,7 @@ fun AiSettingsScreenMaterial(onBack: () -> Unit = {}) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("AI 助手设置") },
+                title = { Text(stringResource(R.string.ai_settings_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)

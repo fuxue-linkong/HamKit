@@ -112,7 +112,7 @@ fun AiSettingsScreenMiuix(onBack: () -> Unit = {}) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = "AI 助手设置",
+                title = stringResource(R.string.ai_settings_title),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
