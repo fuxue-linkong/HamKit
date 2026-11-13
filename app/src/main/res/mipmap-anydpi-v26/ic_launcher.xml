@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@mipmap/ic_launcher_background"/>
-    <foreground android:drawable="@color/ic_launcher_foreground"/>
+    <!-- 纯色背景层：随主题色定义在 colors.xml -->
+    <background android:drawable="@color/ic_launcher_background"/>
+    <!-- 前景层：角色图形，按 108dp 画布 + 66dp 安全区在各 mipmap-* 中分密度提供 -->
+    <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
 </adaptive-icon>
