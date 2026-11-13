@@ -66,10 +66,10 @@ jobs:
       KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '21'
@@ -78,7 +78,7 @@ jobs:
           # 做两次还原/两次上传，白白多花几分钟缓存时间。
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: ${{ env.GRADLE_VERSION }}
           # 主分支构建可写缓存；依赖缓存和构建缓存走 gradle 用户目录约定路径
@@ -87,7 +87,7 @@ jobs:
       # Robolectric SDK 缓存：避免 fresh runner 重新下载 android-all-34.jar（~50MB）
       # 失败原因之一是网络抖动导致下载 hang，触发 15 分钟超时
       - name: Cache Robolectric SDK
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.m2/repository/org/robolectric
@@ -107,7 +107,7 @@ jobs:
       # 测试失败时上传报告，并标记跳过后续构建步骤
       - name: Upload test reports on failure
         if: failure() && steps.test.outcome == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: unit-test-reports-${{ github.run_id }}
           path: |
@@ -240,7 +240,7 @@ jobs:
       - name: Upload Release APK bundle
         id: upload_bundle
         if: steps.keystore.outputs.signed == 'true' && steps.build.outcome == 'success'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: app-release-${{ github.run_id }}
           # 使用通配符：lsplugin.apksign 等插件可能把 APK 输出到非默认路径或改名
@@ -254,7 +254,7 @@ jobs:
       - name: Upload build log on failure
         # build.log 主要用于失败排查；成功时的关键信息已在 step summary 里
         if: failure() && steps.build.outcome == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: build-log-${{ github.run_id }}
           path: |
