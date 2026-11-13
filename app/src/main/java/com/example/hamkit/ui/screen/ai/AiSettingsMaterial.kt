@@ -73,6 +73,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.material3.Switch
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 
 /** Material 风格实现，与 Miuix 版共用 [AiSettingsViewModel]。 */
@@ -928,6 +929,8 @@ private fun McpCardMaterial(
 ) {
     var portInput by remember(state.mcpPort) { mutableStateOf(state.mcpPort.toString()) }
     val clipboard = LocalClipboardManager.current
+    // A9 整改：「重置」加确认弹窗；Token 等宽字体
+    val resetTokenConfirm = rememberConfirmDialog(onConfirm = onResetToken)
     Card(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -973,12 +976,13 @@ private fun McpCardMaterial(
                     Text(
                         state.mcpToken,
                         style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
                         modifier = Modifier.weight(1f),
                     )
                     TextButton(onClick = { clipboard.setText(AnnotatedString(state.mcpToken)) }) {
                         Text("复制")
                     }
-                    TextButton(onClick = onResetToken) { Text("重置") }
+                    TextButton(onClick = resetTokenConfirm::show) { Text("重置") }
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(

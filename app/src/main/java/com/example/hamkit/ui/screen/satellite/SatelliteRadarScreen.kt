@@ -127,9 +127,11 @@ fun SatelliteRadarMiuix(catalogNumber: Int, onBack: () -> Unit = {}) {
                 .padding(horizontal = 12.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // 顶部信息行：倒计时 + 蚀状态
+            // 顶部信息行：倒计时 + 蚀状态（B4 整改：限宽 460dp 与雷达图/数据卡同轴）
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 460.dp),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(

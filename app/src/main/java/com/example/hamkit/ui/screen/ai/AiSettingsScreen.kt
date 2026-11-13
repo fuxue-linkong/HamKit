@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -386,15 +387,21 @@ private fun ProtocolCardMiuix(
 
 @Composable
 private fun ChipMiuix(text: String, selected: Boolean, onClick: () -> Unit) {
+    // A8 整改：选中态加 1dp primary 边框 + ripple 反馈，可点击性更明确
     Text(
         text = text,
         fontSize = 12.sp,
         fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
         color = if (selected) colorScheme.onPrimary else colorScheme.onSurface,
         modifier = Modifier
+            .clip(RoundedCornerShape(50))
             .background(
                 if (selected) colorScheme.primary else colorScheme.surfaceVariant,
                 RoundedCornerShape(50),
+            )
+            .then(
+                if (selected) Modifier.border(1.dp, colorScheme.onPrimary.copy(alpha = 0.5f), RoundedCornerShape(50))
+                else Modifier
             )
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp),
@@ -1049,6 +1056,8 @@ private fun McpCardMiuix(
 ) {
     var portInput by remember(state.mcpPort) { mutableStateOf(state.mcpPort.toString()) }
     val clipboard = LocalClipboardManager.current
+    // A9 整改：「重置」是危险动作（旧 Token 立即失效），加确认弹窗并降级为次要按钮
+    val resetTokenConfirm = rememberConfirmDialog(onConfirm = onResetToken)
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1068,9 +1077,11 @@ private fun McpCardMiuix(
             if (state.mcpRunning) {
                 Spacer(Modifier.height(8.dp))
                 Text("地址", fontSize = 10.sp, color = colorScheme.onSurfaceVariantSummary)
+                // A9 整改：长地址等宽字体 + 自动换行，避免溢出或挤压
                 Text(
                     state.mcpAddress.ifBlank { "请连接 Wi-Fi 后重试" },
                     fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
                     color = colorScheme.primary,
                 )
                 Spacer(Modifier.height(8.dp))
@@ -1079,6 +1090,7 @@ private fun McpCardMiuix(
                     Text(
                         state.mcpToken,
                         fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
                         modifier = Modifier.weight(1f),
                     )
                     TextButton(
@@ -1087,7 +1099,7 @@ private fun McpCardMiuix(
                     )
                     TextButton(
                         text = "重置",
-                        onClick = onResetToken,
+                        onClick = resetTokenConfirm::show,
                     )
                 }
                 Spacer(Modifier.height(8.dp))

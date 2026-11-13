@@ -715,6 +715,7 @@ private fun MessageItemMiuix(message: AiChatMessageUi) {
 
 @Composable
 private fun StreamingDotsMiuix() {
+    // A4 整改：文本 "● ● ●"（8sp，字形基线不可控）改为 3 个 Circle 绘制
     val transition = rememberInfiniteTransition(label = "aiDots")
     val alpha by transition.animateFloat(
         initialValue = 0.25f,
@@ -722,11 +723,16 @@ private fun StreamingDotsMiuix() {
         animationSpec = infiniteRepeatable(tween(600), RepeatMode.Reverse),
         label = "aiDotsAlpha",
     )
-    Text(
-        "● ● ●",
-        fontSize = 8.sp,
-        color = colorScheme.primary.copy(alpha = alpha),
-    )
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+        repeat(3) {
+            Box(
+                modifier = Modifier
+                    .size(5.dp)
+                    .clip(CircleShape)
+                    .background(colorScheme.primary.copy(alpha = alpha)),
+            )
+        }
+    }
 }
 
 @Composable
@@ -858,8 +864,9 @@ private fun ComposerMiuix(
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(10.dp))
-                    .alpha(if (streaming) 0.5f else 1f)
-                    .clickable {
+                    .alpha(if (streaming) 0.4f else 1f)
+                    // B1 整改：streaming 时模型选择禁用（点击不再误触 reloadConfig）
+                    .clickable(enabled = !streaming) {
                         onReload()
                         pickerOpen = true
                     }
@@ -882,7 +889,7 @@ private fun ComposerMiuix(
                     modifier = Modifier.size(16.dp),
                 )
             }
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(12.dp))
             Box(
                 modifier = Modifier
                     .size(40.dp)
@@ -1169,8 +1176,16 @@ private fun ReasoningCardMiuix(message: AiChatMessageUi) {
             .padding(horizontal = 10.dp, vertical = 6.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            // A3 整改：emoji 换 Material 图标，统一图标族
+            Icon(
+                Icons.Rounded.Psychology,
+                contentDescription = null,
+                tint = colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.size(12.dp),
+            )
+            Spacer(Modifier.width(4.dp))
             Text(
-                "💡 思考过程",
+                "思考过程",
                 fontSize = 10.sp,
                 color = colorScheme.onSurfaceVariantSummary,
                 modifier = Modifier.weight(1f),

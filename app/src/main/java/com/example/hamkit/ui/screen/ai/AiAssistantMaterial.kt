@@ -599,19 +599,43 @@ private fun MessageItemMaterial(message: AiChatMessageUi) {
                         },
                     )
                     if (message.isStreaming) {
-                        // D4 整改：流式光标统一呼吸动画（与 Miuix 版同一规格：500ms 反复 0.2↔1）
-                        val transition = rememberInfiniteTransition(label = "aiCursor")
-                        val alpha by transition.animateFloat(
-                            initialValue = 0.2f,
-                            targetValue = 1f,
-                            animationSpec = infiniteRepeatable(tween(500), RepeatMode.Reverse),
-                            label = "aiCursorAlpha",
-                        )
-                        Text(
-                            "▍",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = alpha),
-                        )
+                        // A4 整改：补流式点动画（与 Miuix 版同规格），文字非空时与光标共存
+                        if (message.text.isBlank()) {
+                            val dotsTransition = rememberInfiniteTransition(label = "aiDots")
+                            val dotsAlpha by dotsTransition.animateFloat(
+                                initialValue = 0.25f,
+                                targetValue = 1f,
+                                animationSpec = infiniteRepeatable(tween(600), RepeatMode.Reverse),
+                                label = "aiDotsAlpha",
+                            )
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                repeat(3) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(5.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.primary.copy(alpha = dotsAlpha)),
+                                    )
+                                }
+                            }
+                        } else {
+                            // D4：流式光标统一呼吸动画（与 Miuix 版同一规格：500ms 反复 0.2↔1）
+                            val transition = rememberInfiniteTransition(label = "aiCursor")
+                            val alpha by transition.animateFloat(
+                                initialValue = 0.2f,
+                                targetValue = 1f,
+                                animationSpec = infiniteRepeatable(tween(500), RepeatMode.Reverse),
+                                label = "aiCursorAlpha",
+                            )
+                            Text(
+                                "▍",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = alpha),
+                            )
+                        }
                     }
                 }
             }
@@ -816,8 +840,9 @@ private fun ComposerMaterial(
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(10.dp))
-                    .alpha(if (streaming) 0.5f else 1f)
-                    .clickable {
+                    .alpha(if (streaming) 0.4f else 1f)
+                    // B1 整改：streaming 时模型选择禁用（与 Miuix 版一致）
+                    .clickable(enabled = !streaming) {
                         onReload()
                         pickerOpen = true
                     }
@@ -1136,8 +1161,16 @@ private fun ReasoningCardMaterial(message: AiChatMessageUi) {
             .padding(horizontal = 10.dp, vertical = 6.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            // A3 整改：emoji 换 Material 图标，统一图标族
+            Icon(
+                Icons.Rounded.Psychology,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(12.dp),
+            )
+            Spacer(Modifier.width(4.dp))
             Text(
-                "💡 思考过程",
+                "思考过程",
                 fontSize = 10.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
