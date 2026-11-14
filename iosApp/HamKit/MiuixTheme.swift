@@ -181,7 +181,9 @@ enum MiuixTheme {
     /// （对齐 Android `backgroundAlpha`，卡片与文字保持不透明）。
     static var background: Color {
         Color(UIColor { [alpha = ThemeStore.shared.backgroundAlpha] trait in
-            let hex = trait.userInterfaceStyle == .dark ? 0x000000 : 0xF7F7F7
+            // 三元表达式两侧字面量默认推断为 Int，而 UIColor(hex:) 收 UInt32，
+            // 需要显式标注类型（上游 9189f4b6 的类型推断问题）
+            let hex: UInt32 = trait.userInterfaceStyle == .dark ? 0x000000 : 0xF7F7F7
             let base = UIColor(hex: hex)
             var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, opacity: CGFloat = 0
             base.getRed(&red, green: &green, blue: &blue, alpha: &opacity)
