@@ -19,6 +19,23 @@ import kotlinx.coroutines.withTimeout
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
+/** 定位失败的分类，便于 UI 给出可操作提示。 */
+enum class LocationFailure { NO_PERMISSION, LOCATION_OFF, NO_PROVIDER, TIMEOUT, UNKNOWN }
+
+class LocationException(
+    val failure: LocationFailure,
+    message: String,
+) : Exception(message)
+
+/** 分类 → 用户可读提示。 */
+fun locationFailureText(failure: LocationFailure): String = when (failure) {
+    LocationFailure.NO_PERMISSION -> "没有定位权限，请允许 HamKit 使用定位"
+    LocationFailure.LOCATION_OFF -> "系统定位已关闭，请打开 GPS 或网络定位"
+    LocationFailure.NO_PROVIDER -> "当前没有可用的定位源，请检查 GPS/Wi-Fi"
+    LocationFailure.TIMEOUT -> "定位超时，请到开阔处重试或检查 GPS"
+    LocationFailure.UNKNOWN -> "定位失败，请稍后重试"
+}
+
 /**
  * 纯 Android Framework [LocationManager] 定位封装。
  *
@@ -66,18 +83,25 @@ class LocationHelper(private val context: Context) {
 
     suspend fun getCurrentLocation(): Location {
         if (!hasPermission()) {
-            throw SecurityException("缺少定位权限")
+            throw LocationException(LocationFailure.NO_PERMISSION, locationFailureText(LocationFailure.NO_PERMISSION))
+        }
+        // 预检系统定位开关：关闭时直接给出可操作提示，不再等超时
+        if (!isLocationEnabled()) {
+            throw LocationException(LocationFailure.LOCATION_OFF, locationFailureText(LocationFailure.LOCATION_OFF))
         }
 
         return try {
-            withTimeout(10_000) { requestLocationManagerLocation() }
+            withTimeout(8_000) { requestLocationManagerLocation() }
         } catch (e: TimeoutCancellationException) {
-            throw Exception("定位超时，请检查手机是否开启 GPS/网络定位")
+            throw LocationException(LocationFailure.TIMEOUT, locationFailureText(LocationFailure.TIMEOUT))
+        } catch (e: LocationException) {
+            throw e
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            throw Exception(
-                "无法获取定位，请检查手机是否开启 GPS/网络定位，或检查是否禁止了本应用定位权限。详情: ${e.message ?: "失败"}"
+            throw LocationException(
+                LocationFailure.UNKNOWN,
+                "${locationFailureText(LocationFailure.UNKNOWN)}（${e.message ?: "未知原因"}）",
             )
         }
     }
@@ -103,7 +127,6 @@ class LocationHelper(private val context: Context) {
 
         // 去重状态：时间窗内暂存最优结果，窗口结束 emit 精度最高的那个
         var pendingBest: Location? = null
-        var pendingEmitTime = 0L
         val handler = android.os.Handler(Looper.getMainLooper())
         val emitRunnable = Runnable {
             pendingBest?.let { best ->
@@ -119,7 +142,6 @@ class LocationHelper(private val context: Context) {
                 if (current == null) {
                     // 窗口起点：暂存并安排窗口结束 emit
                     pendingBest = location
-                    pendingEmitTime = now + DEDUP_WINDOW_MS
                     handler.postDelayed(emitRunnable, DEDUP_WINDOW_MS)
                 } else {
                     // 窗口内：保留精度更优的
@@ -257,31 +279,37 @@ class LocationHelper(private val context: Context) {
 
                 if (providers.isEmpty()) {
                     if (resumed.compareAndSet(false, true)) {
-                        continuation.resumeWithException(Exception("系统未开启任何定位源"))
+                        continuation.resumeWithException(
+                            LocationException(
+                                LocationFailure.NO_PROVIDER,
+                                locationFailureText(LocationFailure.NO_PROVIDER),
+                            ),
+                        )
                     }
                     return@suspendCancellableCoroutine
                 }
 
                 // lastKnown 筛选：精度达标且时间未过期（10 分钟内）才可用，避免拿到数小时前的陈旧位置
                 val now = System.currentTimeMillis()
-                val bestCached = providers
-                    .mapNotNull { p ->
-                        try {
-                            locationManager.getLastKnownLocation(p)
-                        } catch (e: SecurityException) {
-                            null
-                        } catch (e: Exception) {
-                            null
-                        }
+                val cachedLocations = providers.mapNotNull { p ->
+                    try {
+                        locationManager.getLastKnownLocation(p)
+                    } catch (e: SecurityException) {
+                        null
+                    } catch (e: Exception) {
+                        null
                     }
-                    .filter {
-                        it.hasAccuracy() && it.accuracy <= CACHE_MAX_ACCURACY_METERS &&
-                            now - it.time <= CACHE_MAX_AGE_MS
-                    }
-                    .maxByOrNull { if (it.accuracy > 0) it.time / it.accuracy.toLong() else it.time }
+                }
+                val bestCached = pickBestCached(
+                    cachedLocations,
+                    now = now,
+                    maxAgeMs = CACHE_MAX_AGE_MS,
+                    maxAccuracyM = CACHE_MAX_ACCURACY_METERS,
+                )
 
-                if (bestCached != null && bestCached.accuracy <= ACCURACY_THRESHOLD_METERS) {
-                    // 缓存精度达标，秒回
+                if (bestCached != null) {
+                    // 缓存 ≤50m / ≤10min：秒回，避免首次定位等 8s；
+                    // 持续监听会在之后用真实定位替换。
                     if (resumed.compareAndSet(false, true)) {
                         continuation.resume(bestCached)
                     }
@@ -293,7 +321,7 @@ class LocationHelper(private val context: Context) {
                     fallback = bestCached
                 }
                 // 超时后用 fallback 兜底（外层 withTimeout 10s，这里 9s 提前兜底）
-                handler.postDelayed(timeoutRunnable, 9_000L)
+                handler.postDelayed(timeoutRunnable, 7_000L)
 
                 var registeredProvider = false
                 for (provider in providers) {
@@ -325,6 +353,18 @@ class LocationHelper(private val context: Context) {
                 }
             }
         }
+
+    /** 从 lastKnown 中挑精度/时效最优的一条；无满足条件返回 null。 */
+    internal fun pickBestCached(
+        locations: List<Location>,
+        now: Long,
+        maxAgeMs: Long,
+        maxAccuracyM: Float,
+    ): Location? = locations
+        .filter {
+            it.hasAccuracy() && it.accuracy <= maxAccuracyM && now - it.time <= maxAgeMs
+        }
+        .maxByOrNull { if (it.accuracy > 0) it.time / it.accuracy.toLong() else it.time }
 
     private fun removeListener(listener: LocationListener) {
         try {
