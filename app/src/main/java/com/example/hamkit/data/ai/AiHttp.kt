@@ -29,4 +29,15 @@ object AiHttp {
             .readTimeout(30, TimeUnit.SECONDS)
             .build()
     }
+
+    /**
+     * 取消当前所有 AI HTTP 请求（用于「停止生成」；自 miuix 39d1df65 移植）。
+     *
+     * OkHttp 的阻塞读不会随协程取消而中断，必须显式 cancelAll，
+     * 让 streamRequest 里的 IOException("Canceled") 转成 CancellationException。
+     */
+    fun cancelActive() {
+        runCatching { streaming.dispatcher.cancelAll() }
+        runCatching { blocking.dispatcher.cancelAll() }
+    }
 }

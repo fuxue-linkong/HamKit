@@ -463,7 +463,7 @@ private struct MarkdownLiteView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 case .prose(let prose):
                     if let attributed = try? AttributedString(
-                        markdown: prose,
+                        markdown: AiViews.sanitizedMarkdown(prose),
                         options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
                     ) {
                         Text(attributed).font(.callout)
@@ -504,6 +504,37 @@ private struct MarkdownLiteView: View {
 }
 
 extension AiViews {
+
+    /// Markdown 链接 scheme 白名单（对应 Android M-2 消毒，自 miuix 45cc65f3 移植）。
+    ///
+    /// `AttributedString(markdown:)` 不会执行 HTML，但会把 `[文本](scheme:…)`
+    /// 转成可点击链接；AI 输出属于不可信输入，`javascript:`、`data:` 等
+    /// scheme 的链接一律降级为纯文本，只放行 http/https/mailto 与相对/锚点链接。
+    static func sanitizedMarkdown(_ markdown: String) -> String {
+        guard markdown.contains("](") else { return markdown }
+        let pattern = #"\[([^\]]*)\]\(\s*([^)\s]+)\s*\)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return markdown }
+        let ns = markdown as NSString
+        var result = markdown
+        // 从后往前替换，避免 NSRange 偏移
+        let matches = regex.matches(in: markdown, range: NSRange(location: 0, length: ns.length))
+        for match in matches.reversed() {
+            guard match.numberOfRanges == 3 else { continue }
+            let label = ns.substring(with: match.range(at: 1))
+            let destination = ns.substring(with: match.range(at: 2))
+            let lower = destination.lowercased()
+            let allowed = lower.hasPrefix("http://")
+                || lower.hasPrefix("https://")
+                || lower.hasPrefix("mailto:")
+                // 无 scheme（相对路径/锚点/查询串）直接放行
+                || !(lower.contains(":") && !lower.hasPrefix("./") && !lower.hasPrefix("../"))
+            if allowed { continue }
+            let replacement = label.isEmpty ? "" : label
+            result = (result as NSString)
+                .replacingCharacters(in: match.range, with: replacement)
+        }
+        return result
+    }
 
     /// 把中文行内列表拆成多行：`网格- 卫星：…` → `网格\n- 卫星：…`。
     ///

@@ -21,6 +21,7 @@ import {
 } from './session.mjs';
 import { signJwt, verifyJwt } from './jwt.mjs';
 import { OidcError } from './oidc.mjs';
+import { deriveSubKey } from '../config.mjs';
 
 export const OAUTH_COOKIE_TTL_SEC = 600;
 
@@ -53,6 +54,9 @@ export class HttpError extends Error {
 }
 
 export function createAuthService({ config, oidc, sessions, users, audit, stats, registry, logger = console }) {
+  // M-4：OAuth state Cookie 的 HMAC 密钥用 HKDF 从主密钥派生，
+  // 不再直接用 `secret + '.oauth'` 字符串拼接（密钥材料线性相关不是真分离）。
+  const oauthCookieSecret = deriveSubKey(config.session.secret, 'oauth-state');
   const cookieBase = {
     path: '/',
     sameSite: config.cookie.sameSite,
@@ -155,7 +159,7 @@ export function createAuthService({ config, oidc, sessions, users, audit, stats,
         returnTo: safeReturnTo,
         exp: Math.floor(Date.now() / 1000) + OAUTH_COOKIE_TTL_SEC,
       },
-      { alg: 'HS256', secret: config.session.secret + '.oauth' },
+      { alg: 'HS256', secret: oauthCookieSecret },
     );
     logger.debug?.(`[auth] 发起登录 ip=${ip} returnTo=${safeReturnTo}`);
     return { url, cookie: oauthCookie(cookieValue, OAUTH_COOKIE_TTL_SEC) };
@@ -182,7 +186,7 @@ export function createAuthService({ config, oidc, sessions, users, audit, stats,
     try {
       pending = await verifyJwt({
         token: raw,
-        secret: config.session.secret + '.oauth',
+        secret: oauthCookieSecret,
         allowedAlgs: ['HS256'],
         clockToleranceSec: 0,
       });

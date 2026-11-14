@@ -21,6 +21,7 @@ import com.example.hamkit.data.ai.AiConfigStore
 import com.example.hamkit.data.ai.AiError
 import com.example.hamkit.data.ai.AiErrorKind
 import com.example.hamkit.data.ai.AiEvent
+import com.example.hamkit.data.ai.AiHttp
 import com.example.hamkit.data.ai.AiKeyStore
 import com.example.hamkit.data.ai.AiModelProfile
 import com.example.hamkit.data.ai.AiProfileStore
@@ -475,7 +476,11 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
 
     fun stop() {
         streamJob?.cancel()
+        // 阻塞读不会随协程取消中断，必须显式取消 OkHttp 请求（自 miuix 39d1df65 移植）
+        AiHttp.cancelActive()
         streamJob = null
+        // 立即把按钮从「停止」切回「发送」，finally 里还会做一次收尾
+        _uiState.update { it.copy(isStreaming = false) }
     }
 
     fun retry() {

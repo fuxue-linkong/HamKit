@@ -33,7 +33,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GRADLE_OPTS: "-Dorg.gradle.daemon=false"
+  # 说明：不再设置 -Dorg.gradle.daemon=false。
+  # Kotlin/Native framework 链接耗时集中在编译器调用，保留 daemon 可复用热 JVM；
+  # setup-gradle 会在 job 结束时自动停掉 daemon，不产生跨 job 泄漏。
   GRADLE_VERSION: '9.4.1'
 
 jobs:
@@ -50,20 +52,22 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '21'
+          # 不用 setup-java 的 cache: gradle —— 下面的 setup-gradle 已缓存
+          # 整个 GRADLE_USER_HOME，两处同时开会对 ~/.gradle 做两次还原/上传。
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: ${{ env.GRADLE_VERSION }}
+          cache-read-only: false
 
-      # Kotlin/Native 工具链 (~1GB) 与 Gradle 缓存，命中后第二次开始快很多
+      # Kotlin/Native 工具链 (~1GB) 与 Gradle 缓存，命中后第二次开始快很多。
+      # key 带 Gradle/Kotlin 版本指纹，依赖升级后自动换新缓存。
       - name: Cache Kotlin/Native and Gradle
         uses: actions/cache@v4
         with:
           path: |
             ~/.konan
-            ~/.gradle/caches
-            ~/.gradle/wrapper
           key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}-v1
 
       - name: Select latest stable Xcode
