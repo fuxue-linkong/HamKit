@@ -30,3 +30,24 @@ ui.xml
 
 # 本地下载的测试产物（不入库）
 /artifacts
+
+# Agent 工具目录（避免切分支时总提示未提交变更）
+.android-user/
+.firecrawl/
+.gh-local/
+.gradle-user/
+.pr-worktree-security/
+.zcode/
+.workbuddy/
+
+# 临时产物
+/ci_apk/
+/modsearch-tmp/
+/draft_*_folder/
+/requirements/
+/shared/
+/scripts/__pycache__/
+*.ipa
+/website.zip
+/feishu_bitable_result.json
+/PR_BODY.md
