@@ -440,6 +440,13 @@ private struct SatelliteCardView: View {
 
 // MARK: - 轻量 Markdown
 
+/// AI 视图静态工具的命名空间。
+///
+/// `MarkdownLiteView` 等类型通过 `AiViews.xxx` 引用这些工具；
+/// 上游 9189f4b6 引用 `AiViews.normalizeInlineBullets` 时漏掉了这个声明，
+/// 导致 `cannot find type 'AiViews' in scope`，iOS Build 挂在 xcodebuild。
+enum AiViews {}
+
 /// 只做「代码块 + 行内 Markdown」两级渲染：iOS 16 的 AttributedString 已能处理
 /// 粗体/斜体/行内代码/链接，表格与标题在此简化处理（Android 端是自研渲染器）。
 private struct MarkdownLiteView: View {
