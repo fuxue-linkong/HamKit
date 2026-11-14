@@ -1,0 +1,101 @@
+name: Refresh CelesTrak active catalog
+
+on:
+  schedule:
+    - cron: '0 */2 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/refresh-active.yml']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-active
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch CelesTrak active group (full 16k+ catalog)
+        run: |
+          mkdir -p tle
+          set +e
+          for attempt in 1 2 3; do
+            code=$(curl -sS -o "tle/active.3le.new" -w '%{http_code}' \
+              --max-time 120 --retry 0 \
+              -H 'User-Agent: HamKit-TLE-Mirror/1.0 (hamkit.click)' \
+              "https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=3le")
+            if [ "$code" = "200" ] && [ -s "tle/active.3le.new" ]; then
+              lines=$(wc -l < "tle/active.3le.new")
+              # active 应有 16000+ 颗，每颗 3 行，至少 45000 行
+              if [ $((lines % 3)) -eq 0 ] && [ "$lines" -ge 45000 ]; then
+                mv "tle/active.3le.new" "tle/active.3le"
+                echo "active: OK (${lines} lines, $((lines / 3)) satellites)"
+                break
+              else
+                echo "active: malformed (${lines} lines, attempt ${attempt})"
+              fi
+            else
+              echo "active: HTTP ${code}, attempt ${attempt}"
+            fi
+            rm -f "tle/active.3le.new"
+            sleep 10
+          done
+
+          # 同时刷新 amateur/satnogs/iss（小文件，客户端也需要）
+          for g in amateur satnogs; do
+            for attempt in 1 2 3; do
+              code=$(curl -sS -o "tle/${g}.3le.new" -w '%{http_code}' \
+                --max-time 60 --retry 0 \
+                -H 'User-Agent: HamKit-TLE-Mirror/1.0 (hamkit.click)' \
+                "https://celestrak.org/NORAD/elements/gp.php?GROUP=${g}&FORMAT=3le")
+              if [ "$code" = "200" ] && [ -s "tle/${g}.3le.new" ]; then
+                lines=$(wc -l < "tle/${g}.3le.new")
+                if [ $((lines % 3)) -eq 0 ] && [ "$lines" -ge 3 ]; then
+                  mv "tle/${g}.3le.new" "tle/${g}.3le"
+                  echo "${g}: OK (${lines} lines)"
+                  break
+                fi
+              fi
+              rm -f "tle/${g}.3le.new"
+              sleep 5
+            done
+          done
+
+          # ISS 单星
+          for attempt in 1 2 3; do
+            code=$(curl -sS -o "tle/iss.3le.new" -w '%{http_code}' \
+              --max-time 30 --retry 0 \
+              -H 'User-Agent: HamKit-TLE-Mirror/1.0 (hamkit.click)' \
+              "https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=3le")
+            if [ "$code" = "200" ] && [ -s "tle/iss.3le.new" ]; then
+              lines=$(wc -l < "tle/iss.3le.new")
+              if [ $((lines % 3)) -eq 0 ] && [ "$lines" -ge 3 ]; then
+                mv "tle/iss.3le.new" "tle/iss.3le"
+                echo "iss: OK"
+                break
+              fi
+            fi
+            rm -f "tle/iss.3le.new"
+            sleep 5
+          done
+
+      - name: Write last-refresh timestamp
+        run: date -u +'%Y-%m-%dT%H:%M:%SZ' > LAST_REFRESH_ACTIVE
+
+      - name: Commit if changed
+        run: |
+          git config user.name 'celestrak-cache-bot'
+          git config user.email '173+celestrak-cache@users.noreply.github.com'
+          git add tle/ LAST_REFRESH_ACTIVE
+          if git diff --staged --quiet; then
+            echo "no changes"
+          else
+            git commit -m "chore: refresh active catalog $(date -u +%Y-%m-%dT%H:%MZ)"
+            git push
+          fi
