@@ -48,13 +48,25 @@ struct MiuixRow: View {
     var end: AnyView? = nil
 
     var body: some View {
-        row
+        // 注意：这里绝不能无条件挂 .onTapGesture——
+        // 会被 NavigationLink 包裹的行（首页入口卡 / 工具 / 设置导航行）会因
+        // label 上的 tap 手势抢占 Button 内部手势，导致整行点击无响应（导航失效）。
+        // 约定：onClick == nil 时本组件不拦截任何触摸，触摸事件交给外层的
+        // NavigationLink / Link / List 行；onClick != nil 时才包一层 Button，
+        // 顺带获得系统按压反馈。
+        let core = row
             .padding(.horizontal, MiuixTheme.cardPadding)
             .padding(.vertical, MiuixTheme.cardPadding)
             .frame(minHeight: MiuixTheme.rowMinHeight)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            .onTapGesture { onClick?() }
+
+        if let onClick {
+            Button(action: onClick) { core }
+                .buttonStyle(.plain)
+        } else {
+            core
+        }
     }
 
     @ViewBuilder

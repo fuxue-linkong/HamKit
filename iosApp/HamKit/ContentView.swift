@@ -44,6 +44,10 @@ struct ContentView: View {
             EntryCard(title: "QSO 日志", summary: "通联记录与 ADIF 导出", systemImage: "book.closed", route: .qsoLogList)
         }
         .navigationTitle("HamKit")
+        // 必须显式 inline：默认 .large 会在状态栏下预留约 120pt 大标题区，
+        // 而 Miuix 卡片页面上大标题不可见，表现就是首页顶部一大块空白。
+        // 工具 / 设置页均为 inline，首页对齐（卡片顶到状态栏只留标准间距）。
+        .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             WeatherStore.shared.refresh(latitude: model.latitude, longitude: model.longitude)
         }
