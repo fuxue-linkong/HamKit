@@ -142,9 +142,33 @@ final class AiChatModel: ObservableObject {
 
     // MARK: - 发送
 
-    func send(_ text: String) {
+    /// 一次发送携带的图片附件（识图能力，自 miuix 98b9b67 移植）。
+    struct PendingImage: Identifiable {
+        let id = UUID()
+        let name: String
+        /// 纯 base64（不含 `data:` 前缀），协议层负责拼 data URI。
+        var base64: String
+        var mime: String = "image/jpeg"
+    }
+
+    /// 发送前拦截：带图但当前模型确定不支持视觉时给出错误（对齐上游 send()）。
+    static func visionBlockMessage(images: [PendingImage], modelId: String) -> String? {
+        guard !images.isEmpty,
+              AiVision.modelVisionSupport(modelId) == false else { return nil }
+        return "当前模型不支持图片输入，请切换到视觉模型" +
+            "（如 Qwen3-VL / GPT-4o / Claude / Gemini）或移除图片"
+    }
+
+    /// 把 READY 图片附件拼进用户消息文本（对齐上游 buildAttachmentContext 的 IMAGE 分支）。
+    static func imageAttachmentContext(_ images: [PendingImage]) -> String {
+        guard !images.isEmpty else { return "" }
+        let names = images.map { $0.name }.joined(separator: "、")
+        return "\n\n[图片附件：\(names)]已作为图像输入，请直接识别图片内容；看不清时说明，不要编造。"
+    }
+
+    func send(_ text: String, images: [PendingImage] = []) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !isStreaming else { return }
+        guard !trimmed.isEmpty || !images.isEmpty, !isStreaming else { return }
 
         let store = AiSettingsStore.shared
         let profile = store.activeProfile
@@ -156,10 +180,27 @@ final class AiChatModel: ObservableObject {
             errorText = "请先在「AI 设置」里为「\(profile.name)」填写 API Key"
             return
         }
+        // 发送前拦截：带图但模型确定无视觉（对齐上游 send() 的 modelVisionSupport 检查）
+        if let block = Self.visionBlockMessage(images: images, modelId: profile.currentModelId) {
+            errorText = block
+            return
+        }
 
         errorText = nil
-        messages.append(ChatMessageVM(role: .user, text: trimmed))
-        kotlinMessages.append(AiBridge.shared.userMessage(text: trimmed))
+        let displayText = trimmed + Self.imageAttachmentContext(images)
+        messages.append(ChatMessageVM(role: .user, text: displayText))
+        // 文本进内核时不重复拼附件提示（提示词上下文已拼好），图片走 images 通道
+        if images.isEmpty {
+            kotlinMessages.append(AiBridge.shared.userMessage(text: trimmed))
+        } else {
+            kotlinMessages.append(
+                AiBridge.shared.userMessage(
+                    text: trimmed,
+                    imagesBase64: images.map { $0.base64 },
+                    mime: images.first?.mime ?? "image/jpeg"
+                )
+            )
+        }
 
         startTurn(settings: store.settings)
     }

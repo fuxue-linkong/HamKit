@@ -39,6 +39,8 @@ struct AiSettingsView: View {
     @State private var notice: String?
     @State private var errorMessage: String?
     @State private var showSaveError = false
+    /// MCP Token 重置确认弹窗（A9 整改，自 miuix 41e14c6 移植）。
+    @State private var showTokenResetConfirm = false
 
     private var presets: [String] {
         AiBridge.shared.presetNames().split(separator: ",").map(String.init)
@@ -175,6 +177,18 @@ struct AiSettingsView: View {
             Button("好") {}
         } message: {
             Text(errorMessage ?? "")
+        }
+        .confirmationDialog(
+            "重新生成 MCP 访问令牌？",
+            isPresented: $showTokenResetConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("重新生成", role: .destructive) {
+                mcpToken = McpController.shared.resetToken()
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("旧令牌会立即失效，已连接的客户端需要更新 Token 才能重新连接。")
         }
     }
 
@@ -603,7 +617,9 @@ struct AiSettingsView: View {
                     .textSelection(.enabled)
             }
             Button("重新生成令牌") {
-                mcpToken = McpController.shared.resetToken()
+                // A9 整改（自 miuix 41e14c6 移植）：重置是危险动作，旧 Token 立即
+                // 失效，已连接的客户端会全部掉线，先加确认弹窗。
+                showTokenResetConfirm = true
             }
             if !mcpAddress.isEmpty {
                 LabeledContent("本机地址") {

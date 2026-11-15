@@ -284,6 +284,19 @@ object AiBridge {
 
     fun userMessage(text: String): AiMessage = AiMessage.user(text)
 
+    /**
+     * 带图片的用户消息（自 miuix 98b9b67 识图能力移植到 iOS 时新增）。
+     *
+     * [imagesBase64] 每项是纯 base64（不含 `data:` 前缀），协议层会拼成
+     * `image_url` / inlineData / source 块（见 [AiProtocol]）。
+     */
+    fun userMessage(text: String, imagesBase64: List<String>, mime: String = "image/jpeg"): AiMessage =
+        AiMessage(
+            role = AiRole.USER,
+            text = text,
+            images = imagesBase64.map { AiImage(base64 = it, mime = mime) },
+        )
+
     fun assistantMessage(text: String): AiMessage = AiMessage.assistant(text)
 
     fun httpError(status: Int, body: String): AiError = AiError.fromHttp(status, body)

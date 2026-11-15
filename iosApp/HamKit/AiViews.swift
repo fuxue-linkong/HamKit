@@ -1,9 +1,13 @@
 import SwiftUI
+import PhotosUI
 import Shared
 
 /// AI 助手对话页（对应 Android `AiAssistantScreen`）。
 ///
-/// 与 Android 的差异：没有图片附件、没有 token 用量展示；
+/// 图片附件（识图，自 miuix 98b9b67 移植）：PhotosPicker 选图 → 压缩为
+/// JPEG base64 附件 → 发送时经内核 `images` 通道进协议层；模型面板对
+/// 确定支持视觉的模型显示「视觉」标签，带图发给纯文本模型会被拦截。
+/// 与 Android 的差异：没有 token 用量展示；
 /// 思考过程以折叠卡展示（推理等级 OFF 时为空）；
 /// 其余交互（流式输出、工具卡、卫星卡、副作用确认、历史抽屉）保持一致。
 struct AiAssistantView: View {
@@ -17,6 +21,9 @@ struct AiAssistantView: View {
     @State private var showSettings = false
     @State private var showModelPicker = false
     @State private var shareURL: URL?
+    /// 待发送图片附件（选图后异步压缩，完成后自动入列）。
+    @State private var pendingImages: [AiChatModel.PendingImage] = []
+    @State private var photoItem: PhotosPickerItem?
     @FocusState private var inputFocused: Bool
 
     private let examples = [
@@ -215,8 +222,12 @@ struct AiAssistantView: View {
     // MARK: - 输入栏
 
     /// 单容器输入栏：文本在上、附件/模型切换/发送在下一行（对齐 miuix 最新版）。
+    /// 图片附件：PhotosPicker 选图 + 缩略图预览条（识图能力，自 miuix 98b9b67 移植）。
     private var inputBar: some View {
         VStack(alignment: .leading, spacing: 4) {
+            if !pendingImages.isEmpty {
+                imageAttachmentRow
+            }
             TextField("问点什么…", text: $input, axis: .vertical)
                 .lineLimit(1...6)
                 .textFieldStyle(.plain)
@@ -226,6 +237,15 @@ struct AiAssistantView: View {
                 .padding(.top, 10)
 
             HStack(spacing: 8) {
+                PhotosPicker(selection: $photoItem, matching: .images) {
+                    Image(systemName: "photo.on.rectangle.angled")
+                        .font(.system(size: 15))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 26, height: 26)
+                }
+                .disabled(chat.isStreaming)
+                .accessibilityLabel("添加图片")
+
                 Button {
                     showModelPicker = true
                 } label: {
@@ -246,6 +266,7 @@ struct AiAssistantView: View {
                     .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .disabled(chat.isStreaming)
                 .accessibilityLabel("切换模型")
 
                 Spacer()
@@ -255,8 +276,10 @@ struct AiAssistantView: View {
                         chat.stop()
                     } else {
                         let text = input
+                        let images = pendingImages
                         input = ""
-                        chat.send(text)
+                        pendingImages = []
+                        chat.send(text, images: images)
                     }
                 } label: {
                     Image(systemName: chat.isStreaming ? "stop.circle.fill" : "arrow.up.circle.fill")
@@ -281,6 +304,67 @@ struct AiAssistantView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(.bar)
+        // 选图后异步压缩进附件列表
+        .onChange(of: photoItem) { item in
+            guard let item else { return }
+            loadPhoto(item)
+            photoItem = nil
+        }
+    }
+
+    /// 附件缩略图预览条：可逐个移除。
+    private var imageAttachmentRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(pendingImages) { image in
+                    if let uiImage = UIImage(base64: image.base64) {
+                        Image(uiImage: uiImage)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 56, height: 56)
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .overlay(alignment: .topTrailing) {
+                                Button {
+                                    pendingImages.removeAll { $0.id == image.id }
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 15))
+                                        .foregroundStyle(.white, .black.opacity(0.6))
+                                }
+                                .offset(x: 5, y: -5)
+                            }
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 10)
+        }
+    }
+
+    /// 选中的相册图 → 压缩 JPEG → base64 附件（长边 ≤1280px，质量 0.7，控制请求体大小）。
+    private func loadPhoto(_ item: PhotosPickerItem) {
+        Task {
+            guard let data = try? await item.loadTransferable(type: Data.self),
+                  let source = UIImage(data: data) else {
+                chat.errorText = "图片读取失败，请换一张试试"
+                return
+            }
+            let compressed = source.resizedJPEGData(maxDimension: 1280, quality: 0.7)
+            guard let jpeg = compressed, let base64 = jpeg.base64EncodedString() as String? else {
+                chat.errorText = "图片处理失败，请换一张试试"
+                return
+            }
+            let ext = item.supportedContentTypes.first?.preferredFilenameExtension ?? "jpg"
+            await MainActor.run {
+                pendingImages.append(
+                    AiChatModel.PendingImage(
+                        name: "图片.\(ext)",
+                        base64: base64,
+                        mime: "image/jpeg"
+                    )
+                )
+            }
+        }
     }
 
     private var modelLabel: String {
@@ -293,7 +377,7 @@ struct AiAssistantView: View {
     }
 
     private var canSend: Bool {
-        !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingImages.isEmpty
     }
 
     private func banner(text: String, color: Color, onClose: @escaping () -> Void) -> some View {
@@ -754,8 +838,16 @@ private struct AiModelSwitchView: View {
     private func row(_ entry: AiModelEntry, profile: AiProfile) -> some View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(entry.label)
-                    .foregroundStyle(.primary)
+                HStack(spacing: 6) {
+                    Text(entry.label)
+                        .foregroundStyle(.primary)
+                    // 视觉模型标签（对齐上游「视觉」chip）
+                    if AiVision.modelVisionSupport(entry.modelId) == true {
+                        Text("视觉")
+                            .font(.caption2)
+                            .foregroundStyle(Color.accentColor)
+                    }
+                }
                 if entry.label != entry.modelId {
                     Text(entry.modelId)
                         .font(.caption2)
@@ -797,5 +889,34 @@ private struct AiModelSwitchView: View {
                 store.updateGlobal { $0.reasoningEffort = value }
             }
         )
+    }
+}
+
+// MARK: - 图片附件辅助（识图能力，自 miuix 98b9b67 移植）
+
+extension UIImage {
+
+    /// 等比缩到长边 ≤ maxDimension 再压 JPEG；已经足够小则原样压缩。
+    func resizedJPEGData(maxDimension: CGFloat, quality: CGFloat) -> Data? {
+        let maxSide = max(size.width, size.height)
+        let scale = maxSide > maxDimension ? maxDimension / maxSide : 1
+        let target = CGSize(width: size.width * scale, height: size.height * scale)
+        let rendered: UIImage
+        if scale < 1 {
+            let format = UIGraphicsImageRendererFormat.default()
+            format.scale = 1
+            rendered = UIGraphicsImageRenderer(size: target, format: format).image { _ in
+                draw(in: CGRect(origin: .zero, size: target))
+            }
+        } else {
+            rendered = self
+        }
+        return rendered.jpegData(compressionQuality: quality)
+    }
+
+    /// 从纯 base64（不含 `data:` 前缀）恢复图片，用于附件缩略图预览。
+    convenience init?(base64: String) {
+        guard let data = Data(base64Encoded: base64) else { return nil }
+        self.init(data: data)
     }
 }
