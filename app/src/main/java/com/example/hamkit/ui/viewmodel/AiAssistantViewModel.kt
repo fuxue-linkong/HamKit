@@ -69,6 +69,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.util.UUID
 import com.example.hamkit.data.ai.AiHttp
+import com.example.hamkit.data.ai.modelVisionSupport
 import com.example.hamkit.data.ai.AiReasoningEffort
 
 /** 工具卡状态。 */
@@ -449,6 +450,22 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
     fun send() {
         val state = _uiState.value
         if (state.isStreaming) return
+        val activeModelId = state.profiles
+            .firstOrNull { it.id == state.activeProfileId }
+            ?.currentModelId
+            .orEmpty()
+        val hasImage = state.attachments.any {
+            it.kind == AiAttachmentKind.IMAGE && it.status == AiAttachmentStatus.READY
+        }
+        if (hasImage && modelVisionSupport(activeModelId) == false) {
+            _uiState.update {
+                it.copy(
+                    error = "当前模型不支持图片输入，请切换到视觉模型" +
+                        "（如 Qwen3-VL / GPT-4o / Claude / Gemini）或移除图片",
+                )
+            }
+            return
+        }
         val text = state.input.trim()
         if (text.isEmpty()) return
         val activeFacade = facade
@@ -1075,7 +1092,10 @@ class AiAssistantViewModel(application: Application) : AndroidViewModel(applicat
                 }
 
                 AiAttachmentKind.IMAGE -> {
-                    append("\n\n[图片附件：${attachment.name}]已作为图像输入。")
+                    append(
+                        "\n\n[图片附件：${attachment.name}]已作为图像输入，" +
+                            "请直接识别图片内容；看不清时说明，不要编造。",
+                    )
                 }
 
                 AiAttachmentKind.AUDIO -> {

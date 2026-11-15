@@ -168,6 +168,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.material.icons.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.KeyboardArrowLeft
 import com.example.hamkit.data.ai.AiReasoningEffort
+import com.example.hamkit.data.ai.modelVisionSupport
 
 /**
  * AI 助手主页（底部导航第 2 项）。
@@ -1105,6 +1106,14 @@ private fun ModelPickerPopupMiuix(
                                                 overflow = TextOverflow.Ellipsis,
                                                 modifier = Modifier.weight(1f),
                                             )
+                                            if (modelVisionSupport(entry.modelId) == true) {
+                                                Text(
+                                                    "视觉",
+                                                    fontSize = 9.sp,
+                                                    color = colorScheme.primary,
+                                                    modifier = Modifier.padding(horizontal = 4.dp),
+                                                )
+                                            }
                                             if (current) {
                                                 Icon(
                                                     Icons.Rounded.Check,
