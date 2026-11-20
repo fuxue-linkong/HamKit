@@ -7,6 +7,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.hamkit.BuildConfig
+import android.util.Log
 import com.example.hamkit.R
 import com.example.hamkit.data.HitokotoApiService
 import com.example.hamkit.data.LandscapeImageStore
@@ -845,6 +846,7 @@ class MainViewModel : ViewModel() {
         refreshJob = viewModelScope.launch {
             try {
                 val location = locationHelper.getCurrentLocation()
+                Log.i("LocationHelper", "[链路:${LocationHelper.getLastTraceId() ?: "未知"}] 定位成功 caller=MainViewModel")
                 val zoneInfo = ZoneResolver.resolve(location.latitude, location.longitude)
 
                 // 立即显示定位结果（不等待地址），减少用户感知等待时间
@@ -894,6 +896,7 @@ class MainViewModel : ViewModel() {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                Log.w("LocationHelper", "[链路:${LocationHelper.getLastTraceId() ?: "未知"}] 定位失败 原因:${e.message}")
                 _locationState.value = _locationState.value.copy(
                     isLoading = false,
                     error = e.message ?: "定位失败"
@@ -1022,6 +1025,7 @@ class MainViewModel : ViewModel() {
         locationOnlyJob = viewModelScope.launch {
             try {
                 val location = locationHelper.getCurrentLocation()
+                Log.i("LocationHelper", "[链路:${LocationHelper.getLastTraceId() ?: "未知"}] 定位成功 caller=MainViewModel")
                 val zoneInfo = ZoneResolver.resolve(location.latitude, location.longitude)
                 val city = locationHelper.getCityAddress(location.latitude, location.longitude)
                 val address = locationHelper.getAddress(location.latitude, location.longitude)
@@ -1051,6 +1055,7 @@ class MainViewModel : ViewModel() {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                Log.w("LocationHelper", "[链路:${LocationHelper.getLastTraceId() ?: "未知"}] 定位失败 原因:${e.message}")
                 _locationState.value = _locationState.value.copy(
                     isLoading = false,
                     error = e.message ?: "定位失败"

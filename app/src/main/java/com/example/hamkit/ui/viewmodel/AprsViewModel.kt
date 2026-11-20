@@ -399,8 +399,10 @@ class AprsViewModel(application: Application) : AndroidViewModel(application) {
             while (true) {
                 try {
                     val location = locationHelper.getCurrentLocation()
+                    Log.i("LocationHelper", "[链路:${LocationHelper.getLastTraceId() ?: "未知"}] 定位成功 caller=AprsViewModel")
                     transmitPosition(location)
                 } catch (e: Exception) {
+                    Log.w("LocationHelper", "[链路:${LocationHelper.getLastTraceId() ?: "未知"}] 定位失败 原因:${e.message}")
                     _lastError.value = "位置上报失败: ${e.message}"
                 }
                 delay(settingsStore.transmitInterval * 1000L)
