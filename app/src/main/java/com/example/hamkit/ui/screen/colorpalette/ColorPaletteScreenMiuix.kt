@@ -90,6 +90,9 @@ import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
+import com.example.hamkit.ui.component.group.LinkedCardGroup
+import com.example.hamkit.ui.component.group.LinkedCardGroupItem
+import com.example.hamkit.ui.component.group.LinkedItemShape
 import com.example.hamkit.ui.theme.Radii
 
 @Composable
@@ -298,83 +301,104 @@ fun ColorPaletteScreenMiuix(
                         }
                     }
 
-                    Card(
-                        modifier = Modifier
-                            .padding(top = 12.dp)
-                            .fillMaxWidth(),
+                    LinkedCardGroup(
+                        modifier = Modifier.padding(top = 12.dp),
+                        title = stringResource(R.string.settings_group_appearance),
+                        groupColor = colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                        outerShape = androidx.compose.foundation.shape.RoundedCornerShape(Radii.CardGroup),
                     ) {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            SwitchPreference(
-                                title = stringResource(id = R.string.settings_enable_blur),
-                                summary = stringResource(id = R.string.settings_enable_blur_summary),
-                                startAction = {
-                                    Icon(
-                                        Icons.Rounded.BlurOn,
-                                        modifier = Modifier.padding(end = 6.dp),
-                                        contentDescription = stringResource(id = R.string.settings_enable_blur),
-                                        tint = colorScheme.onBackground
-                                    )
-                                },
-                                checked = uiState.enableBlur,
-                                onCheckedChange = {
-                                    actions.onSetEnableBlur(it)
-                                }
-                            )
-                        }
-                        Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
+                            LinkedCardGroupItem(
+                                shape = LinkedItemShape.first(),
+                                color = colorScheme.surface,
                             ) {
-                                Text(
-                                    stringResource(R.string.settings_background_alpha),
-                                    fontSize = 14.sp,
-                                )
-                                Text(
-                                    "${(uiState.backgroundAlpha * 100).toInt()}%",
-                                    fontSize = 12.sp,
-                                    color = colorScheme.onSurfaceVariantSummary,
+                                SwitchPreference(
+                                    title = stringResource(id = R.string.settings_enable_blur),
+                                    summary = stringResource(id = R.string.settings_enable_blur_summary),
+                                    startAction = {
+                                        Icon(
+                                            Icons.Rounded.BlurOn,
+                                            modifier = Modifier.padding(end = 6.dp),
+                                            contentDescription = stringResource(id = R.string.settings_enable_blur),
+                                            tint = colorScheme.onBackground
+                                        )
+                                    },
+                                    checked = uiState.enableBlur,
+                                    onCheckedChange = {
+                                        actions.onSetEnableBlur(it)
+                                    }
                                 )
                             }
-                            Slider(
-                                value = uiState.backgroundAlpha,
-                                onValueChange = actions.onSetBackgroundAlpha,
-                                valueRange = 0.5f..1f,
-                            )
                         }
-                        SwitchPreference(
-                            title = stringResource(id = R.string.settings_floating_bottom_bar),
-                            summary = stringResource(id = R.string.settings_floating_bottom_bar_summary),
-                            startAction = {
-                                Icon(
-                                    Icons.Rounded.CallToAction,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    contentDescription = stringResource(id = R.string.settings_floating_bottom_bar),
-                                    tint = colorScheme.onBackground
+                        LinkedCardGroupItem(
+                            shape = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) LinkedItemShape.middle() else LinkedItemShape.first(),
+                            color = colorScheme.surface,
+                        ) {
+                            Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                ) {
+                                    Text(
+                                        stringResource(R.string.settings_background_alpha),
+                                        fontSize = 14.sp,
+                                    )
+                                    Text(
+                                        "${(uiState.backgroundAlpha * 100).toInt()}%",
+                                        fontSize = 12.sp,
+                                        color = colorScheme.onSurfaceVariantSummary,
+                                    )
+                                }
+                                Slider(
+                                    value = uiState.backgroundAlpha,
+                                    onValueChange = actions.onSetBackgroundAlpha,
+                                    valueRange = 0.5f..1f,
                                 )
-                            },
-                            checked = uiState.enableFloatingBottomBar,
-                            onCheckedChange = {
-                                actions.onSetEnableFloatingBottomBar(it)
                             }
-                        )
-                        AnimatedVisibility(visible = uiState.enableFloatingBottomBar && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        }
+                        LinkedCardGroupItem(
+                            shape = LinkedItemShape.middle(),
+                            color = colorScheme.surface,
+                        ) {
                             SwitchPreference(
-                                title = stringResource(id = R.string.settings_enable_glass),
-                                summary = stringResource(id = R.string.settings_enable_glass_summary),
+                                title = stringResource(id = R.string.settings_floating_bottom_bar),
+                                summary = stringResource(id = R.string.settings_floating_bottom_bar_summary),
                                 startAction = {
                                     Icon(
-                                        Icons.Rounded.WaterDrop,
+                                        Icons.Rounded.CallToAction,
                                         modifier = Modifier.padding(end = 6.dp),
-                                        contentDescription = stringResource(id = R.string.settings_enable_glass),
+                                        contentDescription = stringResource(id = R.string.settings_floating_bottom_bar),
                                         tint = colorScheme.onBackground
                                     )
                                 },
-                                checked = uiState.enableFloatingBottomBarBlur,
+                                checked = uiState.enableFloatingBottomBar,
                                 onCheckedChange = {
-                                    actions.onSetEnableFloatingBottomBarBlur(it)
+                                    actions.onSetEnableFloatingBottomBar(it)
                                 }
                             )
+                        }
+                        AnimatedVisibility(visible = uiState.enableFloatingBottomBar && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            LinkedCardGroupItem(
+                                shape = LinkedItemShape.last(),
+                                color = colorScheme.surface,
+                            ) {
+                                SwitchPreference(
+                                    title = stringResource(id = R.string.settings_enable_glass),
+                                    summary = stringResource(id = R.string.settings_enable_glass_summary),
+                                    startAction = {
+                                        Icon(
+                                            Icons.Rounded.WaterDrop,
+                                            modifier = Modifier.padding(end = 6.dp),
+                                            contentDescription = stringResource(id = R.string.settings_enable_glass),
+                                            tint = colorScheme.onBackground
+                                        )
+                                    },
+                                    checked = uiState.enableFloatingBottomBarBlur,
+                                    onCheckedChange = {
+                                        actions.onSetEnableFloatingBottomBarBlur(it)
+                                    }
+                                )
+                            }
                         }
                     }
 
