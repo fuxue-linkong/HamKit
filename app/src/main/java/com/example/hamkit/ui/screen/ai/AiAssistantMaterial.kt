@@ -160,6 +160,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.material.icons.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.KeyboardArrowLeft
 import com.example.hamkit.data.ai.AiReasoningEffort
+import com.example.hamkit.data.ai.modelVisionSupport
 
 /** Material 风格实现，与 Miuix 版共用 [AiAssistantViewModel]。 */
 @Composable
@@ -1058,6 +1059,14 @@ private fun ModelPickerPopupMaterial(
                                                 overflow = TextOverflow.Ellipsis,
                                                 modifier = Modifier.weight(1f),
                                             )
+                                            if (modelVisionSupport(entry.modelId) == true) {
+                                                Text(
+                                                    "视觉",
+                                                    fontSize = 9.sp,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.padding(horizontal = 4.dp),
+                                                )
+                                            }
                                             if (current) {
                                                 Icon(
                                                     Icons.Rounded.Check,

@@ -13,7 +13,10 @@ import com.example.hamkit.data.HitokotoApiService
 import com.example.hamkit.data.LandscapeImageStore
 import com.example.hamkit.data.LocationResult
 import com.example.hamkit.data.SettingsStore
+import com.example.hamkit.data.location.LocationException
+import com.example.hamkit.data.location.LocationFailure
 import com.example.hamkit.data.location.LocationHelper
+import com.example.hamkit.data.location.locationFailureText
 import com.example.hamkit.data.reminder.ReminderItem
 import com.example.hamkit.data.reminder.ReminderNotificationHelper
 import com.example.hamkit.data.reminder.ReminderScheduler
@@ -126,7 +129,6 @@ class MainViewModel : ViewModel() {
 
     // 跟踪上一次刷新的 Job，避免用户快速多次点击导致并发竞态
     private var refreshJob: Job? = null
-    private var locationOnlyJob: Job? = null
     private var satelliteOnlyJob: Job? = null
     private var predictJob: Job? = null
     // 卫星分段状态拉取 Job：与主刷新解耦，结果异步回填 satelliteState.segmentStatuses
@@ -824,18 +826,22 @@ class MainViewModel : ViewModel() {
         loadAllCourseProgress()
     }
 
-    fun refreshLocation() {
+    /**
+     * 刷新定位。
+     *
+     * @param full true：完整刷新（地址/AMap 卡片/天气）；false：只更新分区与城市。
+     */
+    fun refreshLocation(full: Boolean = true) {
         if (!locationHelper.hasPermission()) {
             _locationState.value = _locationState.value.copy(
                 isLoading = false,
-                error = "需要定位权限"
+                error = locationFailureText(LocationFailure.NO_PERMISSION),
             )
             return
         }
 
-        // 取消上一次刷新任务，避免并发竞态导致 UI 闪烁和数据不一致
+        // 统一入口：取消上一次刷新任务，避免并发竞态导致 UI 闪烁和数据不一致
         refreshJob?.cancel()
-        locationOnlyJob?.cancel()
 
         // 注意：不清空已有 result，避免刷新过程中 AMapCard/ZoneInfoCard 消失导致 UI 闪烁，
         // 也避免定位失败时丢失上一次的有效位置（与 refreshLocationOnly 行为一致）。
@@ -869,15 +875,17 @@ class MainViewModel : ViewModel() {
                 settingsStore.lastLatitude = location.latitude
                 settingsStore.lastLongitude = location.longitude
 
-                // 后台加载地址
-                val addressDeferred = async {
-                    locationHelper.getAddress(location.latitude, location.longitude)
+                // 后台加载地址；full=false 时只取城市，避免额外网络请求
+                val addressDeferred = if (full) {
+                    async { locationHelper.getAddress(location.latitude, location.longitude) }
+                } else {
+                    null
                 }
                 val cityDeferred = async {
                     locationHelper.getCityAddress(location.latitude, location.longitude)
                 }
 
-                val address = addressDeferred.await()
+                val address = addressDeferred?.await().orEmpty()
                 val city = cityDeferred.await()
 
                 _locationState.value = _locationState.value.copy(
@@ -888,22 +896,32 @@ class MainViewModel : ViewModel() {
                 // 触发卫星过境预测（基于已有 TLE 缓存或刚拉取的 TLE）
                 triggerPrediction(location.latitude, location.longitude)
 
-                // 触发天气数据刷新（基于新定位）
-                refreshWeather()
+                // 触发天气数据刷新（基于新定位；full=false 不触发）
+                if (full) refreshWeather()
 
                 // 首次成功定位后启动持续位置监听，跟踪设备移动
                 startContinuousLocationUpdates()
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: LocationException) {
+                _locationState.value = _locationState.value.copy(
+                    isLoading = false,
+                    error = locationFailureText(e.failure),
+                )
             } catch (e: Exception) {
                 Log.w("LocationHelper", "[链路:${LocationHelper.getLastTraceId() ?: "未知"}] 定位失败 原因:${e.message}")
                 _locationState.value = _locationState.value.copy(
                     isLoading = false,
-                    error = e.message ?: "定位失败"
+                    error = e.message ?: locationFailureText(LocationFailure.UNKNOWN),
                 )
             }
         }
     }
+
+    /**
+     * 只刷新定位（分区 + 城市，不拉地址与天气），保留给旧调用点。
+     */
+    fun refreshLocationOnly() = refreshLocation(full = false)
 
     /**
      * 启动持续位置监听。
