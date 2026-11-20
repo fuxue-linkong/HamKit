@@ -61,6 +61,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import com.example.hamkit.ui.theme.Radii
 
 @Composable
 fun HomePagerMaterial(
@@ -150,7 +151,7 @@ private fun HomeHeaderMaterial(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
+                .clip(RoundedCornerShape(Radii.Card))
         ) {
             if (hasBackground) {
                 val file = state.timeCardBackgroundFile!!

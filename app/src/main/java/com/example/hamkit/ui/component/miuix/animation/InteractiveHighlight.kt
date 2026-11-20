@@ -6,7 +6,9 @@ import android.os.Build
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import com.example.hamkit.ui.theme.Motions
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
@@ -29,9 +31,9 @@ class InteractiveHighlight(
 ) {
 
     private val pressProgressAnimationSpec =
-        spring(0.5f, 300f, 0.001f)
+        Motions.press<Float>()
     private val positionAnimationSpec =
-        spring(0.5f, 300f, Offset.VisibilityThreshold)
+        spring<Offset>(dampingRatio = 0.55f, stiffness = Spring.StiffnessMedium * 2)
 
     private val pressProgressAnimation =
         Animatable(0f, 0.001f)

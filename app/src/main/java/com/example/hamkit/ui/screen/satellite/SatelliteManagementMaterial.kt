@@ -98,6 +98,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import com.example.hamkit.ui.theme.Radii
 
 /**
  * 卫星管理页 Material3 风格。
@@ -557,12 +558,12 @@ private fun SatelliteFilterButtonMaterial(
 ) {
     Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(Radii.Control))
             .border(
                 width = 1.dp,
                 color = if (filter.isActive) MaterialTheme.colorScheme.primary
                 else MaterialTheme.colorScheme.outline,
-                shape = RoundedCornerShape(10.dp)
+                shape = RoundedCornerShape(Radii.Control)
             )
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 6.dp),
@@ -606,12 +607,12 @@ private fun SatelliteCategoryButtonMaterial(
 ) {
     Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(Radii.Control))
             .border(
                 width = 1.dp,
                 color = if (active) MaterialTheme.colorScheme.primary
                 else MaterialTheme.colorScheme.outline,
-                shape = RoundedCornerShape(10.dp)
+                shape = RoundedCornerShape(Radii.Control)
             )
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 6.dp),
@@ -694,13 +695,13 @@ private fun SatelliteItemMaterial(
                     Modifier.border(
                         width = 1.5.dp,
                         color = MaterialTheme.colorScheme.primary,
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(Radii.Control)
                     )
                 } else if (hasCategory) {
                     Modifier.border(
                         width = 1.5.dp,
                         color = MaterialTheme.colorScheme.tertiary,
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(Radii.Control)
                     )
                 } else {
                     Modifier
@@ -746,7 +747,7 @@ private fun SatelliteItemMaterial(
                         // A6 整改：仰角从裸文本改为 chip 徽章（与 Miuix 版一致）
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
+                                .clip(RoundedCornerShape(Radii.Control))
                                 .background(MaterialTheme.colorScheme.primaryContainer)
                                 .padding(horizontal = 8.dp, vertical = 4.dp)
                         ) {
@@ -905,7 +906,7 @@ private fun TransceiverListM(radios: List<RadioInfo>) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(Radii.Control))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
             .padding(horizontal = 12.dp, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp)
@@ -1018,7 +1019,7 @@ private fun TimeBadgeM(label: String, value: String, isActive: Boolean) {
 
     Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(Radii.Control))
             .background(containerColor)
             .padding(horizontal = 10.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1089,7 +1090,7 @@ private fun CategoryChipM(name: String) {
 private fun ChipM(text: String, bgColor: Color, contentColor: Color) {
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(Radii.Control))
             // E1 整改：内边距 8×3dp→8×5dp、字号对齐 labelSmall+Medium，与 Miuix 版同规格
             .background(bgColor)
             .padding(horizontal = 8.dp, vertical = 5.dp)
@@ -1164,7 +1165,7 @@ private fun SegmentCellM(segment: SegmentStatus, modifier: Modifier = Modifier) 
     }
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(Radii.Control))
             .background(bgColor)
             .padding(horizontal = 6.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally

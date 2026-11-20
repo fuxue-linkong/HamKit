@@ -2,6 +2,7 @@ package com.example.hamkit.ui.component.miuix.animation
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
+import com.example.hamkit.ui.theme.Motions
 import androidx.compose.foundation.MutatorMutex
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
@@ -35,11 +36,11 @@ class DampedDragAnimation(
     private val velocityAnimationSpec =
         spring(0.5f, 300f, visibilityThreshold * 10f)
     private val pressProgressAnimationSpec =
-        spring(1f, 1000f, 0.001f)
+        Motions.press<Float>()
     private val scaleXAnimationSpec =
-        spring(0.6f, 250f, 0.001f)
+        Motions.press<Float>()
     private val scaleYAnimationSpec =
-        spring(0.7f, 250f, 0.001f)
+        Motions.press<Float>()
 
     private val valueAnimation =
         Animatable(initialValue, visibilityThreshold)

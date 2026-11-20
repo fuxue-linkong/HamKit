@@ -64,6 +64,7 @@ import com.example.hamkit.ui.component.material.SegmentedSwitchItem
 import com.example.hamkit.ui.navigation3.Route
 import com.example.hamkit.ui.viewmodel.SstvViewModel
 import kotlin.math.roundToInt
+import com.example.hamkit.ui.theme.Radii
 
 /**
  * SSTV 接收主界面的 Material（Material 3）风格实现。
@@ -439,7 +440,7 @@ fun SstvMainScreenMaterial(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(120.dp)
-                                    .clip(RoundedCornerShape(8.dp))
+                                    .clip(RoundedCornerShape(Radii.Control))
                                     .background(Color(0xFF101014)),
                                 contentAlignment = Alignment.Center,
                             ) {
@@ -596,7 +597,7 @@ private fun SstvPreviewMaterial(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(aspect)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(Radii.Control))
             .background(Color.Black),
         contentAlignment = Alignment.Center,
     ) {

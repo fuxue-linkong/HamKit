@@ -57,6 +57,10 @@ class SettingsRepositoryImpl : SettingsRepository {
         get() = prefs.getBoolean("enable_floating_bottom_bar_blur", true)
         set(value) = prefs.edit { putBoolean("enable_floating_bottom_bar_blur", value) }
 
+    override var motionScale: String
+        get() = prefs.getString("motion_scale", "STANDARD") ?: "STANDARD"
+        set(value) = prefs.edit { putString("motion_scale", value) }
+
     override var backgroundAlpha: Float
         get() = prefs.getFloat("background_alpha", 1f).coerceIn(0.5f, 1f)
         set(value) = prefs.edit { putFloat("background_alpha", value.coerceIn(0.5f, 1f)) }

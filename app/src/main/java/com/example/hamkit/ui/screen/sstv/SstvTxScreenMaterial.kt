@@ -56,6 +56,7 @@ import com.example.hamkit.ui.component.material.SegmentedColumn
 import com.example.hamkit.ui.component.material.SegmentedSwitchItem
 import com.example.hamkit.ui.navigation3.Route
 import com.example.hamkit.ui.viewmodel.SstvViewModel
+import com.example.hamkit.ui.theme.Radii
 
 /**
  * SSTV 发射的 Material（Material 3）风格实现。
@@ -125,7 +126,7 @@ fun SstvTxScreenMaterial(
                         modifier = Modifier
                             .fillMaxWidth()
                             .aspectRatio(mode.linePixels.toFloat() / mode.imageLines)
-                            .clip(RoundedCornerShape(8.dp))
+                            .clip(RoundedCornerShape(Radii.Control))
                             .background(Color.Black),
                         contentAlignment = Alignment.Center,
                     ) {

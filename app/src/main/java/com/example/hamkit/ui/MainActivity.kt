@@ -117,7 +117,9 @@ import com.example.hamkit.ui.screen.settings.SettingsScreenActions
 import com.example.hamkit.ui.screen.settings.UpdateDialogs
 import com.example.hamkit.ui.theme.HamKitTheme
 import com.example.hamkit.ui.theme.LocalColorMode
+import com.example.hamkit.ui.theme.LocalMotionScale
 import com.example.hamkit.ui.theme.LocalEnableBlur
+import com.example.hamkit.ui.theme.MotionScale
 import com.example.hamkit.ui.theme.LocalEnableFloatingBottomBar
 import com.example.hamkit.ui.theme.LocalEnableFloatingBottomBarBlur
 import com.example.hamkit.ui.util.rememberBlurBackdrop
@@ -435,7 +437,10 @@ fun MainScreen(
     val useNavigationRail = isLandscape && !(uiMode == UiMode.Miuix && enableFloatingBottomBar)
 
     CompositionLocalProvider(
-        LocalMainPagerState provides mainPagerState
+        LocalMainPagerState provides mainPagerState,
+        LocalMotionScale provides runCatching {
+            MotionScale.valueOf(settingsUiState.motionScale)
+        }.getOrDefault(MotionScale.STANDARD),
     ) {
         val pagerContent = @Composable { bottomInnerPadding: Dp ->
             Box(

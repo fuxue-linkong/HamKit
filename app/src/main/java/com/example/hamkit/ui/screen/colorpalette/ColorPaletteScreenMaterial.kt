@@ -104,6 +104,7 @@ import com.example.hamkit.ui.component.material.SegmentedSwitchItem
 import com.example.hamkit.ui.component.material.TonalCard
 import com.example.hamkit.ui.theme.ColorMode
 import com.example.hamkit.ui.theme.keyColorOptions
+import com.example.hamkit.ui.theme.Radii
 
 @Composable
 fun ColorPaletteScreenMaterial(
@@ -495,7 +496,7 @@ private fun ThemePreviewCard(
                 .fillMaxWidth(0.4f)
                 .aspectRatio(screenRatio),
             color = colorScheme.background,
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(Radii.CardGroup),
             border = BorderStroke(1.dp, color = MaterialTheme.colorScheme.outlineVariant)
         ) {
             Column {
@@ -568,7 +569,7 @@ private fun ThemePreviewCard(
                         Box(
                             modifier = Modifier
                                 .size(20.dp)
-                                .clip(RoundedCornerShape(5.dp))
+                                .clip(RoundedCornerShape(Radii.Badge))
                                 .background(colorScheme.onSurfaceVariant.copy(alpha = 0.45f))
                         )
                     }
@@ -585,7 +586,7 @@ private fun PreviewBlock(
 ) {
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(Radii.Control))
             .background(color)
     )
 }
@@ -629,7 +630,7 @@ private fun ColorButtonMaterial(
             haptic.performHapticFeedback(HapticFeedbackType.VirtualKey)
             onClick()
         },
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(Radii.CardGroup),
         color = colorScheme.surfaceContainer,
         modifier = Modifier.size(72.dp)
     ) {

@@ -54,6 +54,7 @@ import top.yukonga.miuix.kmp.basic.Surface
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import com.example.hamkit.ui.theme.Radii
 
 // 编码表与编解码函数改为 internal：Material 版（MorseCodeScreenMaterial.kt）复用同一份，
 // 避免把 Unicode 转码逻辑抄成两份而产生行为分叉。仅放宽可见性，实现一字未改。
@@ -168,7 +169,7 @@ fun MorseCodeScreenMiuix(
     ) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(Radii.Card),
                 color = bgCard
             ) {
                 Column(
@@ -301,7 +302,7 @@ fun MorseCodeScreenMiuix(
 
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(Radii.Card),
                 color = bgCard
             ) {
                 Column(

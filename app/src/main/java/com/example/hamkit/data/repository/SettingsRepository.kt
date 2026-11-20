@@ -14,5 +14,6 @@ interface SettingsRepository {
     var enableFloatingBottomBarBlur: Boolean
     var pageScale: Float
     var backgroundAlpha: Float
+    var motionScale: String
     var customBackgroundUri: String
 }

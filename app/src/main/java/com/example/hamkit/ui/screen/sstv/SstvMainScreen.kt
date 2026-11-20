@@ -79,6 +79,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
+import com.example.hamkit.ui.theme.Radii
 
 /**
  * SSTV 主界面：实时接收、离线导入、盲扫候选、信号质量、发射/图库入口。
@@ -488,7 +489,7 @@ fun SstvMainScreenMiuix(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(120.dp)
-                                .clip(RoundedCornerShape(8.dp))
+                                .clip(RoundedCornerShape(Radii.Control))
                                 .background(Color(0xFF101014)),
                             contentAlignment = Alignment.Center,
                         ) {
@@ -699,7 +700,7 @@ internal fun SstvPreview(
         modifier = modifier
             .fillMaxWidth()
             .aspectRatio(aspect)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(Radii.Control))
             .background(Color.Black),
         contentAlignment = Alignment.Center,
     ) {

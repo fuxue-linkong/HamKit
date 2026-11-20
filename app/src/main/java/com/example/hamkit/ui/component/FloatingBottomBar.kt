@@ -5,6 +5,7 @@ package com.example.hamkit.ui.component
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.spring
+import com.example.hamkit.ui.theme.Motions
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -247,7 +248,7 @@ fun FloatingBottomBar(
                 currentIndex = targetIndex
                 animateToValue(targetIndex.toFloat())
                 animationScope.launch {
-                    offsetAnimation.animateTo(0f, spring(1f, 300f, 0.5f))
+                    offsetAnimation.animateTo(0f, Motions.standard())
                 }
             },
             onDrag = { _, dragAmount ->

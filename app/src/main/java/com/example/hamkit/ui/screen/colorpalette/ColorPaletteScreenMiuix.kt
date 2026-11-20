@@ -90,6 +90,7 @@ import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
+import com.example.hamkit.ui.theme.Radii
 
 @Composable
 fun ColorPaletteScreenMiuix(
@@ -563,9 +564,9 @@ private fun ThemePreviewCardMiuix(
             modifier = Modifier
                 .fillMaxWidth(0.4f)
                 .aspectRatio(screenRatio)
-                .clip(RoundedCornerShape(20.dp))
+                .clip(RoundedCornerShape(Radii.CardGroup))
                 .background(bgColor)
-                .border(1.dp, colorScheme.outline, RoundedCornerShape(20.dp))
+                .border(1.dp, colorScheme.outline, RoundedCornerShape(Radii.CardGroup))
         ) {
             Column {
                 Row(
@@ -619,12 +620,12 @@ private fun ThemePreviewCardMiuix(
                     Row(
                         modifier = Modifier
                             .height(28.dp)
-                            .clip(RoundedCornerShape(14.dp))
+                            .clip(RoundedCornerShape(Radii.Card))
                             .background(
                                 if (enableFloatingBottomBarBlur) navBarColor.copy(alpha = 0.5f)
                                 else navBarColor
                             )
-                            .border(0.5.dp, textColor.copy(alpha = 0.1f), RoundedCornerShape(14.dp))
+                            .border(0.5.dp, textColor.copy(alpha = 0.1f), RoundedCornerShape(Radii.Card))
                             .padding(horizontal = 12.dp),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -633,7 +634,7 @@ private fun ThemePreviewCardMiuix(
                             Box(
                                 modifier = Modifier
                                     .size(13.dp)
-                                    .clip(RoundedCornerShape(2.dp))
+                                    .clip(RoundedCornerShape(Radii.Badge))
                                     .background(if (it == 0) iconColor else textColor)
                             )
                         }
@@ -664,7 +665,7 @@ private fun ThemePreviewCardMiuix(
                             Box(
                                 modifier = Modifier
                                     .size(15.dp)
-                                    .clip(RoundedCornerShape(3.dp))
+                                    .clip(RoundedCornerShape(Radii.Badge))
                                     .background(if (it == 0) navSelectedColor else navUnselectedColor)
                             )
                         }
@@ -682,7 +683,7 @@ private fun PreviewBlockMiuix(
 ) {
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(6.dp))
+            .clip(RoundedCornerShape(Radii.Badge))
             .background(color)
     )
 }

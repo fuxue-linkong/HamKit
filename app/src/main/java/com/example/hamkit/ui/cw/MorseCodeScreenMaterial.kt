@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.sp
 import com.example.hamkit.R
 import com.example.hamkit.ui.component.material.SnackBarHost
 import kotlinx.coroutines.launch
+import com.example.hamkit.ui.theme.Radii
 
 /**
  * 摩斯电码编解码页的 Material（Material 3）风格实现。
@@ -297,7 +298,7 @@ fun MorseCodeScreenMaterial(
 
 /**
  * 统一的卡片外壳：Material 版两张卡片共用同一套底色、圆角与内边距，
- * 对应 Miuix 版的 `Surface(shape = RoundedCornerShape(16.dp)) + Column(padding(16.dp))`。
+ * 对应 Miuix 版的 `Surface(shape = RoundedCornerShape(Radii.Card)) + Column(padding(16.dp))`。
  */
 @Composable
 private fun MorseCodeCardMaterial(
@@ -306,7 +307,7 @@ private fun MorseCodeCardMaterial(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(Radii.Card),
         colors = CardDefaults.cardColors(containerColor = containerColor)
     ) {
         Column(

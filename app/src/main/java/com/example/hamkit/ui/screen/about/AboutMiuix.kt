@@ -40,6 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -89,6 +90,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 import androidx.compose.ui.graphics.BlendMode as ComposeBlendMode
+import com.example.hamkit.ui.theme.Radii
 
 @Composable
 private fun ContributorRow(contributor: ContributorInfo) {
@@ -322,7 +324,7 @@ private fun AboutContent(
                         if (enableBlur) {
                             Modifier.textureBlur(
                                 backdrop = backdrop,
-                                shape = RoundedCornerShape(0.dp),
+                                shape = RectangleShape,
                                 blurRadius = 150f,
                                 colors = BlurColors(blendColors = logoBlend),
                                 contentBlendMode = ComposeBlendMode.DstIn,
@@ -431,7 +433,7 @@ private fun AboutContent(
                                 if (enableBlur) {
                                     Modifier.textureBlur(
                                         backdrop = backdrop,
-                                        shape = RoundedCornerShape(16.dp),
+                                        shape = RoundedCornerShape(Radii.Card),
                                         blurRadius = 60f,
                                         colors = BlurColors(blendColors = blendColors),
                                         enabled = true,

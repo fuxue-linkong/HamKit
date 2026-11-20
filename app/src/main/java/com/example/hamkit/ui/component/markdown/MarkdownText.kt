@@ -55,6 +55,7 @@ import org.commonmark.node.StrongEmphasis
 import org.commonmark.node.Text as MarkdownTextNode
 import org.commonmark.node.ThematicBreak
 import org.commonmark.parser.Parser
+import com.example.hamkit.ui.theme.Radii
 
 
 /** commonmark 的 Node 只有 firstChild/next，没有 Kotlin 的 children 列表。 */
@@ -156,7 +157,7 @@ private fun MarkdownBlock(node: Node, colors: MarkdownPalette) {
                     Modifier
                         .width(3.dp)
                         .fillMaxHeight()
-                        .background(colors.primary, RoundedCornerShape(2.dp)),
+                        .background(colors.primary, RoundedCornerShape(Radii.Badge)),
                 )
                 Column(Modifier.padding(start = 10.dp)) {
                     node.childNodes().forEach { child -> MarkdownBlock(child, colors) }
@@ -239,7 +240,7 @@ private fun CodeBlock(code: String, colors: MarkdownPalette) {
         Modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp)
-            .background(colors.codeBackground, RoundedCornerShape(8.dp))
+            .background(colors.codeBackground, RoundedCornerShape(Radii.Control))
             .horizontalScroll(rememberScrollState())
             .padding(10.dp),
     ) {

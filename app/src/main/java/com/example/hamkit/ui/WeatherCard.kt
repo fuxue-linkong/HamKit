@@ -30,6 +30,7 @@ import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import com.example.hamkit.ui.theme.Radii
 
 @Composable
 fun WeatherCard(
@@ -48,7 +49,7 @@ fun WeatherCard(
 ) {
     val finalModifier = if (applyBackground) {
         modifier
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(Radii.Card))
             .background(stateColor.copy(alpha = 0.12f * LocalCardAlpha.current))
             .padding(horizontal = 14.dp, vertical = 8.dp)
     } else {
@@ -128,7 +129,7 @@ private fun LoadingState(stateColor: Color) {
         modifier = Modifier
             .fillMaxWidth(0.7f)
             .height(10.dp)
-            .clip(RoundedCornerShape(4.dp))
+            .clip(RoundedCornerShape(Radii.Badge))
             .background(stateColor.copy(alpha = 0.1f))
     )
 }

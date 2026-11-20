@@ -29,6 +29,7 @@ import com.example.hamkit.R
 import com.example.hamkit.data.weather.WeatherResult
 import com.example.hamkit.data.weather.mapWeatherIcon
 import com.example.hamkit.ui.theme.LocalCardAlpha
+import com.example.hamkit.ui.theme.Radii
 
 /**
  * 天气内容的 Material（Material 3）风格实现。
@@ -59,7 +60,7 @@ fun WeatherCardMaterial(
 ) {
     val finalModifier = if (applyBackground) {
         modifier
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(Radii.Card))
             .background(stateColor.copy(alpha = 0.12f * LocalCardAlpha.current))
             .padding(horizontal = 14.dp, vertical = 8.dp)
     } else {
@@ -140,7 +141,7 @@ private fun WeatherLoadingStateMaterial(stateColor: Color) {
         modifier = Modifier
             .fillMaxWidth(0.7f)
             .height(10.dp)
-            .clip(RoundedCornerShape(4.dp))
+            .clip(RoundedCornerShape(Radii.Badge))
             .background(stateColor.copy(alpha = 0.1f)),
     )
 }
