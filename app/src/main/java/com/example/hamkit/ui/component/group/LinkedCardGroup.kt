@@ -17,7 +17,7 @@ import androidx.compose.ui.unit.dp
 import com.example.hamkit.ui.theme.Radii
 
 /**
- * 连体卡片组（借鉴 ReveriePaint 思路 5）：
+ * 连体卡片组：
  *
  * - 组内条目间隙仅 [gap]（默认 3dp，约为页边距 1/6），相邻条目相接的角只有外角的 1/4；
  * - 整组外角取 [Radii.CardGroup]，读作一个软材料整体；组内每行仍是独立触控区；

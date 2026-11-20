@@ -30,8 +30,8 @@ import androidx.compose.ui.unit.IntSize
 import com.example.hamkit.ui.theme.Motions
 
 /**
- * 按压反馈（借鉴 ReveriePaint 思路 6）：按压缩放 + 触点径向高光跟随指尖。
- * 替代系统 ripple：深色低饱和界面上 ripple 灰圈显脏，高光更贴"材料受力"。
+ * 按压反馈容器：按压缩放（0.96 回弹）+ 触点径向高光跟随指尖。
+ * 替代系统 ripple：深色低饱和界面上 ripple 灰圈显脏，高光观感更干净。
  */
 @Composable
 fun PressableBox(

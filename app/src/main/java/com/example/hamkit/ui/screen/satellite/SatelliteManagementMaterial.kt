@@ -559,11 +559,17 @@ private fun SatelliteFilterButtonMaterial(
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(Radii.Control))
-            .border(
-                width = 1.dp,
-                color = if (filter.isActive) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.outline,
-                shape = RoundedCornerShape(Radii.Control)
+            .background(
+                if (filter.isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            )
+            .then(
+                // 激活态用主色描边（语义强调）；未激活靠底色明度差分层
+                if (filter.isActive) {
+                    Modifier.border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(Radii.Control))
+                } else {
+                    Modifier
+                },
             )
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 6.dp),
@@ -608,11 +614,16 @@ private fun SatelliteCategoryButtonMaterial(
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(Radii.Control))
-            .border(
-                width = 1.dp,
-                color = if (active) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.outline,
-                shape = RoundedCornerShape(Radii.Control)
+            .background(
+                if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            )
+            .then(
+                if (active) {
+                    Modifier.border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(Radii.Control))
+                } else {
+                    Modifier
+                },
             )
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 6.dp),

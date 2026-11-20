@@ -819,10 +819,13 @@ private fun ComposerMiuix(
                 colorScheme.surfaceVariant.copy(alpha = 0.45f),
                 RoundedCornerShape(Radii.Sheet),
             )
-            .border(
-                width = 1.dp,
-                color = if (focused) colorScheme.primary else colorScheme.onSurface.copy(alpha = 0.16f),
-                shape = RoundedCornerShape(Radii.Sheet),
+            .then(
+                // 仅聚焦时描边（语义强调）；失焦靠底色明度差分层
+                if (focused) {
+                    Modifier.border(1.dp, colorScheme.primary, RoundedCornerShape(Radii.Sheet))
+                } else {
+                    Modifier
+                },
             )
             .padding(horizontal = 10.dp, vertical = 8.dp),
     ) {

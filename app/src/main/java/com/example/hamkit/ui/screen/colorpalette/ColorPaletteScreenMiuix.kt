@@ -590,7 +590,6 @@ private fun ThemePreviewCardMiuix(
                 .aspectRatio(screenRatio)
                 .clip(RoundedCornerShape(Radii.CardGroup))
                 .background(bgColor)
-                .border(1.dp, colorScheme.outline, RoundedCornerShape(Radii.CardGroup))
         ) {
             Column {
                 Row(

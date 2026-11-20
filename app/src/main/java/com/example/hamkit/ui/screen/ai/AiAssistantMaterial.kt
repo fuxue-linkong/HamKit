@@ -778,14 +778,13 @@ private fun ComposerMaterial(
                 MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
                 RoundedCornerShape(Radii.Sheet),
             )
-            .border(
-                width = 1.dp,
-                color = if (focused) {
-                    MaterialTheme.colorScheme.primary
+            .then(
+                // 仅聚焦时描边（语义强调）；失焦靠底色明度差分层
+                if (focused) {
+                    Modifier.border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(Radii.Sheet))
                 } else {
-                    MaterialTheme.colorScheme.outlineVariant
+                    Modifier
                 },
-                shape = RoundedCornerShape(Radii.Sheet),
             )
             .padding(horizontal = 10.dp, vertical = 8.dp),
     ) {

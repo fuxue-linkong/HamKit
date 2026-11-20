@@ -8,7 +8,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
- * 设计 token（借鉴 ReveriePaint 思路 4/7/9）：
+ * 设计 token：
  *
  * - 圆角是交互语义，不是装饰：全应用只允许 [Radii] 的 6 个值 + 胶囊/CircleShape；
  * - 动效收敛为曲线 token：业务代码禁止裸写 spring/tween 数值；
@@ -35,7 +35,7 @@ object Radii {
 }
 
 /**
- * 动效曲线 token（思路 7：全应用只允许这 5 条曲线）。
+ * 动效曲线 token：全应用只允许这 5 条曲线。
  *
  * 泛型 helper 让 Float/Offset/Rect 等都能复用同一组参数。
  */
