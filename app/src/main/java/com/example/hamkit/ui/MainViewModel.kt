@@ -130,6 +130,7 @@ class MainViewModel : ViewModel() {
     // 跟踪上一次刷新的 Job，避免用户快速多次点击导致并发竞态
     private var refreshJob: Job? = null
     private var satelliteOnlyJob: Job? = null
+    private var locationOnlyJob: Job? = null
     private var predictJob: Job? = null
     // 卫星分段状态拉取 Job：与主刷新解耦，结果异步回填 satelliteState.segmentStatuses
     private var segmentStatusJob: Job? = null
@@ -917,11 +918,6 @@ class MainViewModel : ViewModel() {
             }
         }
     }
-
-    /**
-     * 只刷新定位（分区 + 城市，不拉地址与天气），保留给旧调用点。
-     */
-    fun refreshLocationOnly() = refreshLocation(full = false)
 
     /**
      * 启动持续位置监听。

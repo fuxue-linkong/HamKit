@@ -10,6 +10,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import com.example.hamkit.data.location.deviceInfoString
+import com.example.hamkit.data.location.LocalLocationMetricRecorder
 
 /**
  * LocationMetric JSON 序列化与 LocationMetricRecorder 的验证测试。
