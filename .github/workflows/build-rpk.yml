@@ -94,6 +94,12 @@ jobs:
               *) echo "::error::rpk 缺少页面 $page"; exit 1 ;;
             esac
           done
+          # 横向数字帧图必须进包：漏帧会让提醒页 404 黑屏
+          FRAME_COUNT=$(echo "$LISTING" | grep -c "common/ring/frames/" || true)
+          if [ "$FRAME_COUNT" -lt 60 ]; then
+            echo "::error::rpk 帧图只有 $FRAME_COUNT 张，应为 60 张"
+            exit 1
+          fi
           echo "sha256: $(sha256sum "$RPK" | awk '{print $1}')"
           echo "rpk 校验通过"
 

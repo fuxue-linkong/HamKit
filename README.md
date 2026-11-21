@@ -17,11 +17,14 @@
 
 - **弹出**：手机下发提醒时把 AOS 绝对时间一起发来，手环用 `消息里的 now − 本地时间`
   校正时钟偏差后**本地倒计时**，不依赖手机持续推送。
-- **显示**：整页**横向显示**（内容旋转 90°，同充电屏保方向）。画面为充电屏保式**蓝色环形倒计时**：
-  环按剩余时间从 12 点顺时针递减，环心大字 `MM:SS`（每秒刷新），环外上方 `AOS 倒计时` 小字、下方卫星名（如 `ISS`）。
-  canvas 不可用的老平台自动降级为纯文字大字倒计时。
-- **震动**：进页面长振动一次；到 00:00 再振一次。
-- **关闭**：**上滑**（`swipe` 的 `direction === "up"`）→ 回待命页并回 `ack dismiss`。
+- **显示**：**横向显示**（同充电屏保方向）。画面为充电屏保式**蓝色环形倒计时**：
+  [progress `type="arc"`](https://iot.mi.com/vela/quickapp/zh/components/basic/progress.html) 蓝环
+  按剩余时间从 12 点顺时针递减，环心大字 `MM:SS`（每秒刷新），下方卫星名（如 `ISS`）。
+  Vela 手环**不支持 canvas 与 transform rotate**（用了会导致手环重启），横向数字由
+  `scripts/gen-ring-frames.py` 预渲染为旋转 90° 的 PNG 帧图（60 帧，`src/common/ring/frames/`），
+  提醒页用 `image` 按秒切换；小字提示同样用预旋转图片。
+- **关闭**：**上滑 / 左滑 / 右滑** 均可（内容横置，横持时的"上滑"对应物理 left/right；
+  保留 up 兼容竖持）→ 回待命页并回 `ack dismiss`。
 - 00:00 后多显示 1 分钟自动退出，避免用户走开时页面一直挂着。
 
 ## 目录
@@ -31,9 +34,11 @@
 │   ├── manifest.json            # package 必须 = com.example.hamkit
 │   ├── app.ux                   # interconnect 单例、握手、消息分发
 │   ├── common/utils/alert.js    # 协议解析 / 倒计时格式化（纯函数）
+│   ├── common/ring/             # 倒计时数字帧图 + 提示图（预旋转 90°，脚本生成）
 │   └── pages/
 │       ├── index/index.ux       # 待命页：连接状态 + 最近提醒 + 测试按钮
-│       └── alert/index.ux       # 提醒页：倒计时 + 卫星名 + 上滑关闭
+│       └── alert/index.ux       # 提醒页：环形倒计时 + 卫星名 + 滑动关闭
+├── scripts/gen-ring-frames.py         # 生成横向数字帧图（Pillow，产物已入库）
 ├── scripts/prepare-wearable-sign.sh   # 从 keystore 生成 rpk 所需 pem
 └── .github/workflows/build-rpk.yml
 ```
