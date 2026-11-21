@@ -100,9 +100,10 @@ fun BottomBar(
 fun SideRail(
     blurBackdrop: LayerBackdrop?,
     modifier: Modifier = Modifier,
+    expanded: Boolean = false,
 ) {
     when (LocalUiMode.current) {
-        UiMode.Miuix -> NavigationRailMiuix(blurBackdrop, modifier)
-        UiMode.Material -> NavigationRailMaterial(modifier)
+        UiMode.Miuix -> NavigationRailMiuix(blurBackdrop, modifier, expanded)
+        UiMode.Material -> NavigationRailMaterial(modifier, expanded)
     }
 }

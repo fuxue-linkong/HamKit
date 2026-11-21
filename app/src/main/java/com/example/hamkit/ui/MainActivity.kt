@@ -130,6 +130,11 @@ import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import com.example.hamkit.ui.utils.contentMaxWidth
+import com.example.hamkit.ui.utils.shouldExpandNavigationRail
+import com.example.hamkit.ui.utils.shouldShowNavigationRail
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 
 class MainActivity : ComponentActivity() {
 
@@ -433,8 +438,10 @@ fun MainScreen(
 
     MainScreenBackHandler(mainPagerState, navController)
 
-    val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
-    val useNavigationRail = isLandscape && !(uiMode == UiMode.Miuix && enableFloatingBottomBar)
+    // 大屏适配：按窗口宽度断点决定导航形态（竖屏平板也给 Rail）
+    val showRail = shouldShowNavigationRail()
+    val expandRail = shouldExpandNavigationRail()
+    val useNavigationRail = showRail && !(uiMode == UiMode.Miuix && enableFloatingBottomBar)
 
     CompositionLocalProvider(
         LocalMainPagerState provides mainPagerState,
@@ -443,23 +450,37 @@ fun MainScreen(
         }.getOrDefault(MotionScale.STANDARD),
     ) {
         val pagerContent = @Composable { bottomInnerPadding: Dp ->
+            val contentMax = contentMaxWidth()
             Box(
                 modifier = Modifier
                     .background(surfaceColor)
                     .then(if (blurBackdrop != null) Modifier.layerBackdrop(blurBackdrop) else Modifier),
             ) {
-                HorizontalPager(
+                Box(
                     modifier = Modifier
-                        .then(if (enableFloatingBottomBar && enableFloatingBottomBarBlur) Modifier.layerBackdrop(backdrop) else Modifier),
-                    state = mainPagerState.pagerState,
-                    beyondViewportPageCount = 1,
-                    userScrollEnabled = userScrollEnabled,
-                ) { page ->
-                    val isCurrentPage = page == settledPage
-                    when (page) {
-                        0 -> HomePager(navController, bottomInnerPadding, isCurrentPage)
-                        1 -> AiAssistantScreen(bottomInnerPadding = bottomInnerPadding)
-                        2 -> SettingPager(navController, bottomInnerPadding)
+                        .fillMaxWidth()
+                        .wrapContentWidth(Alignment.CenterHorizontally)
+                        .then(
+                            if (contentMax != androidx.compose.ui.unit.Dp.Unspecified) {
+                                Modifier.widthIn(max = contentMax)
+                            } else {
+                                Modifier
+                            },
+                        ),
+                ) {
+                    HorizontalPager(
+                        modifier = Modifier
+                            .then(if (enableFloatingBottomBar && enableFloatingBottomBarBlur) Modifier.layerBackdrop(backdrop) else Modifier),
+                        state = mainPagerState.pagerState,
+                        beyondViewportPageCount = 1,
+                        userScrollEnabled = userScrollEnabled,
+                    ) { page ->
+                        val isCurrentPage = page == settledPage
+                        when (page) {
+                            0 -> HomePager(navController, bottomInnerPadding, isCurrentPage)
+                            1 -> AiAssistantScreen(bottomInnerPadding = bottomInnerPadding)
+                            2 -> SettingPager(navController, bottomInnerPadding)
+                        }
                     }
                 }
             }
@@ -475,6 +496,7 @@ fun MainScreen(
                     Row {
                         SideRail(
                             blurBackdrop = blurBackdrop,
+                            expanded = expandRail,
                         )
                         Box(
                             modifier = Modifier
@@ -490,6 +512,7 @@ fun MainScreen(
                     Row {
                         SideRail(
                             blurBackdrop = blurBackdrop,
+                            expanded = expandRail,
                         )
                         Box(
                             modifier = Modifier
