@@ -1,33 +1,43 @@
 <template>
   <div class="page" @swipe="handleSwipe">
-    <text class="label">AOS 倒计时</text>
+    <!-- 横向舞台：同小米手环充电屏保方向，整体旋转 90° 横过来看。
+         尺寸在 onInit 里按屏幕长边×短边动态写入（不同手环分辨率不同）。 -->
+    <div class="stage" style="width: {{ stageW }}px; height: {{ stageH }}px; transform: rotate({{ stageAngle }}deg)">
+      <text class="label">AOS 倒计时</text>
 
-    <text class="time">{{ countdown }}</text>
+      <!-- 倒计时环与环心数字都画进 canvas，避免多层元素叠加对位 -->
+      <canvas id="ring" class="ring" style="width: {{ canvasSize }}px; height: {{ canvasSize }}px"></canvas>
 
-    <text class="sat">{{ sat }}</text>
+      <text class="sat">{{ sat }}</text>
 
-    <div class="bar">
-      <div class="bar-inner" style="width: {{ barWidth }}"></div>
+      <text class="hint">上滑关闭</text>
     </div>
 
-    <text class="hint">上滑关闭</text>
+    <!-- 降级布局：canvas/rotate 不可用（老平台）时退回纯文字竖排 -->
+    <div class="fallback" if="{{ fallbackMode }}">
+      <text class="fb-time">{{ countdown }}</text>
+      <text class="fb-sat">{{ sat }}</text>
+    </div>
   </div>
 </template>
 
 <script>
 import router from '@system.router'
 import vibrator from '@system.vibrator'
+import device from '@system.device'
 import { formatCountdown, remainingMs } from '../../common/utils/alert'
 
-/** 进度条总宽（设备像素，designWidth=device-width） */
-const BAR_TOTAL = 140
-/** 收到提醒时的倒计时窗口：用来算进度条比例 */
+/** 进度环颜色：用户指定蓝色（原充电屏保为绿色） */
+const RING_COLOR = '#0a84ff'
+/** 底环（已走掉部分）颜色 */
+const RING_TRACK = '#1f2937'
+/** 收到提醒时的倒计时窗口：用来算进度环比例 */
 const LEAD_WINDOW_MS = 60 * 1000
 /** AOS 之后再多显示 1 分钟，避免刚过境页面就消失造成误解 */
 const AUTO_CLOSE_AFTER_MS = 60 * 1000
 
 /**
- * 全屏提醒页。
+ * 全屏提醒页（充电屏保式环形倒计时）。
  *
  * 数据源固定取 app 上的 lastAlert，而不是 router 参数：
  * 对象参数跨页面传递在部分平台上会被序列化成字符串，直接取引用更稳，
@@ -37,14 +47,24 @@ export default {
   private: {
     sat: '',
     countdown: '--:--',
-    // 用带单位的字符串，模板里直接 style="width: {{ barWidth }}"
-    barWidth: BAR_TOTAL + 'px'
+    // 横向舞台尺寸：默认按手环 9 的长条屏（192×490），onInit 里按真机覆盖
+    stageW: 490,
+    stageH: 192,
+    // 旋转方向：屏幕竖着拿、内容横过来（抬腕横看，同充电屏保）
+    stageAngle: 90,
+    // 画布边长：正方形，取舞台短边减去上下留白，onInit 里计算
+    canvasSize: 168,
+    // canvas 初始化失败时置 true，模板切到纯文字降级布局
+    fallbackMode: false
   },
 
   alert: null,
   offset: 0,
   timerId: null,
   vibratedAtAos: false,
+  ctx: null,
+  // 画布几何缓存：中心点与环半径，tick 重绘时直接用
+  geo: null,
 
   onInit() {
     const app = this.$app.$def
@@ -60,11 +80,40 @@ export default {
     this.sat = this.alert.sat
     // 回执：让手机端知道提醒已经展示，可用于日志与去重
     app.sendAck(this.alert.id, 'shown')
+
+    this.layout()
+  },
+
+  /**
+   * 按真机屏幕计算横向舞台与画布尺寸。
+   *
+   * designWidth=device-width，CSS px 即物理像素。屏幕始终竖向（192×490 / 336×480），
+   * 舞台取"长边×短边"再 rotate(90deg)，内容即横向显示。
+   */
+  layout() {
+    try {
+      const info = device.getInfo()
+      this.applyLayout(info.windowWidth, info.windowHeight)
+    } catch (e) {
+      // 拿不到屏幕信息就保持默认值（手环 9 尺寸），不影响展示
+      console.info('device.getInfo failed: ' + e)
+    }
+  },
+
+  applyLayout(screenW, screenH) {
+    if (!screenW || !screenH) return
+    const long_ = Math.max(screenW, screenH)
+    const short_ = Math.min(screenW, screenH)
+    this.stageW = long_
+    this.stageH = short_
+    // 画布正方形：短边再留 8px 上下留白，环带画在画布内缘
+    this.canvasSize = short_ - 16
   },
 
   onShow() {
     // 进入即长振动：这是"到点了"的第一反馈，比屏幕亮起更直接
     this.vibrate()
+    this.initCanvas()
     this.tick()
     this.timerId = setInterval(() => this.tick(), 1000)
   },
@@ -75,6 +124,31 @@ export default {
 
   onDestroy() {
     this.stopTimer()
+  },
+
+  /**
+   * 初始化 canvas 2D 上下文并缓存几何信息。
+   * 失败（平台不支持 canvas 或元素未就绪）时切纯文字降级布局。
+   */
+  initCanvas() {
+    try {
+      const el = this.$element('ring')
+      const ctx = el && el.getContext('2d')
+      if (!ctx) throw new Error('no 2d context')
+      this.ctx = ctx
+      this.geo = {
+        // 环心即画布中心；半径留出线宽与呼吸空间
+        cx: this.canvasSize / 2,
+        cy: this.canvasSize / 2,
+        r: this.canvasSize / 2 - 14
+      }
+      this.fallbackMode = false
+    } catch (e) {
+      console.info('canvas init failed, fallback to text: ' + e)
+      this.ctx = null
+      this.geo = null
+      this.fallbackMode = true
+    }
   },
 
   tick() {
@@ -96,8 +170,53 @@ export default {
 
     this.countdown = formatCountdown(Math.max(0, ms / 1000))
 
+    // 剩余比例：满环 60s，随时间递减（同倒计时直觉）
     const ratio = Math.max(0, Math.min(1, ms / LEAD_WINDOW_MS))
-    this.barWidth = Math.round(BAR_TOTAL * ratio) + 'px'
+
+    if (this.ctx && this.geo) {
+      this.drawRing(ratio)
+    }
+  },
+
+  /**
+   * 绘制充电屏保式倒计时环。
+   *
+   * - 底环：完整 360° 暗色圆弧，标出环带位置
+   * - 进度环：蓝色，12 点方向起顺时针，弧长 = ratio × 360°，圆角线帽
+   * - 环心：白色加粗 MM:SS 倒计时
+   */
+  drawRing(ratio) {
+    const ctx = this.ctx
+    const { cx, cy, r } = this.geo
+    const size = this.canvasSize
+
+    ctx.clearRect(0, 0, size, size)
+
+    // 底环
+    ctx.beginPath()
+    ctx.lineWidth = 10
+    ctx.lineCap = 'round'
+    ctx.strokeStyle = RING_TRACK
+    ctx.arc(cx, cy, r, 0, Math.PI * 2, false)
+    ctx.stroke()
+
+    // 进度环：12 点 = -90°，顺时针画到 -90° + ratio×360°
+    if (ratio > 0) {
+      ctx.beginPath()
+      ctx.lineWidth = 10
+      ctx.lineCap = 'round'
+      ctx.strokeStyle = RING_COLOR
+      ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ratio, false)
+      ctx.stroke()
+    }
+
+    // 环心倒计时数字
+    ctx.fillStyle = '#ffffff'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    // 手环 9 环径约 140px：54px 加粗数字在环内两侧仍有余量
+    ctx.font = 'bold 54px sans-serif'
+    ctx.fillText(this.countdown, cx, cy)
   },
 
   stopTimer() {
@@ -117,7 +236,8 @@ export default {
   },
 
   handleSwipe(e) {
-    // 上滑关闭；其它方向忽略（避免误触）
+    // 上滑关闭；其它方向忽略（避免误触）。
+    // 注意：整页旋转 90° 后，用户横向滑动对应原"up"方向不变（swipe 按屏幕坐标判断）。
     if (e && e.direction === 'up') {
       this.close()
     }
@@ -136,12 +256,16 @@ export default {
 .page {
   width: 100%;
   height: 100%;
-  flex-direction: column;
   justify-content: center;
   align-items: center;
   background-color: #000000;
-  padding-left: 12px;
-  padding-right: 12px;
+}
+
+/* 横向舞台：固定为"屏幕长边×短边"，整体旋转 90° 后铺满屏幕、内容横过来 */
+.stage {
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
 }
 
 .label {
@@ -150,38 +274,47 @@ export default {
   letter-spacing: 2px;
 }
 
-.time {
+.ring {
+  margin-top: 2px;
+  margin-bottom: 2px;
+}
+
+.sat {
+  font-size: 16px;
+  color: #0a84ff;
+  text-align: center;
+}
+
+.hint {
   margin-top: 4px;
+  font-size: 11px;
+  color: #4b5563;
+}
+
+/* 降级布局：canvas/rotate 不可用时回退到旧版纯文字样式 */
+.fallback {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  background-color: #000000;
+}
+
+.fb-time {
   font-size: 46px;
   font-weight: 700;
   color: #ffffff;
   text-align: center;
 }
 
-.sat {
-  margin-top: 2px;
+.fb-sat {
+  margin-top: 6px;
   font-size: 18px;
-  color: #00e09e;
+  color: #0a84ff;
   text-align: center;
-}
-
-.bar {
-  width: 140px;
-  height: 4px;
-  margin-top: 14px;
-  border-radius: 2px;
-  background-color: #1f2937;
-}
-
-.bar-inner {
-  height: 4px;
-  border-radius: 2px;
-  background-color: #00e09e;
-}
-
-.hint {
-  margin-top: 12px;
-  font-size: 11px;
-  color: #4b5563;
 }
 </style>
