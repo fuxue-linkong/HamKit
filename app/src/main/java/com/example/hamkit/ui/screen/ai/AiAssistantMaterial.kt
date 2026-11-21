@@ -161,6 +161,7 @@ import androidx.compose.material.icons.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.KeyboardArrowLeft
 import com.example.hamkit.data.ai.AiReasoningEffort
 import com.example.hamkit.data.ai.modelVisionSupport
+import com.example.hamkit.ui.theme.Radii
 
 /** Material 风格实现，与 Miuix 版共用 [AiAssistantViewModel]。 */
 @Composable
@@ -482,10 +483,10 @@ private fun EmptyStateMaterial(onPick: (String) -> Unit, modifier: Modifier = Mo
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 4.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(Radii.Control))
                     .background(
                         MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        RoundedCornerShape(12.dp),
+                        RoundedCornerShape(Radii.Control),
                     )
                     // 触控区专项：48dp 最小可点高度
                     .heightIn(min = 48.dp)
@@ -516,7 +517,7 @@ private fun MessageItemMaterial(message: AiChatMessageUi) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             Surface(
                 color = MaterialTheme.colorScheme.primary,
-                shape = RoundedCornerShape(18.dp, 18.dp, 6.dp, 18.dp),
+                shape = RoundedCornerShape(Radii.Card, Radii.Card, Radii.Badge, Radii.Card),
                 modifier = Modifier.widthIn(max = 320.dp),
             ) {
                 Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
@@ -531,7 +532,7 @@ private fun MessageItemMaterial(message: AiChatMessageUi) {
                                 .padding(top = 6.dp)
                                 .background(
                                     MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.15f),
-                                    RoundedCornerShape(8.dp),
+                                    RoundedCornerShape(Radii.Control),
                                 )
                                 .padding(horizontal = 8.dp, vertical = 3.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -668,7 +669,7 @@ private fun MessageItemMaterial(message: AiChatMessageUi) {
                         .fillMaxWidth()
                         .background(
                             MaterialTheme.colorScheme.error.copy(alpha = 0.10f),
-                            RoundedCornerShape(8.dp),
+                            RoundedCornerShape(Radii.Control),
                         )
                         .padding(horizontal = 10.dp, vertical = 6.dp),
                 )
@@ -684,7 +685,7 @@ private fun MessageItemMaterial(message: AiChatMessageUi) {
                         .fillMaxWidth()
                         .background(
                             MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                            RoundedCornerShape(10.dp),
+                            RoundedCornerShape(Radii.Control),
                         )
                         .clickable { toolsExpanded = !toolsExpanded }
                         .padding(horizontal = 10.dp, vertical = 7.dp),
@@ -775,16 +776,15 @@ private fun ComposerMaterial(
             .padding(horizontal = 12.dp, vertical = 8.dp)
             .background(
                 MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                RoundedCornerShape(26.dp),
+                RoundedCornerShape(Radii.Sheet),
             )
-            .border(
-                width = 1.dp,
-                color = if (focused) {
-                    MaterialTheme.colorScheme.primary
+            .then(
+                // 仅聚焦时描边（语义强调）；失焦靠底色明度差分层
+                if (focused) {
+                    Modifier.border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(Radii.Sheet))
                 } else {
-                    MaterialTheme.colorScheme.outlineVariant
+                    Modifier
                 },
-                shape = RoundedCornerShape(26.dp),
             )
             .padding(horizontal = 10.dp, vertical = 8.dp),
     ) {
@@ -858,7 +858,7 @@ private fun ComposerMaterial(
             Spacer(Modifier.weight(1f))
             Row(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
+                    .clip(RoundedCornerShape(Radii.Control))
                     .alpha(if (streaming) 0.4f else 1f)
                     // B1 整改：streaming 时模型选择禁用（与 Miuix 版一致）
                     .clickable(enabled = !streaming) {
@@ -969,7 +969,7 @@ private fun ModelPickerPopupMaterial(
         properties = PopupProperties(focusable = true),
     ) {
         Surface(
-            shape = RoundedCornerShape(14.dp),
+            shape = RoundedCornerShape(Radii.Card),
             tonalElevation = 6.dp,
             shadowElevation = 8.dp,
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -994,7 +994,7 @@ private fun ModelPickerPopupMaterial(
                                 .height(36.dp)
                                 .background(
                                     MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                                    RoundedCornerShape(8.dp),
+                                    RoundedCornerShape(Radii.Control),
                                 )
                                 .padding(horizontal = 8.dp, vertical = 8.dp),
                             textStyle = TextStyle(
@@ -1040,7 +1040,7 @@ private fun ModelPickerPopupMaterial(
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .clip(RoundedCornerShape(6.dp))
+                                                .clip(RoundedCornerShape(Radii.Badge))
                                                 .background(
                                                     if (current) {
                                                         MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
@@ -1098,7 +1098,7 @@ private fun ModelPickerPopupMaterial(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(6.dp))
+                                    .clip(RoundedCornerShape(Radii.Badge))
                                     .clickable {
                                         onEffort(item)
                                         onDismiss()
@@ -1129,7 +1129,7 @@ private fun PickerRowMaterial(label: String, value: String, onClick: () -> Unit)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(Radii.Control))
             .clickable(onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1161,7 +1161,7 @@ private fun PickerBackMaterial(title: String, onBack: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(Radii.Control))
             .clickable(onClick = onBack)
             .padding(horizontal = 6.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1182,7 +1182,7 @@ private fun ReasoningCardMaterial(message: AiChatMessageUi) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(Radii.Control))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
             .clickable { expanded = !expanded }
             .padding(horizontal = 10.dp, vertical = 6.dp),
@@ -1318,7 +1318,7 @@ private fun ToolCardMaterial(tool: AiToolUi) {
     ) {
         Column(
             Modifier
-                .clip(RoundedCornerShape(14.dp))
+                .clip(RoundedCornerShape(Radii.Card))
                 .clickable { expanded = !expanded }
                 .padding(12.dp),
         ) {
@@ -1785,14 +1785,14 @@ private fun AiHistorySheetMaterial(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(Radii.Control))
                                 .background(
                                     if (current) {
                                         MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
                                     } else {
                                         MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
                                     },
-                                    RoundedCornerShape(12.dp),
+                                    RoundedCornerShape(Radii.Control),
                                 )
                                 .border(
                                     width = 1.dp,
@@ -1801,7 +1801,7 @@ private fun AiHistorySheetMaterial(
                                     } else {
                                         Color.Transparent
                                     },
-                                    shape = RoundedCornerShape(12.dp),
+                                    shape = RoundedCornerShape(Radii.Control),
                                 )
                                 .clickable { onLoad(session.id) }
                                 .padding(horizontal = 12.dp, vertical = 10.dp),
@@ -1914,14 +1914,14 @@ private fun AiModelPickerMaterial(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(Radii.Control))
                                 .background(
                                     if (current) {
                                         MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
                                     } else {
                                         MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
                                     },
-                                    RoundedCornerShape(12.dp),
+                                    RoundedCornerShape(Radii.Control),
                                 )
                                 .clickable { onPick(profile.id) }
                                 .padding(horizontal = 12.dp, vertical = 12.dp),

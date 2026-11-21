@@ -93,6 +93,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import com.example.hamkit.ui.theme.Radii
 
 /**
  * 卫星管理页入口：按当前界面风格分发到 Miuix / Material 实现。
@@ -572,7 +573,7 @@ private fun SatelliteFilterButton(
 ) {
     Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(Radii.Control))
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -614,7 +615,7 @@ private fun SatelliteCategoryButton(
 ) {
     Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(Radii.Control))
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -697,7 +698,7 @@ private fun SatelliteManagementItem(
                     Modifier.border(
                         width = 1.5.dp,
                         color = colorScheme.primary,
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(Radii.Control)
                     )
                 } else {
                     Modifier
@@ -744,7 +745,7 @@ private fun SatelliteManagementItem(
                         // A6 整改：仰角从裸文本改为 chip 徽章（与分类/模式徽章同语言），标明是数据
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
+                                .clip(RoundedCornerShape(Radii.Control))
                                 .background(colorScheme.primaryContainer)
                                 .padding(horizontal = 8.dp, vertical = 4.dp)
                         ) {
@@ -908,7 +909,7 @@ private fun TransceiverList(radios: List<RadioInfo>) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(Radii.Control))
             .background(colorScheme.surfaceVariant.copy(alpha = 0.4f))
             .padding(horizontal = 12.dp, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp)
@@ -1022,7 +1023,7 @@ private fun TimeBadge(label: String, value: String, isActive: Boolean) {
 
     Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(Radii.Control))
             .background(containerColor)
             .padding(horizontal = 10.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1096,7 +1097,7 @@ private fun CategoryChip(name: String) {
 private fun Chip(text: String, bgColor: Color, contentColor: Color) {
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(Radii.Control))
             // E1 整改：内边距 8×3dp→8×5dp、字号 11sp→12sp，提升可读性
             .background(bgColor)
             .padding(horizontal = 8.dp, vertical = 5.dp)
@@ -1171,7 +1172,7 @@ private fun SegmentCell(segment: SegmentStatus, modifier: Modifier = Modifier) {
     }
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(Radii.Control))
             .background(bgColor)
             .padding(horizontal = 6.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally

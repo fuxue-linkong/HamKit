@@ -34,6 +34,7 @@ import com.amap.api.maps.model.MarkerOptions
 import com.example.hamkit.R
 import com.example.hamkit.data.location.CoordinateConverter
 import com.example.hamkit.ui.theme.LocalCardAlpha
+import com.example.hamkit.ui.theme.Radii
 
 /**
  * 位置地图卡片的 Material（Material 3）风格实现。
@@ -144,7 +145,7 @@ fun AMapCardMaterial(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(16f / 9f)
-                    .clip(RoundedCornerShape(12.dp)),
+                    .clip(RoundedCornerShape(Radii.Control)),
             )
 
             Spacer(modifier = Modifier.height(8.dp))

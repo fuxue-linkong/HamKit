@@ -28,6 +28,7 @@ import com.example.hamkit.ui.LocalMainPagerState
 @Composable
 fun NavigationRailMaterial(
     modifier: Modifier = Modifier,
+    expanded: Boolean = false,
 ) {
     val mainPagerState = LocalMainPagerState.current
 
@@ -41,7 +42,7 @@ fun NavigationRailMaterial(
         modifier = modifier.fillMaxHeight(),
         windowInsets = WindowInsets.systemBars.union(WindowInsets.displayCutout).only(
             WindowInsetsSides.Start + WindowInsetsSides.Vertical
-        )
+        ),
     ) {
         Spacer(Modifier.weight(1f))
         items.forEachIndexed { index, (label, selectedIcon, unselectedIcon) ->

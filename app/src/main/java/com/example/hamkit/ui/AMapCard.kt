@@ -34,6 +34,7 @@ import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import com.example.hamkit.ui.theme.Radii
 
 @Composable
 fun AMapCard(
@@ -138,7 +139,7 @@ fun AMapCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(16f / 9f)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(Radii.Control))
             )
 
             Spacer(modifier = Modifier.height(8.dp))

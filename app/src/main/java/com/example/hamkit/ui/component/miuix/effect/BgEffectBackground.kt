@@ -4,6 +4,7 @@ package com.example.hamkit.ui.component.miuix.effect
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
+import com.example.hamkit.ui.theme.Motions
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Spacer
@@ -60,7 +61,7 @@ fun BgEffectBackground(
                 delay((preset.colorInterpPeriod * 500).toLong())
                 colorStage.animateTo(
                     targetValue = targetStage,
-                    animationSpec = spring(dampingRatio = 0.9f, stiffness = 35f),
+                    animationSpec = Motions.jelly(),
                 )
                 targetStage += 1f
             }

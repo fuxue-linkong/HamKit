@@ -71,6 +71,7 @@ import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.window.WindowDialog
+import com.example.hamkit.ui.theme.Radii
 
 /**
  * SSTV 图库：浏览、全屏查看、删除、分享、导出到相册。
@@ -431,7 +432,7 @@ private fun GalleryTile(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(4f / 3f)
-                    .clip(RoundedCornerShape(6.dp))
+                    .clip(RoundedCornerShape(Radii.Badge))
                     .background(Color(0x22000000)),
                 contentAlignment = Alignment.Center,
             ) {

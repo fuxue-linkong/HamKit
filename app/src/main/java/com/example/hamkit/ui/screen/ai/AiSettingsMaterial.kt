@@ -76,6 +76,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.material3.Switch
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import com.example.hamkit.ui.theme.Radii
 
 /** Material 风格实现，与 Miuix 版共用 [AiSettingsViewModel]。 */
 @Composable
@@ -297,7 +298,7 @@ private fun ModelListCardMaterial(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
+                        .clip(RoundedCornerShape(Radii.Control))
                         .clickable { onSelect(profile.id) }
                         .padding(vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -359,7 +360,7 @@ private fun ActiveModelCardMaterial(state: AiSettingsUiState, onSwitch: () -> Un
                         modifier = Modifier
                             .background(
                                 MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
-                                RoundedCornerShape(6.dp),
+                                RoundedCornerShape(Radii.Badge),
                             )
                             .padding(horizontal = 6.dp, vertical = 2.dp),
                     )
@@ -421,7 +422,7 @@ private fun ConnectionCardMaterial(
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .clip(RoundedCornerShape(8.dp))
+                            .clip(RoundedCornerShape(Radii.Control))
                             .background(
                                 if (selected) {
                                     MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
@@ -533,7 +534,7 @@ private fun ConnectionCardMaterial(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(Radii.Control))
                     .dashedBorderMaterial(MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
                     .clickable(onClick = onAddProvider)
                     .padding(vertical = 14.dp),
@@ -625,7 +626,7 @@ private fun ProbeNoticeMaterial(text: String, container: Color) {
         color = MaterialTheme.colorScheme.onSurface,
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(Radii.Control))
             .background(container)
             .padding(horizontal = 10.dp, vertical = 6.dp),
     )
@@ -706,21 +707,21 @@ private fun ModelEntriesCardMaterial(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
+                        .clip(RoundedCornerShape(Radii.Control))
                         .background(
                             if (selected) {
                                 MaterialTheme.colorScheme.primary.copy(alpha = 0.04f)
                             } else {
                                 MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
                             },
-                            RoundedCornerShape(10.dp),
+                            RoundedCornerShape(Radii.Control),
                         )
                         .then(
                             if (selected) {
                                 Modifier.border(
                                     1.dp,
                                     MaterialTheme.colorScheme.primary,
-                                    RoundedCornerShape(10.dp),
+                                    RoundedCornerShape(Radii.Control),
                                 )
                             } else {
                                 Modifier
@@ -864,7 +865,7 @@ private fun ModelPickerDialogMaterial(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
+                                .clip(RoundedCornerShape(Radii.Control))
                                 .background(
                                     if (current) {
                                         MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)

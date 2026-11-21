@@ -47,6 +47,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.ui.appViewModel
 import com.example.hamkit.ui.component.material.SwitchItem
 import com.example.hamkit.ui.viewmodel.HfFaxViewModel
+import com.example.hamkit.ui.theme.Radii
 
 /**
  * HF Fax（WEFAX）接收界面的 Material（Material 3）风格实现。
@@ -157,7 +158,7 @@ fun HfFaxScreenMaterial(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(FAX_IMAGE_VIEWPORT_HEIGHT)
-                                .clip(RoundedCornerShape(8.dp))
+                                .clip(RoundedCornerShape(Radii.Control))
                                 .background(Color.Black),
                         ) {
                             val bitmap = uiState.bitmap

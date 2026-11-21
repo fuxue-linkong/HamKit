@@ -55,6 +55,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
+import com.example.hamkit.ui.theme.Radii
 
 /**
  * HF Fax（WEFAX）天气传真接收界面。
@@ -169,7 +170,7 @@ fun HfFaxScreenMiuix(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(IMAGE_VIEWPORT_HEIGHT)
-                            .clip(RoundedCornerShape(8.dp))
+                            .clip(RoundedCornerShape(Radii.Control))
                             .background(Color.Black),
                     ) {
                         val bitmap = uiState.bitmap

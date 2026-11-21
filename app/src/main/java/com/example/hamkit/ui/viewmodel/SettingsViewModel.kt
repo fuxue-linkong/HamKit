@@ -47,6 +47,7 @@ class SettingsViewModel(
             val enablePredictiveBack = repo.enablePredictiveBack
             val enableBlur = repo.enableBlur
             val backgroundAlpha = repo.backgroundAlpha
+            val motionScale = repo.motionScale
             val enableFloatingBottomBar = repo.enableFloatingBottomBar
             val enableFloatingBottomBarBlur = repo.enableFloatingBottomBarBlur
             val pageScale = repo.pageScale
@@ -65,6 +66,7 @@ class SettingsViewModel(
                     enablePredictiveBack = enablePredictiveBack,
                     enableBlur = enableBlur,
                     backgroundAlpha = backgroundAlpha,
+                    motionScale = motionScale,
                     enableFloatingBottomBar = enableFloatingBottomBar,
                     enableFloatingBottomBarBlur = enableFloatingBottomBarBlur,
                     pageScale = pageScale,
@@ -158,6 +160,11 @@ class SettingsViewModel(
     fun setEnablePredictiveBack(enabled: Boolean) {
         repo.enablePredictiveBack = enabled
         _uiState.update { it.copy(enablePredictiveBack = enabled) }
+    }
+
+    fun setMotionScale(value: String) {
+        repo.motionScale = value
+        _uiState.update { it.copy(motionScale = value) }
     }
 
     fun setBackgroundAlpha(value: Float) {

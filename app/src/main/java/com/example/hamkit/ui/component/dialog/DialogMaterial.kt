@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.hamkit.ui.component.markdown.MarkdownContent
+import com.example.hamkit.ui.theme.Radii
 
 @Composable
 fun LoadingDialogMaterial(showDialog: MutableState<Boolean>) {
@@ -26,7 +27,7 @@ fun LoadingDialogMaterial(showDialog: MutableState<Boolean>) {
             properties = DialogProperties(dismissOnClickOutside = false, dismissOnBackPress = false)
         ) {
             Surface(
-                modifier = Modifier.size(100.dp), shape = RoundedCornerShape(8.dp)
+                modifier = Modifier.size(100.dp), shape = RoundedCornerShape(Radii.Control)
             ) {
                 Box(
                     contentAlignment = Alignment.Center,

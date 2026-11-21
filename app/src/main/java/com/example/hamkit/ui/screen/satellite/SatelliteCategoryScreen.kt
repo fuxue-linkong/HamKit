@@ -56,6 +56,7 @@ import top.yukonga.miuix.kmp.basic.Text as MiuixText
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
+import com.example.hamkit.ui.theme.Radii
 
 // ══════════════════════════════════════════════════════════════════════════
 // 分类管理 / 分类归属弹窗（双皮肤）
@@ -221,7 +222,7 @@ private fun MiuixConfirmDialog(
                     ) {
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(10.dp))
+                                .clip(RoundedCornerShape(Radii.Control))
                                 .clickable(onClick = onDismiss)
                                 .padding(horizontal = 12.dp, vertical = 10.dp)
                         ) {
@@ -395,7 +396,7 @@ private fun MiuixCategoryRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(Radii.Control))
             .background(
                 if (selectedForFilter) {
                     colorScheme.primaryContainer.copy(alpha = 0.6f)
@@ -470,7 +471,7 @@ private fun MiuixCheckRow(
         Box(
             modifier = Modifier
                 .size(20.dp)
-                .clip(RoundedCornerShape(4.dp))
+                .clip(RoundedCornerShape(Radii.Badge))
                 .background(
                     if (checked) colorScheme.primary
                     else colorScheme.onSurfaceVariantSummary.copy(alpha = 0.3f)
@@ -510,7 +511,7 @@ private fun MiuixSwitchRow(
         Box(
             modifier = Modifier
                 .size(width = 40.dp, height = 22.dp)
-                .clip(RoundedCornerShape(11.dp))
+                .clip(RoundedCornerShape(Radii.Control))
                 .background(
                     if (checked) colorScheme.primary
                     else colorScheme.onSurfaceVariantSummary.copy(alpha = 0.3f)

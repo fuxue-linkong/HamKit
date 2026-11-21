@@ -25,6 +25,8 @@ data class SettingsUiState(
     val pageScale: Float = 1.0f,
     /** 背景不透明度：1f 不透明，0.5f 半透明。 */
     val backgroundAlpha: Float = 1f,
+    /** 动效速度：STANDARD / FAST / OFF。 */
+    val motionScale: String = "STANDARD",
     val customBackgroundUri: String = "",
     // ── 更新检查与下载 ──
     val updateChecking: Boolean = false,

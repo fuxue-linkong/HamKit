@@ -98,6 +98,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import com.example.hamkit.ui.theme.Radii
 
 /**
  * QSO 通联日志分发入口：按当前 UI 风格选择 Miuix / Material 实现。
@@ -649,7 +650,7 @@ private fun QsoRecordCard(record: Ft8QsoRecord, onClick: () -> Unit) {
                             } else {
                                 colorScheme.onSurfaceSecondary.copy(alpha = 0.10f)
                             },
-                            shape = RoundedCornerShape(6.dp),
+                            shape = RoundedCornerShape(Radii.Badge),
                         )
                         .padding(horizontal = 8.dp, vertical = 2.dp),
                 )

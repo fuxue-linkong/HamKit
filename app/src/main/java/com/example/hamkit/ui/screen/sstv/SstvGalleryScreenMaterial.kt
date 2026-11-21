@@ -63,6 +63,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.launch
+import com.example.hamkit.ui.theme.Radii
 
 /**
  * SSTV 图库的 Material（Material 3）风格实现。
@@ -378,7 +379,7 @@ private fun GalleryTileMaterial(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(4f / 3f)
-                    .clip(RoundedCornerShape(6.dp))
+                    .clip(RoundedCornerShape(Radii.Badge))
                     .background(Color(0x22000000)),
                 contentAlignment = Alignment.Center,
             ) {
