@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.work.Configuration
 import com.example.hamkit.data.privacy.AmapPrivacyInitializer
+import com.example.hamkit.ui.util.QsoLogEventTracker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -94,6 +95,9 @@ class HamKitApplication : Application(), ViewModelStoreOwner, Configuration.Prov
         AmapPrivacyInitializer.initialize(this)
 
         // ── 后台初始化（IO 线程异步，不阻塞首帧）──────────────────────
+        // 埋点持久层：getSharedPreferences 仅解析文件名，开销可忽略，主线程安全
+        QsoLogEventTracker.init(this)
+
         // 4. Android 14+ 启用 OnBackInvokedCallback（依赖 hiddenapibypass）
         //    包含 SharedPreferences 读取 + hidden API 反射调用，约 10-30ms，
         //    且 OnBackInvokedCallback 仅在用户触发返回手势时才需要，

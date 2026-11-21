@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HamKit iOS 分支安全审计报告</title>
+    <style>
+        :root {
+            --primary: #007AFF;
+            --critical: #FF3B30;
+            --high: #FF9500;
+            --medium: #FFCC00;
+            --low: #34C759;
+            --bg: #ffffff;
+            --text: #1f2937;
+            --border: #e5e7eb;
+            --card-bg: #f9fafb;
+            --code-bg: #f3f4f6;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #0f172a;
+                --text: #f1f5f9;
+                --border: #334155;
+                --card-bg: #1e293b;
+                --code-bg: #0f172a;
+            }
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            font-size: 2em;
+            margin-bottom: 10px;
+            color: var(--primary);
+        }
+
+        .meta {
+            display: flex;
+            gap: 20px;
+            font-size: 0.9em;
+            color: #666;
+            flex-wrap: wrap;
+        }
+
+        .meta span {
+            display: flex;
+            gap: 5px;
+        }
+
+        .summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .summary-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+        }
+
+        .summary-card h3 {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .risk-badge {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 0.95em;
+        }
+
+        .risk-critical { background: var(--critical); color: white; }
+        .risk-high { background: var(--high); color: white; }
+        .risk-medium { background: var(--medium); color: #000; }
+        .risk-low { background: var(--low); color: white; }
+
+        section {
+            margin-bottom: 40px;
+        }
+
+        h2 {
+            font-size: 1.5em;
+            color: var(--primary);
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid var(--border);
+        }
+
+        h3 {
+            font-size: 1.1em;
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
+
+        .finding {
+            background: var(--card-bg);
+            border-left: 4px solid var(--border);
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .finding.critical { border-left-color: var(--critical); }
+        .finding.high { border-left-color: var(--high); }
+        .finding.medium { border-left-color: var(--medium); }
+        .finding.low { border-left-color: var(--low); }
+
+        .finding-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .finding-title {
+            font-weight: 600;
+            flex: 1;
+        }
+
+        .finding-desc {
+            margin: 8px 0;
+            line-height: 1.5;
+        }
+
+        .finding-label {
+            display: inline-block;
+            background: var(--code-bg);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.85em;
+            color: #666;
+            margin-right: 5px;
+            margin-top: 5px;
+        }
+
+        .recommendation {
+            margin-top: 10px;
+            padding: 10px;
+            background: rgba(52, 199, 89, 0.1);
+            border-left: 3px solid var(--low);
+            border-radius: 4px;
+            font-size: 0.95em;
+        }
+
+        .recommendation strong {
+            color: var(--low);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        th {
+            background: var(--primary);
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        td {
+            padding: 12px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        code {
+            background: var(--code-bg);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        .positive {
+            background: rgba(52, 199, 89, 0.1);
+            border-left: 4px solid var(--low);
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+        }
+
+        .positive h4 {
+            color: var(--low);
+            margin-bottom: 5px;
+        }
+
+        .comparison {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+
+        .comparison h4 {
+            margin-bottom: 10px;
+            color: var(--primary);
+        }
+
+        .roadmap {
+            margin: 20px 0;
+        }
+
+        .roadmap-item {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 10px;
+        }
+
+        .roadmap-phase {
+            font-weight: 600;
+            color: var(--primary);
+            margin-bottom: 10px;
+        }
+
+        .roadmap-tasks {
+            margin-left: 20px;
+        }
+
+        .roadmap-tasks li {
+            margin-bottom: 5px;
+        }
+
+        footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            font-size: 0.9em;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔒 HamKit iOS 安全审计报告</h1>
+            <div class="meta">
+                <span>📦 分支: <strong>upstream/ios</strong></span>
+                <span>📅 审计日期: <strong>2026-11-19</strong></span>
+                <span>📝 语言: <strong>Swift 5.9+</strong></span>
+                <span>🎯 平台: <strong>iOS 16+</strong></span>
+            </div>
+        </header>
+
+        <div class="summary">
+            <div class="summary-card">
+                <h3>总体风险评估</h3>
+                <div class="risk-badge risk-low">LOW</div>
+                <p style="margin-top: 10px; font-size: 0.9em;">整体安全良好，设计理念与 Android 对齐</p>
+            </div>
+            <div class="summary-card">
+                <h3>关键问题数</h3>
+                <div class="risk-badge risk-critical" style="font-size: 1.2em;">0</div>
+            </div>
+            <div class="summary-card">
+                <h3>高优先级问题</h3>
+                <div class="risk-badge risk-high" style="font-size: 1.2em;">1</div>
+            </div>
+            <div class="summary-card">
+                <h3>中优先级问题</h3>
+                <div class="risk-badge risk-medium" style="font-size: 1.2em;">1</div>
+            </div>
+        </div>
+
+        <section>
+            <h2>✅ 安全亮点</h2>
+
+            <div class="positive">
+                <h4>🔐 Keychain 密钥管理</h4>
+                <p>API Key 存储在 Keychain（<code>kSecAttrAccessibleWhenUnlockedThisDeviceOnly</code>），为每个 profile 分槽（<code>api-key</code> / <code>api-key.&lt;profileId&gt;</code>），完全符合 iOS 安全标准。密钥永不进入日志。</p>
+            </div>
+
+            <div class="positive">
+                <h4>📋 配置隐私</h4>
+                <p>profile 与全局设置存 UserDefaults，敏感字段（API Key）独立用 Keychain 管理。配置不落盘明文敏感信息。</p>
+            </div>
+
+            <div class="positive">
+                <h4>🛡️ HTTPS 首选</h4>
+                <p>URLSession 默认走系统证书验证。自签证书信任仅在用户显式开启内网模式且内核判定为私网时才启用。</p>
+            </div>
+
+            <div class="positive">
+                <h4>🔄 版本迁移</h4>
+                <p>旧版配置无缝迁移到 profile 体系，首次启动自动转换，用户无感知。Keychain 账号兼容（<code>api-key</code>）避免升级后 Key 丢失。</p>
+            </div>
+
+            <div class="positive">
+                <h4>⚙️ URLSession 配置</h4>
+                <p>禁用 Accept-Encoding 压缩以保证 SSE 增量到达、请求和资源超时分别为 120s 和 300s，防止长连接漂移。每个请求一个独立 session + delegate，无回调串联。</p>
+            </div>
+
+            <div class="positive">
+                <h4>📍 Info.plist 权限声明</h4>
+                <p>权限声明清晰：位置、麦克风、相册都有用户可见的提示，符合 App 审核要求。后台模式仅 audio + fetch（日程提醒）。</p>
+            </div>
+        </section>
+
+        <section>
+            <h2>⚠️ 发现的问题</h2>
+
+            <h3>高优先级 (1 项)</h3>
+
+            <div class="finding high">
+                <div class="finding-header">
+                    <div class="finding-title">自签证书验证缺少私网地址校验</div>
+                    <span class="risk-badge risk-high">HIGH</span>
+                </div>
+                <div class="finding-desc">
+                    <strong>位置：</strong> <code>AiSettingsStore.swift</code> 第 600-613 行 + <code>AiTransport.swift</code> 第 103-115 行
+                    <br><br>
+                    <strong>问题描述：</strong>
+                    iOS 侧自签证书信任的防御层级相对单薄。设计流程为：
+                    <ul style="margin: 10px 0 10px 20px;">
+                        <li>用户开启"允许自签证书"开关（存 UserDefaults）</li>
+                        <li>Swift 侧根据此开关挂上 <code>TrustAllDelegate</code></li>
+                        <li>内核只检查「地址是否私网」，但该检查发生在共享代码里（Android Kotlin）</li>
+                        <li><strong>iOS 侧没有单独验证地址是否私网</strong></li>
+                    </ul>
+                    若共享内核的私网验证有漏洞，或如果用户无意中配置了公网地址的自签证书，iOS 会盲目接受。
+                </div>
+                <div class="recommendation">
+                    <strong>建议：</strong>
+                    <ul style="margin: 10px 0 0 20px;">
+                        <li>在 <code>AiTransport.swift</code> 的 <code>start()</code> 中，自签证书启用前再做一次私网地址检查</li>
+                        <li>复用或适配内核的 <code>AiNetworkPolicy.isPrivateHost()</code> 逻辑到 iOS 侧</li>
+                        <li>如果 host 不是私网，直接拒绝而非交给 delegate</li>
+                        <li>优先级：<strong>立即修复</strong>（防止证书 MITM 漏洞）</li>
+                    </ul>
+                </div>
+            </div>
+
+            <h3>中优先级 (1 项)</h3>
+
+            <div class="finding medium">
+                <div class="finding-header">
+                    <div class="finding-title">模型列表获取的自签证书逻辑与流式请求不一致</div>
+                    <span class="risk-badge risk-medium">MEDIUM</span>
+                </div>
+                <div class="finding-desc">
+                    <strong>位置：</strong> <code>AiSettingsStore.swift</code> 第 600-613 行（<code>AiModelCatalog.TrustAllDelegate</code>）
+                    <br><br>
+                    <strong>问题描述：</strong>
+                    <code>AiModelCatalog.fetch()</code> 中的 <code>TrustAllDelegate</code> 与 <code>AiTransport.swift</code> 中的实现不同：
+                    <ul style="margin: 10px 0 10px 20px;">
+                        <li><code>AiModelCatalog</code>：直接 <code>.useCredential</code> 接受任何自签证书（**无私网验证**）</li>
+                        <li><code>AiTransport</code>：依赖 <code>request.allowSelfSigned</code>（内核已判定）</li>
+                    </ul>
+                    两者防御等级不对等。`fetch()` 方法虽然传入了 `allowSelfSigned` 参数，但未用来保护 delegate 本身。
+                </div>
+                <div class="recommendation">
+                    <strong>建议：</strong>
+                    <ul style="margin: 10px 0 0 20px;">
+                        <li>统一两处的 Delegate 实现，都在业务层做私网验证</li>
+                        <li>或将验证逻辑提取为单一 Delegate 类，两处复用</li>
+                        <li>在 <code>fetch()</code> 方法中添加 URL host 私网检查</li>
+                        <li>优先级：下个 Sprint 统一</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section>
+            <h2>🔎 详细分析</h2>
+
+            <h3>项目结构</h3>
+            <ul style="margin: 15px 0 15px 20px;">
+                <li><strong>语言：</strong> Swift 5.9+ (iOS 16+)</li>
+                <li><strong>架构：</strong> Kotlin Multiplatform（共享 `Shared` 模块）+ iOS UI 层</li>
+                <li><strong>源文件数：</strong> 51 个 Swift 文件</li>
+                <li><strong>关键模块：</strong> AI 聊天、APRS/FT8/CW、位置、提醒、QSO 日志</li>
+            </ul>
+
+            <h3>数据存储与加密</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>数据类型</th>
+                        <th>存储位置</th>
+                        <th>保护方式</th>
+                        <th>状态</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>API Key</td>
+                        <td>Keychain</td>
+                        <td><code>kSecAttrAccessibleWhenUnlockedThisDeviceOnly</code></td>
+                        <td>✅</td>
+                    </tr>
+                    <tr>
+                        <td>Profile 配置</td>
+                        <td>UserDefaults</td>
+                        <td>JSON 编码（明文）</td>
+                        <td>⚠️</td>
+                    </tr>
+                    <tr>
+                        <td>全局设置</td>
+                        <td>UserDefaults</td>
+                        <td>JSON 编码（明文）</td>
+                        <td>⚠️</td>
+                    </tr>
+                    <tr>
+                        <td>聊天历史</td>
+                        <td>文件系统</td>
+                        <td>JSON（明文）</td>
+                        <td>⚠️</td>
+                    </tr>
+                    <tr>
+                        <td>QSO 日志</td>
+                        <td>文件系统</td>
+                        <td>JSON（明文）</td>
+                        <td>⚠️</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="recommendation">
+                <strong>建议：</strong> UserDefaults 中的非敏感配置（温度、输出 token 限制）可接受，但聊天历史应考虑加密存储（参考 Android 的 AES-256-GCM）。
+            </div>
+
+            <h3>网络通信</h3>
+            <p style="margin-bottom: 15px;"><strong>URLSession 配置：</strong></p>
+            <ul style="margin: 15px 0 15px 20px;">
+                <li><strong>请求超时：</strong> 120 秒（保证流式 SSE 不中断）</li>
+                <li><strong>资源超时：</strong> 300 秒（完整响应）</li>
+                <li><strong>压缩：</strong> 禁用 Accept-Encoding（SSE 需增量）</li>
+                <li><strong>HTTPS 证书：</strong> 系统 CA 校验（默认）</li>
+                <li><strong>自签证书：</strong> 仅当用户开关 + 内核判定私网时接受（**需加强**）</li>
+            </ul>
+
+            <h3>与 Android 的对比</h3>
+            <div class="comparison">
+                <h4>🔐 密钥存储</h4>
+                <table style="margin-top: 10px;">
+                    <tr>
+                        <td style="padding: 8px; font-weight: 600;">Android</td>
+                        <td style="padding: 8px;">Android Keystore + AES-256-GCM</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px; font-weight: 600;">iOS</td>
+                        <td style="padding: 8px;">Keychain（系统管理）</td>
+                    </tr>
+                    <tr>
+                        <td colspan="2" style="padding: 8px; font-size: 0.9em; color: #666;"><strong>结论：</strong> 两者都符合平台最佳实践，安全等级相当</td>
+                    </tr>
+                </table>
+            </div>
+
+            <div class="comparison">
+                <h4>🛡️ HTTPS 与自签证书</h4>
+                <table style="margin-top: 10px;">
+                    <tr>
+                        <td style="padding: 8px; font-weight: 600;">Android</td>
+                        <td style="padding: 8px;">manifest 禁止 + 业务层验证（**双层防御**）</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px; font-weight: 600;">iOS</td>
+                        <td style="padding: 8px;">URLSession 默认验证 + delegate 仅信用内核（**单层**）</td>
+                    </tr>
+                    <tr>
+                        <td colspan="2" style="padding: 8px; font-size: 0.9em; color: #666;"><strong>差异：</strong> iOS 应在业务层补充私网验证</td>
+                    </tr>
+                </table>
+            </div>
+
+            <div class="comparison">
+                <h4>📱 权限管理</h4>
+                <table style="margin-top: 10px;">
+                    <tr>
+                        <td style="padding: 8px; font-weight: 600;">Android</td>
+                        <td style="padding: 8px;">AndroidManifest + 运行时权限</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px; font-weight: 600;">iOS</td>
+                        <td style="padding: 8px;">Info.plist 用途说明 + 系统弹窗</td>
+                    </tr>
+                    <tr>
+                        <td colspan="2" style="padding: 8px; font-size: 0.9em; color: #666;"><strong>结论：</strong> iOS 声明清晰，符合 App Store 要求</td>
+                    </tr>
+                </table>
+            </div>
+
+            <h3>代码质量检查</h3>
+            <ul style="margin: 15px 0 15px 20px;">
+                <li><strong>硬编码密钥：</strong> ✅ 未发现，所有 API Key 通过 Keychain 或参数传递</li>
+                <li><strong>不安全序列化：</strong> ✅ 使用 Codable（不用 NSCoding）</li>
+                <li><strong>日志泄露：</strong> ✅ 未发现在 print / NSLog 中输出敏感信息</li>
+                <li><strong>弱密码：</strong> ✅ 使用系统 Keychain 访问控制</li>
+                <li><strong>不安全反射：</strong> ✅ 未使用 Mirror 或 Objective-C runtime</li>
+            </ul>
+
+            <h3>第三方依赖</h3>
+            <p style="margin-bottom: 15px;">iOS 应用基于 Kotlin Multiplatform 架构：</p>
+            <ul style="margin: 15px 0 15px 20px;">
+                <li><strong>共享模块（Kotlin）：</strong> 所有依赖与 Android 同步（已审核）</li>
+                <li><strong>iOS 层（Swift）：</strong> 无额外第三方依赖（仅系统框架）</li>
+                <li><strong>系统框架：</strong> Foundation, URLSession, Security, Combine 等（苹果官方）</li>
+            </ul>
+            <p style="font-size: 0.9em; color: #666;"><strong>结论：</strong> 无已知 CVE 风险</p>
+        </section>
+
+        <section>
+            <h2>🛣️ 修复路线图</h2>
+
+            <div class="roadmap">
+                <div class="roadmap-item">
+                    <div class="roadmap-phase">🔴 立即修复（High / 1 项）</div>
+                    <div class="roadmap-tasks">
+                        <ul>
+                            <li><strong>AiTransport 添加私网验证：</strong>
+                                <ul style="margin-top: 5px;">
+                                    <li>在 <code>start()</code> 方法中，<code>allowSelfSigned=true</code> 时再做一次 host 私网判断</li>
+                                    <li>参考 <code>AiNetworkPolicy.isPrivateHost()</code> 逻辑</li>
+                                    <li>若 host 不是私网（或无法解析），直接返回错误</li>
+                                    <li>预期工作量：1-2 小时</li>
+                                </ul>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="roadmap-item">
+                    <div class="roadmap-phase">🟠 下个 Sprint（Medium / 1 项）</div>
+                    <div class="roadmap-tasks">
+                        <ul>
+                            <li><strong>统一 Delegate 实现：</strong>
+                                <ul style="margin-top: 5px;">
+                                    <li>提取 <code>TrustAllDelegate</code> 为公共类</li>
+                                    <li><code>AiSettingsStore</code> 和 <code>AiTransport</code> 共享使用</li>
+                                    <li>添加私网验证层</li>
+                                    <li>预期工作量：2-3 小时</li>
+                                </ul>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="roadmap-item">
+                    <div class="roadmap-phase">🟡 计划改进（Enhancements）</div>
+                    <div class="roadmap-tasks">
+                        <ul>
+                            <li>聊天历史加密存储（参考 Android AES-GCM 模式）</li>
+                            <li>UserDefaults 的敏感配置项加密</li>
+                            <li>添加 OWASP Mobile Top 10 合规性检查</li>
+                            <li>定期安全依赖更新（共享模块）</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section>
+            <h2>📊 安全评分</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>维度</th>
+                        <th>评分</th>
+                        <th>评价</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Keychain 管理</td>
+                        <td><strong>A+</strong></td>
+                        <td>每个 profile 独立槽位，访问控制完整</td>
+                    </tr>
+                    <tr>
+                        <td>网络安全</td>
+                        <td><strong>B+</strong></td>
+                        <td>HTTPS 默认安全，但自签证书验证需加强</td>
+                    </tr>
+                    <tr>
+                        <td>代码质量</td>
+                        <td><strong>A</strong></td>
+                        <td>无硬编码密钥、无不安全反射</td>
+                    </tr>
+                    <tr>
+                        <td>配置隐私</td>
+                        <td><strong>B</strong></td>
+                        <td>敏感配置明文存储，建议加密</td>
+                    </tr>
+                    <tr>
+                        <td>权限申请</td>
+                        <td><strong>A+</strong></td>
+                        <td>声明清晰，符合 App Store 审核</td>
+                    </tr>
+                    <tr>
+                        <td>依赖管理</td>
+                        <td><strong>A+</strong></td>
+                        <td>无第三方依赖，仅系统框架</td>
+                    </tr>
+                    <tr style="font-weight: 600; border-top: 2px solid var(--border);">
+                        <td>总体评分</td>
+                        <td><strong style="color: var(--low);">A-</strong></td>
+                        <td>整体安全良好，一个高优先级问题待修复</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section>
+            <h2>📋 检查清单</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>项目</th>
+                        <th>状态</th>
+                        <th>备注</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>硬编码密钥检查</td>
+                        <td>✅</td>
+                        <td>51 个 Swift 文件扫描，零发现</td>
+                    </tr>
+                    <tr>
+                        <td>Keychain 使用检查</td>
+                        <td>✅</td>
+                        <td>API Key 妥善管理，访问控制正确</td>
+                    </tr>
+                    <tr>
+                        <td>HTTPS 强制检查</td>
+                        <td>✅</td>
+                        <td>URLSession 默认验证系统 CA</td>
+                    </tr>
+                    <tr>
+                        <td>自签证书检查</td>
+                        <td>⚠️</td>
+                        <td>两个 delegate 实现不一致（HIGH）</td>
+                    </tr>
+                    <tr>
+                        <td>不安全序列化检查</td>
+                        <td>✅</td>
+                        <td>使用 Codable，无 NSCoding</td>
+                    </tr>
+                    <tr>
+                        <td>日志泄露检查</td>
+                        <td>✅</td>
+                        <td>无敏感数据日志输出</td>
+                    </tr>
+                    <tr>
+                        <td>权限过度检查</td>
+                        <td>✅</td>
+                        <td>所有权限都有明确用途</td>
+                    </tr>
+                    <tr>
+                        <td>第三方依赖检查</td>
+                        <td>✅</td>
+                        <td>无额外第三方库，仅系统框架</td>
+                    </tr>
+                    <tr>
+                        <td>版本迁移检查</td>
+                        <td>✅</td>
+                        <td>旧版配置无缝迁移，Keychain 账号兼容</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section>
+            <h2>🎯 总结与建议</h2>
+
+            <h3>与 Android 的一致性</h3>
+            <p style="margin-bottom: 15px;">iOS 和 Android 分支采用 Kotlin Multiplatform 架构，共享业务逻辑。两个平台的安全设计理念一致，但实现细节有差异：</p>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>方面</th>
+                        <th>Android</th>
+                        <th>iOS</th>
+                        <th>建议</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>明文 HTTP</td>
+                        <td>manifest 双层禁止</td>
+                        <td>URLSession 系统验证</td>
+                        <td>一致 ✅</td>
+                    </tr>
+                    <tr>
+                        <td>自签证书</td>
+                        <td>业务层验证私网</td>
+                        <td>只信任内核判定</td>
+                        <td>iOS 需补强 ⚠️</td>
+                    </tr>
+                    <tr>
+                        <td>敏感数据</td>
+                        <td>AES-256-GCM</td>
+                        <td>Keychain（仅 Key）</td>
+                        <td>iOS 考虑扩展 ✓</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3>后续行动</h3>
+            <ul style="margin: 15px 0 15px 20px;">
+                <li><strong>紧急：</strong> 修复 AiTransport 自签证书验证（HIGH）</li>
+                <li><strong>下个 Sprint：</strong> 统一 Delegate 实现（MEDIUM）</li>
+                <li><strong>长期：</strong> 评估聊天历史加密存储的必要性</li>
+                <li><strong>定期：</strong> 与 Android 分支同步安全检查清单</li>
+            </ul>
+
+            <h3>合规性</h3>
+            <ul style="margin: 15px 0 15px 20px;">
+                <li>✅ App Store Privacy Policy 要求：权限声明明确</li>
+                <li>✅ OWASP Mobile Top 10：符合大部分条款</li>
+                <li>⚠️ 需改进：M02（Insecure Data Storage）— 聊天历史加密</li>
+                <li>⚠️ 需改进：M03（Insecure Communication）— 自签证书验证</li>
+            </ul>
+        </section>
+
+        <footer>
+            <p>报告生成日期：2026-11-19 | 审计对象：HamKit upstream/ios 分支 | 审计工具：Claude Code</p>
+            <p style="margin-top: 10px; font-size: 0.85em; color: #999;">本报告仅供内部参考。发现的任何问题应在受信任的渠道内讨论。</p>
+        </footer>
+    </div>
+</body>
+</html>

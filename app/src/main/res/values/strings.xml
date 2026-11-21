@@ -432,7 +432,7 @@
     <string name="qso_log_field_freq" translatable="false">频率 (MHz)</string>
     <string name="qso_log_field_comment" translatable="false">备注</string>
     <string name="qso_log_field_complete" translatable="false">已完成通联</string>
-    <string name="qso_log_filter_callsign" translatable="false">呼号前缀筛选</string>
+    <string name="qso_log_filter_callsign" translatable="false">呼号筛选</string>
     <string name="qso_log_filter_band" translatable="false">频段</string>
     <string name="qso_log_filter_time" translatable="false">时间范围</string>
     <string name="qso_log_filter_all_band" translatable="false">全部频段</string>
@@ -440,6 +440,15 @@
     <string name="qso_log_time_today" translatable="false">今天</string>
     <string name="qso_log_time_7d" translatable="false">近 7 天</string>
     <string name="qso_log_time_30d" translatable="false">近 30 天</string>
+    <string name="qso_log_time_custom" translatable="false">自定义范围</string>
+    <string name="qso_log_time_custom_title" translatable="false">选择日期范围</string>
+    <string name="qso_log_time_custom_start" translatable="false">开始日期</string>
+    <string name="qso_log_time_custom_end" translatable="false">结束日期</string>
+    <string name="qso_log_time_custom_confirm" translatable="false">确定</string>
+    <string name="qso_log_time_custom_summary" translatable="false">%1$s ~ %2$s</string>
+    <string name="qso_log_match_mode_title" translatable="false">匹配方式</string>
+    <string name="qso_log_match_mode_prefix" translatable="false">前缀匹配</string>
+    <string name="qso_log_match_mode_exact" translatable="false">精确匹配</string>
     <string name="qso_log_filter_clear" translatable="false">清除筛选</string>
     <string name="qso_log_empty" translatable="false">暂无通联记录</string>
     <string name="qso_log_complete" translatable="false">已完成</string>
@@ -449,6 +458,8 @@
     <string name="qso_log_save" translatable="false">保存</string>
     <string name="qso_log_delete" translatable="false">删除</string>
     <string name="qso_log_delete_confirm" translatable="false">确认删除与 %1$s 的通联记录？</string>
+    <string name="qso_log_deleted_snackbar" translatable="false">已删除 %1$s</string>
+    <string name="qso_log_undo" translatable="false">撤销</string>
     <string name="qso_export_format" translatable="false">导出格式</string>
     <string name="qso_export_scope" translatable="false">导出范围</string>
     <string name="qso_export_scope_filtered" translatable="false">当前筛选</string>
@@ -457,6 +468,14 @@
     <string name="qso_export_share" translatable="false">分享</string>
     <string name="qso_export_saved" translatable="false">导出成功</string>
     <string name="qso_export_empty" translatable="false">没有可导出的记录</string>
+    <string name="qso_export_chip_count" translatable="false">%1$s（%2$d 条）</string>
+    <string name="qso_export_filter_summary" translatable="false">当前筛选：%1$s</string>
+    <string name="qso_export_filter_none" translatable="false">无筛选条件，显示所有记录</string>
+    <string name="qso_export_filter_callsign_part" translatable="false">呼号 %1$s</string>
+    <string name="qso_export_diff_warning" translatable="false">筛选结果比全部少 %1$d 条记录</string>
+    <string name="qso_export_confirm_filtered" translatable="false">将导出与上述条件匹配的 %1$d 条记录</string>
+    <string name="qso_export_confirm_all_warning" translatable="false">将导出全部 %1$d 条记录，不受当前筛选限制</string>
+    <string name="qso_log_freq_band_mismatch" translatable="false">提示：当前频率与所选频段的常用频率相差较大</string>
     <string name="qso_settings_title" translatable="false">QSO 日志</string>
     <string name="qso_settings_desc" translatable="false">FT8 通联记录与 ADIF/XML 导出</string>
 

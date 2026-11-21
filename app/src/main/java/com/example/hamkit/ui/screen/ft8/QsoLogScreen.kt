@@ -36,6 +36,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,18 +49,25 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hamkit.R
 import com.example.hamkit.data.ft8.Ft8Band
 import com.example.hamkit.data.ft8.Ft8QsoRecord
+import com.example.hamkit.data.ft8.QsoRecordValidator
 import com.example.hamkit.data.qso.AdifExporter
 import com.example.hamkit.data.qso.QsoExportFormat
 import com.example.hamkit.data.qso.QsoExporter
 import com.example.hamkit.ui.LocalUiMode
 import com.example.hamkit.ui.UiMode
 import com.example.hamkit.ui.applicationScopedViewModel
+import com.example.hamkit.ui.util.QsoLogEvent
+import com.example.hamkit.ui.util.QsoLogEventTracker
+import com.example.hamkit.ui.viewmodel.DeletedRecordBuffer
+import com.example.hamkit.ui.viewmodel.QsoCallsignMatchMode
 import com.example.hamkit.ui.viewmodel.QsoLogViewModel
 import com.example.hamkit.ui.viewmodel.QsoTimeRange
 import kotlinx.coroutines.Dispatchers
@@ -70,6 +79,9 @@ import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.basic.SnackbarDuration
+import top.yukonga.miuix.kmp.basic.SnackbarHostState
+import top.yukonga.miuix.kmp.basic.SnackbarResult
 import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
@@ -83,6 +95,7 @@ import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 import top.yukonga.miuix.kmp.window.WindowDialog
 import java.io.File
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
@@ -118,8 +131,31 @@ fun QsoLogScreenMiuix(
 
     // null = 关闭；record.id == 0 → 新增
     var editingRecord by remember { mutableStateOf<Ft8QsoRecord?>(null) }
-    var deletingRecord by remember { mutableStateOf<Ft8QsoRecord?>(null) }
     var showExportDialog by remember { mutableStateOf(false) }
+
+    // 删除即生效 + Snackbar 撤销：缓冲超时由 ViewModel 管理（DeletedRecordBuffer 10 秒）
+    val snackbarHostState = remember { SnackbarHostState() }
+    val undoText = stringResource(R.string.qso_log_undo)
+    LaunchedEffect(Unit) {
+        viewModel.pendingDelete.collect { pending ->
+            if (pending == null) return@collect
+            val message = context.getString(R.string.qso_log_deleted_snackbar, pending.callsign)
+            scope.launch {
+                val result = snackbarHostState.showSnackbar(
+                    message = message,
+                    actionLabel = undoText,
+                    withDismissAction = false,
+                    duration = SnackbarDuration.Custom(DeletedRecordBuffer.DEFAULT_TIMEOUT_MILLIS),
+                )
+                if (result == SnackbarResult.ActionPerformed) {
+                    viewModel.undoDelete()
+                } else if (result == SnackbarResult.Dismissed) {
+                    viewModel.dismissPendingDelete()
+                }
+            }
+        }
+    }
+    var showCustomRangeDialog by remember { mutableStateOf(false) }
 
     // CreateDocument 往返期间记住导出参数（mimeType 在 launcher 构造时已固定）
     var pendingFormat by remember { mutableStateOf(QsoExportFormat.ADIF) }
@@ -134,6 +170,14 @@ fun QsoLogScreenMiuix(
             context.contentResolver.openOutputStream(uri)?.use { output ->
                 output.write(content.toByteArray(Charsets.UTF_8))
             }
+            // 埋点：文件写入成功（失败由 openOutputStream 返回 null 表示，不记录）
+            QsoLogEventTracker.log(
+                QsoLogEvent.ExportSaved(
+                    format.name,
+                    if (useFiltered) "filtered" else "all",
+                    viewModel.exportCount(useFiltered),
+                )
+            )
             withContext(Dispatchers.Main) {
                 Toast.makeText(context, exportSavedText, Toast.LENGTH_SHORT).show()
             }
@@ -166,6 +210,12 @@ fun QsoLogScreenMiuix(
 
     val scrollBehavior = MiuixScrollBehavior()
 
+    // 埋点：进入页面记录 screen_enter，离开时记录 screen_duration（停留时长 + 操作计数）
+    DisposableEffect(Unit) {
+        QsoLogEventTracker.logScreenEnter()
+        onDispose { QsoLogEventTracker.endSession() }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -186,6 +236,7 @@ fun QsoLogScreenMiuix(
                         color = colorScheme.primary,
                         modifier = Modifier
                             .clickable {
+                                QsoLogEventTracker.log(QsoLogEvent.RecordAddStarted)
                                 editingRecord = Ft8QsoRecord(
                                     id = 0,
                                     callsign = "",
@@ -199,7 +250,10 @@ fun QsoLogScreenMiuix(
                         style = MiuixTheme.textStyles.body1,
                         color = colorScheme.primary,
                         modifier = Modifier
-                            .clickable { showExportDialog = true }
+                            .clickable {
+                                QsoLogEventTracker.log(QsoLogEvent.ExportOpened)
+                                showExportDialog = true
+                            }
                             .padding(horizontal = 12.dp, vertical = 6.dp)
                     )
                 },
@@ -207,6 +261,9 @@ fun QsoLogScreenMiuix(
             )
         },
         popupHost = { },
+        snackbarHost = {
+            top.yukonga.miuix.kmp.basic.SnackbarHost(state = snackbarHostState)
+        },
         contentWindowInsets =
             WindowInsets.systemBars.add(WindowInsets.displayCutout).only(WindowInsetsSides.Horizontal)
     ) { innerPadding ->
@@ -242,10 +299,27 @@ fun QsoLogScreenMiuix(
                         )
                         Spacer(Modifier.height(4.dp))
                         OverlayDropdownPreference(
+                            title = stringResource(R.string.qso_log_match_mode_title),
+                            items = listOf(
+                                stringResource(R.string.qso_log_match_mode_prefix),
+                                stringResource(R.string.qso_log_match_mode_exact),
+                            ),
+                            selectedIndex = uiState.callsignMatchMode.ordinal,
+                            onExpandedChange = { expanded ->
+                                if (expanded) QsoLogEventTracker.log(QsoLogEvent.FilterOpened)
+                            },
+                            onSelectedIndexChange = { index ->
+                                viewModel.setCallsignMatchMode(QsoCallsignMatchMode.entries[index])
+                            },
+                        )
+                        OverlayDropdownPreference(
                             title = stringResource(R.string.qso_log_filter_band),
                             items = listOf(stringResource(R.string.qso_log_filter_all_band)) +
                                 Ft8Band.entries.map { it.displayName },
                             selectedIndex = uiState.filterBand?.let { Ft8Band.entries.indexOf(it) + 1 } ?: 0,
+                            onExpandedChange = { expanded ->
+                                if (expanded) QsoLogEventTracker.log(QsoLogEvent.FilterOpened)
+                            },
                             onSelectedIndexChange = { index ->
                                 viewModel.setFilterBand(if (index == 0) null else Ft8Band.entries[index - 1])
                             },
@@ -257,10 +331,30 @@ fun QsoLogScreenMiuix(
                                 stringResource(R.string.qso_log_time_today),
                                 stringResource(R.string.qso_log_time_7d),
                                 stringResource(R.string.qso_log_time_30d),
+                                stringResource(R.string.qso_log_time_custom),
                             ),
+                            // 选中"自定义范围"时摘要显示具体日期区间，其余显示预设名
                             selectedIndex = uiState.timeRange.ordinal,
+                            summary = if (uiState.timeRange == QsoTimeRange.CUSTOM) {
+                                uiState.customRange?.let { (start, end) ->
+                                    stringResource(
+                                        R.string.qso_log_time_custom_summary,
+                                        formatLocalDate(start),
+                                        formatLocalDate(end),
+                                    )
+                                } ?: stringResource(R.string.qso_log_time_custom)
+                            } else {
+                                null
+                            },
+                            onExpandedChange = { expanded ->
+                                if (expanded) QsoLogEventTracker.log(QsoLogEvent.FilterOpened)
+                            },
                             onSelectedIndexChange = { index ->
-                                viewModel.setTimeRange(QsoTimeRange.entries[index])
+                                if (index == QsoTimeRange.CUSTOM.ordinal) {
+                                    showCustomRangeDialog = true
+                                } else {
+                                    viewModel.setTimeRange(QsoTimeRange.entries[index])
+                                }
                             },
                         )
                         TextButton(
@@ -309,7 +403,10 @@ fun QsoLogScreenMiuix(
                 }
             } else {
                 items(uiState.records, key = { it.id }) { record ->
-                    QsoRecordCard(record = record, onClick = { editingRecord = record })
+                    QsoRecordCard(record = record, onClick = {
+                        QsoLogEventTracker.log(QsoLogEvent.RecordEditOpened(record.id, isAdd = false))
+                        editingRecord = record
+                    })
                     Spacer(Modifier.height(6.dp))
                 }
             }
@@ -320,43 +417,32 @@ fun QsoLogScreenMiuix(
     editingRecord?.let { record ->
         QsoEditDialog(
             record = record,
+            onOpened = {
+                QsoLogEventTracker.log(QsoLogEvent.RecordEditOpened(record.id, isAdd = record.id == 0L))
+            },
             onDismiss = { editingRecord = null },
             onSave = { updated ->
+                // record_saved 由 ViewModel 的 addRecord/updateRecord 记录
                 if (updated.id == 0L) viewModel.addRecord(updated) else viewModel.updateRecord(updated)
                 editingRecord = null
             },
-            onDelete = if (record.id == 0L) null else { { deletingRecord = record } },
+            onDelete = if (record.id == 0L) null else { {
+                // 删除即生效（无二次确认）：记录进缓冲，Snackbar 提供 10 秒撤销窗口
+                QsoLogEventTracker.log(QsoLogEvent.RecordDeleteOpened(record.id))
+                viewModel.deleteRecord(record)
+                editingRecord = null
+            } },
         )
     }
 
-    // ── 删除确认 ──
-    deletingRecord?.let { record ->
-        WindowDialog(
-            show = true,
-            title = stringResource(R.string.qso_log_delete),
-            onDismissRequest = { deletingRecord = null },
-            content = {
-                Column {
-                    Text(stringResource(R.string.qso_log_delete_confirm, record.callsign))
-                    Spacer(Modifier.height(12.dp))
-                    Row {
-                        TextButton(
-                            text = stringResource(android.R.string.cancel),
-                            onClick = { deletingRecord = null },
-                            modifier = Modifier.weight(1f),
-                        )
-                        Spacer(Modifier.width(20.dp))
-                        TextButton(
-                            text = stringResource(R.string.qso_log_delete),
-                            onClick = {
-                                viewModel.deleteRecord(record)
-                                deletingRecord = null
-                                editingRecord = null
-                            },
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                }
+    // ── 自定义日期范围弹窗 ──
+    if (showCustomRangeDialog) {
+        QsoCustomRangeDialog(
+            initialRange = if (uiState.timeRange == QsoTimeRange.CUSTOM) uiState.customRange else null,
+            onDismiss = { showCustomRangeDialog = false },
+            onConfirm = { startMs, endMs ->
+                viewModel.setCustomDateRange(startMs, endMs)
+                showCustomRangeDialog = false
             },
         )
     }
@@ -367,6 +453,10 @@ fun QsoLogScreenMiuix(
             onDismiss = { showExportDialog = false },
             filteredCount = uiState.records.size,
             totalCount = uiState.totalCount,
+            filterCallsign = uiState.filterCallsign,
+            filterBand = uiState.filterBand,
+            timeRange = uiState.timeRange,
+            customRange = uiState.customRange,
             onSaveToFile = { format, useFiltered ->
                 pendingFormat = format
                 pendingUseFiltered = useFiltered
@@ -377,10 +467,155 @@ fun QsoLogScreenMiuix(
             },
             onShare = { format, useFiltered ->
                 showExportDialog = false
+                QsoLogEventTracker.log(
+                    QsoLogEvent.ExportShared(
+                        format.name,
+                        if (useFiltered) "filtered" else "all",
+                        viewModel.exportCount(useFiltered),
+                    )
+                )
                 shareExport(format, useFiltered)
             },
         )
     }
+}
+
+/**
+ * 自定义日期范围弹窗（Miuix 版）：开始/结束日期各一个 yyyy-MM-dd 文本输入。
+ * 校验：格式合法、开始 <= 结束；不合法时禁用确定按钮。
+ */
+@Composable
+private fun QsoCustomRangeDialog(
+    initialRange: Pair<Long, Long>?,
+    onDismiss: () -> Unit,
+    onConfirm: (Long, Long) -> Unit,
+) {
+    val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+    val zone = ZoneId.systemDefault()
+
+    fun toText(epochMs: Long?): String =
+        epochMs?.let { formatter.format(Instant.ofEpochMilli(it).atZone(zone)) } ?: ""
+
+    var startText by remember { mutableStateOf(toText(initialRange?.first)) }
+    var endText by remember { mutableStateOf(toText(initialRange?.second)) }
+
+    fun parse(text: String): LocalDate? = try {
+        LocalDate.parse(text.trim(), formatter)
+    } catch (_: Exception) {
+        null
+    }
+
+    val start = parse(startText)
+    val end = parse(endText)
+    val valid = start != null && end != null && !start.isAfter(end)
+
+    WindowDialog(
+        show = true,
+        title = stringResource(R.string.qso_log_time_custom_title),
+        onDismissRequest = onDismiss,
+        content = {
+            Column {
+                TextField(
+                    value = startText,
+                    onValueChange = { startText = it },
+                    label = stringResource(R.string.qso_log_time_custom_start),
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+                )
+                Spacer(Modifier.height(8.dp))
+                TextField(
+                    value = endText,
+                    onValueChange = { endText = it },
+                    label = stringResource(R.string.qso_log_time_custom_end),
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+                )
+                Spacer(Modifier.height(12.dp))
+                Row {
+                    TextButton(
+                        text = stringResource(android.R.string.cancel),
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(20.dp))
+                    TextButton(
+                        text = stringResource(R.string.qso_log_time_custom_confirm),
+                        onClick = {
+                            if (valid) {
+                                onConfirm(
+                                    start!!.atStartOfDay(zone).toInstant().toEpochMilli(),
+                                    end!!.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli() - 1,
+                                )
+                            }
+                        },
+                        enabled = valid,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.textButtonColorsPrimary(),
+                    )
+                }
+            }
+        },
+    )
+}
+
+/**
+ * 汇总当前生效的筛选条件为一句可读摘要，供导出对话框展示。
+ *
+ * 与 ViewModel 的过滤语义保持一致：呼号空 / 频段 null / 时间 ALL 视为未启用。
+ * 无任何生效条件时返回"无筛选"文案。
+ */
+@Composable
+fun buildFilterSummary(
+    callsign: String,
+    band: Ft8Band?,
+    timeRange: QsoTimeRange,
+    customRange: Pair<Long, Long>? = null,
+): String {
+    val parts = buildList {
+        if (callsign.isNotBlank()) {
+            add(stringResource(R.string.qso_export_filter_callsign_part, callsign.trim().uppercase()))
+        }
+        band?.let { add(it.displayName) }
+        if (timeRange != QsoTimeRange.ALL) {
+            add(
+                when (timeRange) {
+                    QsoTimeRange.TODAY -> stringResource(R.string.qso_log_time_today)
+                    QsoTimeRange.LAST_7_DAYS -> stringResource(R.string.qso_log_time_7d)
+                    QsoTimeRange.LAST_30_DAYS -> stringResource(R.string.qso_log_time_30d)
+                    QsoTimeRange.CUSTOM -> {
+                        val (startMs, endMs) = customRange ?: (0L to 0L)
+                        val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+                        stringResource(
+                            R.string.qso_log_time_custom_summary,
+                            formatter.format(Instant.ofEpochMilli(startMs).atZone(ZoneId.systemDefault())),
+                            formatter.format(Instant.ofEpochMilli(endMs).atZone(ZoneId.systemDefault())),
+                        )
+                    }
+                    QsoTimeRange.ALL -> ""
+                }
+            )
+        }
+    }.filter { it.isNotBlank() }
+    return if (parts.isEmpty()) {
+        stringResource(R.string.qso_export_filter_none)
+    } else {
+        parts.joinToString("，")
+    }
+}
+
+/**
+ * 必填字段标记：Miuix TextField 的 label 是纯 String（内部按 labelColor 单色渲染），
+ * 无法在 label 内混色，故在输入框 trailingIcon 位置放红色 `*`（与 Material 版
+ * label 内嵌红星等价的"字段旁标记"）。
+ */
+@Composable
+private fun requiredMarker(): @Composable () -> Unit = {
+    Text(
+        "*",
+        color = colorScheme.error,
+        style = MiuixTheme.textStyles.body1,
+        modifier = Modifier.padding(end = 4.dp),
+    )
 }
 
 @Composable
@@ -465,6 +700,7 @@ private fun QsoRecordCard(record: Ft8QsoRecord, onClick: () -> Unit) {
 @Composable
 private fun QsoEditDialog(
     record: Ft8QsoRecord,
+    onOpened: () -> Unit = {},
     onDismiss: () -> Unit,
     onSave: (Ft8QsoRecord) -> Unit,
     onDelete: (() -> Unit)?,
@@ -477,6 +713,22 @@ private fun QsoEditDialog(
     var freqMhz by remember(record.id) { mutableStateOf(AdifExporter.formatMhz(record.freqHz)) }
     var comment by remember(record.id) { mutableStateOf(record.comment ?: "") }
     var isComplete by remember(record.id) { mutableStateOf(record.isComplete) }
+    // 校验失败信息（null = 无错误）；保存被拦截时置位，修改对应字段后立即清除
+    var callsignError by remember(record.id) { mutableStateOf<String?>(null) }
+    var freqError by remember(record.id) { mutableStateOf<String?>(null) }
+
+    // 埋点：对话框组合即视为打开（record_edit_opened），仅触发一次
+    DisposableEffect(record.id) {
+        onOpened()
+        onDispose { }
+    }
+
+    // 埋点：记录字段修改（field 为语义化字段名，change_count 由追踪器自增）
+    fun logFieldChange(field: String) {
+        QsoLogEventTracker.log(QsoLogEvent.RecordFieldChanged(field, QsoLogEventTracker.nextChangeCount(field)))
+    }
+
+    val context = LocalContext.current
 
     WindowDialog(
         show = true,
@@ -490,9 +742,14 @@ private fun QsoEditDialog(
                     TextField(
                         value = callsign,
                         onValueChange = { value ->
-                            callsign = value.uppercase().filter { it.isLetterOrDigit() }.take(12)
+                            callsign = value.uppercase()
+                                .filter { c -> c in 'A'..'Z' || c in '0'..'9' }
+                                .take(QsoRecordValidator.CALLSIGN_MAX_LENGTH)
+                            if (callsignError != null) callsignError = null
+                            logFieldChange("callsign")
                         },
                         label = stringResource(R.string.qso_log_field_callsign),
+                        trailingIcon = requiredMarker(),
                         modifier = Modifier.weight(1f),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
                     )
@@ -500,6 +757,7 @@ private fun QsoEditDialog(
                         value = grid,
                         onValueChange = { value ->
                             grid = value.uppercase().filter { it.isLetterOrDigit() }.take(8)
+                            logFieldChange("grid")
                         },
                         label = stringResource(R.string.qso_log_field_grid),
                         modifier = Modifier.weight(1f),
@@ -512,6 +770,7 @@ private fun QsoEditDialog(
                         value = reportSent,
                         onValueChange = { value ->
                             reportSent = value.uppercase().filter { it.isDigit() || it == '+' || it == '-' || it == 'R' }.take(4)
+                            logFieldChange("report_sent")
                         },
                         label = stringResource(R.string.qso_log_field_rst_sent),
                         modifier = Modifier.weight(1f),
@@ -521,6 +780,7 @@ private fun QsoEditDialog(
                         value = reportReceived,
                         onValueChange = { value ->
                             reportReceived = value.uppercase().filter { it.isDigit() || it == '+' || it == '-' || it == 'R' }.take(4)
+                            logFieldChange("report_received")
                         },
                         label = stringResource(R.string.qso_log_field_rst_rcvd),
                         modifier = Modifier.weight(1f),
@@ -532,9 +792,12 @@ private fun QsoEditDialog(
                     TextField(
                         value = freqMhz,
                         onValueChange = { value ->
-                            freqMhz = value.filter { it.isDigit() || it == '.' }.take(10)
+                            freqMhz = value.filter { c -> c.isDigit() || c == '.' }.take(10)
+                            if (freqError != null) freqError = null
+                            logFieldChange("freq")
                         },
                         label = stringResource(R.string.qso_log_field_freq),
+                        trailingIcon = requiredMarker(),
                         modifier = Modifier.weight(1f),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     )
@@ -548,7 +811,10 @@ private fun QsoEditDialog(
                             color = colorScheme.onSurface,
                         )
                         Spacer(Modifier.weight(1f))
-                        Switch(checked = isComplete, onCheckedChange = { isComplete = it })
+                        Switch(checked = isComplete, onCheckedChange = {
+                            isComplete = it
+                            logFieldChange("is_complete")
+                        })
                     }
                 }
                 Spacer(Modifier.height(8.dp))
@@ -563,7 +829,8 @@ private fun QsoEditDialog(
                             Button(
                                 onClick = {
                                     band = b
-                                    if (record.id == 0L) freqMhz = AdifExporter.formatMhz(b.freqHz)
+                                    freqMhz = AdifExporter.formatMhz(b.freqHz)
+                                    logFieldChange("band")
                                 },
                                 modifier = Modifier.weight(1f),
                                 colors = if (selected) {
@@ -584,6 +851,7 @@ private fun QsoEditDialog(
                     value = comment,
                     onValueChange = { value ->
                         if (value.length <= 60) comment = value
+                        logFieldChange("comment")
                     },
                     label = stringResource(R.string.qso_log_field_comment),
                     modifier = Modifier.fillMaxWidth(),
@@ -601,11 +869,27 @@ private fun QsoEditDialog(
                     TextButton(
                         text = stringResource(R.string.qso_log_save),
                         onClick = {
-                            val freqHz = freqMhz.toDoubleOrNull()?.times(1_000_000)?.toLong()
-                                ?: record.freqHz
+                            // 保存前硬校验：呼号 + 频率；失败时标记错误并保持对话框打开
+                            val trimmedCallsign = callsign.trim().uppercase()
+                            val callsignProblem = QsoRecordValidator.validateCallsign(trimmedCallsign)
+                            val (freqMhzValue, freqProblem) = QsoRecordValidator.validateFreqMhz(freqMhz)
+                            callsignError = callsignProblem
+                            freqError = freqProblem
+                            if (callsignProblem != null || freqProblem != null) {
+                                Toast.makeText(
+                                    context,
+                                    callsignProblem ?: freqProblem.orEmpty(),
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                                QsoLogEventTracker.log(QsoLogEvent.RecordSaveBlocked)
+                                return@TextButton
+                            }
+                            val freqMhzChecked = freqMhzValue ?: 0.0
+                            val freqHz = (freqMhzChecked * 1_000_000).toLong()
+                            QsoLogEventTracker.log(QsoLogEvent.RecordSavedFromDialog)
                             onSave(
                                 record.copy(
-                                    callsign = callsign.trim().uppercase(),
+                                    callsign = trimmedCallsign,
                                     grid = grid.trim().uppercase().ifEmpty { null },
                                     reportSent = reportSent.ifBlank { "-99" },
                                     reportReceived = reportReceived.ifBlank { "-99" },
@@ -615,6 +899,14 @@ private fun QsoEditDialog(
                                     isComplete = isComplete,
                                 )
                             )
+                            // 软提示：保存成功后如果频率远离所选频段，仅 Toast 提醒
+                            if (QsoRecordValidator.isFreqFarFromBand(freqMhzChecked, band)) {
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.qso_log_freq_band_mismatch),
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
                         },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.textButtonColorsPrimary(),
@@ -630,12 +922,29 @@ private fun QsoExportDialog(
     onDismiss: () -> Unit,
     filteredCount: Int,
     totalCount: Int,
+    filterCallsign: String,
+    filterBand: Ft8Band?,
+    timeRange: QsoTimeRange,
+    customRange: Pair<Long, Long>?,
     onSaveToFile: (QsoExportFormat, Boolean) -> Unit,
     onShare: (QsoExportFormat, Boolean) -> Unit,
 ) {
     var format by remember { mutableStateOf(QsoExportFormat.ADIF) }
     var useFiltered by remember { mutableStateOf(true) }
     val count = if (useFiltered) filteredCount else totalCount
+
+    val summary = buildFilterSummary(filterCallsign, filterBand, timeRange, customRange)
+    val hasActiveFilters = filteredCount < totalCount
+
+    // 埋点：导出格式 / 范围切换（仅在用户主动切换时记录）
+    fun logFormatChange(f: QsoExportFormat) {
+        QsoLogEventTracker.log(QsoLogEvent.ExportFormatChanged(f.name))
+    }
+    fun logScopeChange(filtered: Boolean) {
+        QsoLogEventTracker.log(
+            QsoLogEvent.ExportScopeChanged(if (filtered) "filtered" else "all", if (filtered) filteredCount else totalCount)
+        )
+    }
 
     WindowDialog(
         show = true,
@@ -655,7 +964,10 @@ private fun QsoExportDialog(
                             label = if (f == QsoExportFormat.ADIF) "ADIF (.adi)" else "XML (.xml)",
                             selected = format == f,
                             modifier = Modifier.weight(1f),
-                            onClick = { format = f },
+                            onClick = {
+                                format = f
+                                logFormatChange(f)
+                            },
                         )
                     }
                 }
@@ -668,29 +980,69 @@ private fun QsoExportDialog(
                 Spacer(Modifier.height(6.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ChoiceChipButton(
-                        label = stringResource(R.string.qso_export_scope_filtered),
+                        label = stringResource(
+                            R.string.qso_export_chip_count,
+                            stringResource(R.string.qso_export_scope_filtered),
+                            filteredCount,
+                        ),
                         selected = useFiltered,
                         modifier = Modifier.weight(1f),
-                        onClick = { useFiltered = true },
+                        onClick = {
+                            useFiltered = true
+                            logScopeChange(true)
+                        },
                     )
                     ChoiceChipButton(
-                        label = stringResource(R.string.qso_export_scope_all),
+                        label = stringResource(
+                            R.string.qso_export_chip_count,
+                            stringResource(R.string.qso_export_scope_all),
+                            totalCount,
+                        ),
                         selected = !useFiltered,
                         modifier = Modifier.weight(1f),
-                        onClick = { useFiltered = false },
+                        onClick = {
+                            useFiltered = false
+                            logScopeChange(false)
+                        },
                     )
                 }
-                Spacer(Modifier.height(10.dp))
+                // 两个范围条数不同 → 用强调色提示差异，避免"子集冒充全量"
+                if (hasActiveFilters) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = stringResource(R.string.qso_export_diff_warning, totalCount - filteredCount),
+                        style = MiuixTheme.textStyles.footnote2,
+                        color = colorScheme.primary,
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
                 Text(
-                    text = if (count > 0) {
-                        stringResource(R.string.qso_log_count, count)
-                    } else {
-                        stringResource(R.string.qso_export_empty)
-                    },
+                    text = stringResource(R.string.qso_export_filter_summary, summary),
                     style = MiuixTheme.textStyles.footnote2,
-                    color = if (count > 0) colorScheme.onSurfaceSecondary else colorScheme.error,
+                    color = colorScheme.onSurfaceSecondary,
                 )
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    // 最后确认文案：空 → 提示无可导出；筛选结果 → 明示匹配条数；
+                    // 全部 + 有活跃筛选 → 警告不受筛选限制
+                    text = if (count == 0) {
+                        stringResource(R.string.qso_export_empty)
+                    } else if (useFiltered) {
+                        stringResource(R.string.qso_export_confirm_filtered, filteredCount)
+                    } else if (hasActiveFilters) {
+                        stringResource(R.string.qso_export_confirm_all_warning, totalCount)
+                    } else {
+                        stringResource(R.string.qso_log_count, totalCount)
+                    },
+                    style = MiuixTheme.textStyles.footnote1,
+                    fontWeight = FontWeight.Bold,
+                    color = when {
+                        count == 0 -> colorScheme.error
+                        useFiltered || !hasActiveFilters -> colorScheme.onSurface
+                        else -> colorScheme.error
+                    },
+                )
+                Spacer(Modifier.height(4.dp))
                 Row {
                     TextButton(
                         text = stringResource(R.string.qso_export_save),
@@ -737,5 +1089,10 @@ private fun ChoiceChipButton(
 
 private fun formatLocalTime(epochMs: Long): String =
     DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+        .withZone(ZoneId.systemDefault())
+        .format(Instant.ofEpochMilli(epochMs))
+
+private fun formatLocalDate(epochMs: Long): String =
+    DateTimeFormatter.ofPattern("yyyy-MM-dd")
         .withZone(ZoneId.systemDefault())
         .format(Instant.ofEpochMilli(epochMs))

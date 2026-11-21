@@ -142,6 +142,9 @@ android {
                         "-Xmx2048m",
                         "-XX:+UseG1GC",
                         "-XX:MaxGCPauseMillis=200",
+                        // Robolectric 在 user.home 下创建 .robolectric-download-lock；
+                        // 某些受限环境（本机 CI/沙盒）不允许写真实用户目录，重定向到项目内
+                        "-Duser.home=${rootProject.projectDir.absolutePath.replace("\\", "/")}/.gradle-user/robolectric-home",
                     )
                 )
                 // 每个 fork 运行 N 个测试类后回收（防止内存泄漏累积）
