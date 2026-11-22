@@ -15,8 +15,7 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BugReport
-import androidx.compose.material.icons.rounded.Watch
-import androidx.compose.material.icons.rounded.Lightbulb
+import androidx.compose.material.icons.rounded.Science
 import androidx.compose.material.icons.rounded.ContactPage
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Download
@@ -258,75 +257,19 @@ fun SettingPagerMiuix(
                             },
                             onClick = actions.onOpenReminderList
                         )
-                    }
-
-                    // 手环提醒：独立分组（开关 + 链路状态 + 测试入口）
-                    Card(
-                        modifier = Modifier
-                            .padding(top = 12.dp)
-                            .fillMaxWidth(),
-                    ) {
-                        SwitchPreference(
-                            title = stringResource(id = R.string.wearable_enable),
-                            summary = if (businessState.reminderSettings.wearableEnabled) {
-                                wearableStatusText(businessState.wearableStatus)
-                            } else {
-                                stringResource(id = R.string.wearable_enable_desc)
-                            },
-                            startAction = {
-                                Icon(
-                                    Icons.Rounded.Watch,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    contentDescription = stringResource(id = R.string.wearable_enable),
-                                    tint = colorScheme.onBackground
-                                )
-                            },
-                            checked = businessState.reminderSettings.wearableEnabled,
-                            onCheckedChange = { enabled ->
-                                actions.onUpdateReminderSettings(
-                                    businessState.reminderSettings.copy(wearableEnabled = enabled)
-                                )
-                            }
-                        )
+                        // 实验性功能入口：手环、超级岛与测试入口已集中迁往实验页
                         ArrowPreference(
-                            title = stringResource(id = R.string.wearable_test),
-                            summary = stringResource(id = R.string.wearable_test_desc),
+                            title = stringResource(id = R.string.lab_title),
+                            summary = stringResource(id = R.string.lab_entry_desc),
                             startAction = {
                                 Icon(
-                                    Icons.Rounded.Watch,
+                                    Icons.Rounded.Science,
                                     modifier = Modifier.padding(end = 6.dp),
-                                    contentDescription = stringResource(id = R.string.wearable_test),
+                                    contentDescription = stringResource(id = R.string.lab_title),
                                     tint = colorScheme.onBackground
                                 )
                             },
-                            onClick = actions.onTestWearableAlert
-                        )
-                    }
-
-                    // 小米超级岛：HyperOS 3 岛形态 / OS2 焦点通知形态开关。
-                    // 非 HyperOS 设备该开关无效果（扩展参数被系统忽略，仍是普通通知）。
-                    Card(
-                        modifier = Modifier
-                            .padding(top = 12.dp)
-                            .fillMaxWidth(),
-                    ) {
-                        SwitchPreference(
-                            title = stringResource(id = R.string.island_enable),
-                            summary = stringResource(id = R.string.island_enable_desc),
-                            startAction = {
-                                Icon(
-                                    Icons.Rounded.Lightbulb,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    contentDescription = stringResource(id = R.string.island_enable),
-                                    tint = colorScheme.onBackground
-                                )
-                            },
-                            checked = businessState.reminderSettings.islandEnabled,
-                            onCheckedChange = { enabled ->
-                                actions.onUpdateReminderSettings(
-                                    businessState.reminderSettings.copy(islandEnabled = enabled)
-                                )
-                            }
+                            onClick = actions.onOpenLab
                         )
                     }
 

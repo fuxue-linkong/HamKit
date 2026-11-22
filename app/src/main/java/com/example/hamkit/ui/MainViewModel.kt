@@ -284,6 +284,30 @@ class MainViewModel : ViewModel() {
         WearableAlertDispatcher.get(app).sendTestAlert()
     }
 
+    /**
+     * 实验页「发送测试过境通知」：走与真实过境提醒完全相同的链路
+     * （建渠道 → [ReminderNotificationHelper.showPassReminder]，含小米超级岛
+     * extras 附加逻辑），AOS 设为 15 秒后。在支持岛的小米设备上，该通知
+     * 会直接以超级岛/焦点通知形态出现——一个入口同时验证普通通知与岛形态。
+     */
+    fun sendTestPassNotification() {
+        val now = System.currentTimeMillis()
+        val item = ReminderItem(
+            catalogNumber = TEST_CATALOG_NUMBER,
+            name = "ISS（测试）",
+            aosTimeMillis = now + 15_000L,
+            losTimeMillis = now + 15_000L + 10 * 60 * 1000L,
+            maxElevation = 42.0,
+            aosAzimuth = 128,
+            losAzimuth = 300,
+            modes = listOf("FM"),
+            enabled = true
+        )
+        val helper = ReminderNotificationHelper(app)
+        helper.createChannel(_reminderSettings.value)
+        helper.showPassReminder(item, islandEnabled = _reminderSettings.value.islandEnabled)
+    }
+
     /** 设置页进入「手环提醒」分组时刷新一次链路状态 */
     fun refreshWearableStatus() {
         WearableAlertDispatcher.get(app).refreshStatus()
@@ -500,6 +524,9 @@ class MainViewModel : ViewModel() {
         // 位置监听失败后的自动重试参数（指数退避）
         private const val LOCATION_RETRY_BASE_MS = 2_000L
         private const val LOCATION_RETRY_MAX_MS = 30_000L
+
+        /** 实验页测试过境通知使用的卫星编号（与手环测试一致，避开真实 NORAD 编号区间） */
+        private const val TEST_CATALOG_NUMBER = 999_001
     }
 
     /**

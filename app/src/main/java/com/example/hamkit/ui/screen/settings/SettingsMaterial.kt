@@ -20,8 +20,7 @@ import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Update
-import androidx.compose.material.icons.filled.Watch
-import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material3.Icon
@@ -241,62 +240,18 @@ fun SettingPagerMaterial(
                             }
                         )
                     }
-                }
-            )
-
-            // 手环提醒：独立分组（开关 + 链路状态 + 测试入口）
-            SegmentedColumn(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                content = buildList {
-                    add {
-                        SegmentedSwitchItem(
-                            icon = Icons.Filled.Watch,
-                            title = stringResource(id = R.string.wearable_enable),
-                            summary = if (businessState.reminderSettings.wearableEnabled) {
-                                wearableStatusText(businessState.wearableStatus)
-                            } else {
-                                stringResource(id = R.string.wearable_enable_desc)
-                            },
-                            checked = businessState.reminderSettings.wearableEnabled,
-                            onCheckedChange = { enabled ->
-                                actions.onUpdateReminderSettings(
-                                    businessState.reminderSettings.copy(wearableEnabled = enabled)
-                                )
-                            }
-                        )
-                    }
+                    // 实验性功能入口：手环、超级岛与测试入口已集中迁往实验页
                     add {
                         SegmentedListItem(
-                            onClick = actions.onTestWearableAlert,
-                            headlineContent = { Text(stringResource(id = R.string.wearable_test)) },
-                            supportingContent = {
-                                Text(stringResource(id = R.string.wearable_test_desc))
-                            },
-                            leadingContent = { Icon(Icons.Filled.Watch, null) },
+                            onClick = actions.onOpenLab,
+                            headlineContent = { Text(stringResource(id = R.string.lab_title)) },
+                            supportingContent = { Text(stringResource(id = R.string.lab_entry_desc)) },
+                            leadingContent = { Icon(Icons.Filled.Science, null) },
                             trailingContent = {
                                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null)
                             }
                         )
                     }
-                }
-            )
-
-            // 小米超级岛：HyperOS 3 岛形态 / OS2 焦点通知形态开关。
-            // 非 HyperOS 设备该开关无效果（扩展参数被系统忽略，仍是普通通知）。
-            SegmentedColumn(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                content = listOf {
-                    SegmentedSwitchItem(
-                        icon = Icons.Filled.Lightbulb,
-                        title = stringResource(id = R.string.island_enable),
-                        summary = stringResource(id = R.string.island_enable_desc),
-                        checked = businessState.reminderSettings.islandEnabled,
-                        onCheckedChange = { enabled ->
-                            actions.onUpdateReminderSettings(
-                                businessState.reminderSettings.copy(islandEnabled = enabled)
-                            )
-                        }
-                    )
                 }
             )
 

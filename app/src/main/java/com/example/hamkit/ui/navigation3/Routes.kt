@@ -74,6 +74,11 @@ sealed interface Route : NavKey, Parcelable {
     @Serializable
     data object ReminderList : Route
 
+    /** 实验性功能：手环提醒、小米超级岛与各类测试入口的集中地 */
+    @Parcelize
+    @Serializable
+    data object Lab : Route
+
     /** 定位详情：定位状态 + 位置地图（同一子页面） */
     @Parcelize
     @Serializable

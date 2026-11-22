@@ -63,6 +63,8 @@ data class SettingsScreenActions(
     // 业务相关回调
     val onUpdateReminderSettings: (ReminderSettings) -> Unit = {},
     val onOpenReminderList: () -> Unit = {},
+    /** 打开实验性功能页（手环、超级岛与测试入口集中地） */
+    val onOpenLab: () -> Unit = {},
     /** 发一条测试提醒到手环，验证整条链路 */
     val onTestWearableAlert: () -> Unit = {},
     // 更新相关回调

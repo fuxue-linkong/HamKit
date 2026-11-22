@@ -125,6 +125,7 @@ fun SettingPager(
         onUpdateReminderSettings = mainViewModel::updateReminderSettings,
         onTestWearableAlert = mainViewModel::sendTestWearableAlert,
         onOpenReminderList = { navigator.push(Route.ReminderList) },
+        onOpenLab = { navigator.push(Route.Lab) },
         onCheckUpdateNow = settingsViewModel::checkUpdateNow,
         onDownloadAndInstall = settingsViewModel::downloadAndInstall,
         onClearUpdateResult = settingsViewModel::clearUpdateResult,

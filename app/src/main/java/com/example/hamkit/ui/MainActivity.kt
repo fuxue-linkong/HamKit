@@ -91,6 +91,7 @@ import com.example.hamkit.ui.screen.permission.PermissionScreen
 import com.example.hamkit.ui.screen.privacy.PrivacyConsentScreen
 import com.example.hamkit.ui.screen.privacy.PrivacyPolicyScreen
 import com.example.hamkit.ui.screen.reminder.ReminderListRouteScreen
+import com.example.hamkit.ui.screen.lab.LabRouteScreen
 import com.example.hamkit.ui.screen.satellite.SatelliteFilterScreen
 import com.example.hamkit.ui.screen.satellite.SatelliteManagementScreen
 import com.example.hamkit.ui.screen.satellite.SatelliteDetailScreen
@@ -297,6 +298,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
                                 entry<Route.ReminderList> { WithApplicationViewModelStoreOwner { ReminderListRouteScreen() } }
+                                entry<Route.Lab> { WithApplicationViewModelStoreOwner { LabRouteScreen() } }
                                 entry<Route.LocationDetail> { WithApplicationViewModelStoreOwner { LocationDetailScreen() } }
                                 entry<Route.AprsMain> { WithApplicationViewModelStoreOwner { AprsMainScreen(onNavigate = { navigator.push(it) }, onNavigateBack = { navigator.pop() }) } }
                                 entry<Route.AprsSettings> { WithApplicationViewModelStoreOwner { AprsSettingsScreen(onNavigateBack = { navigator.pop() }, onNavigate = { navigator.push(it) }) } }
