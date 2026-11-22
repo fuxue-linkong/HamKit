@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Update
 import androidx.compose.material.icons.filled.Watch
+import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material3.Icon
@@ -277,6 +278,25 @@ fun SettingPagerMaterial(
                             }
                         )
                     }
+                }
+            )
+
+            // 小米超级岛：HyperOS 3 岛形态 / OS2 焦点通知形态开关。
+            // 非 HyperOS 设备该开关无效果（扩展参数被系统忽略，仍是普通通知）。
+            SegmentedColumn(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                content = listOf {
+                    SegmentedSwitchItem(
+                        icon = Icons.Filled.Lightbulb,
+                        title = stringResource(id = R.string.island_enable),
+                        summary = stringResource(id = R.string.island_enable_desc),
+                        checked = businessState.reminderSettings.islandEnabled,
+                        onCheckedChange = { enabled ->
+                            actions.onUpdateReminderSettings(
+                                businessState.reminderSettings.copy(islandEnabled = enabled)
+                            )
+                        }
+                    )
                 }
             )
 

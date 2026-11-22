@@ -300,6 +300,15 @@
     <string name="reminder_permission_required" translatable="false">需要通知权限才能显示提醒，请前往系统设置开启</string>
     <!-- SSTV 卫星的过境提醒直达动作（二期 T8） -->
     <string name="sstv_reminder_action_receive" translatable="false">接收 SSTV</string>
+    <!-- 小米超级岛/焦点通知（HyperOS 2/3） -->
+    <string name="island_enable" translatable="false">小米超级岛通知</string>
+    <string name="island_enable_desc" translatable="false">在小米 HyperOS 设备上以「超级岛」形态展示过境提醒；其他设备仍为普通通知</string>
+    <string name="island_open_app" translatable="false">打开应用</string>
+    <string name="island_ticker" translatable="false">%1$s 即将过境（%2$s）</string>
+    <string name="island_aod" translatable="false">%1$s %2$s 过境</string>
+    <string name="island_big_title" translatable="false">入境 %1$s</string>
+    <string name="island_big_content" translatable="false">最大仰角 %1$d° | 入境方位 %2$d°</string>
+    <string name="island_base_content" translatable="false">AOS %1$s | 最大仰角 %2$d°</string>
 
     <!-- 卫星数据设置（Phase 3/4） -->
     <string name="satellite_section_title" translatable="false">卫星数据</string>

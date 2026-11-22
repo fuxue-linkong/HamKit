@@ -29,7 +29,8 @@ class ReminderStore(context: Context) {
             repeatMode = RepeatMode.fromName(prefs.getString(KEY_REPEAT_MODE, null)),
             soundEnabled = prefs.getBoolean(KEY_SOUND, true),
             vibrationEnabled = prefs.getBoolean(KEY_VIBRATION, true),
-            wearableEnabled = prefs.getBoolean(KEY_WEARABLE, false)
+            wearableEnabled = prefs.getBoolean(KEY_WEARABLE, false),
+            islandEnabled = prefs.getBoolean(KEY_ISLAND, true)
         )
     }
 
@@ -44,6 +45,7 @@ class ReminderStore(context: Context) {
             .putBoolean(KEY_SOUND, settings.soundEnabled)
             .putBoolean(KEY_VIBRATION, settings.vibrationEnabled)
             .putBoolean(KEY_WEARABLE, settings.wearableEnabled)
+            .putBoolean(KEY_ISLAND, settings.islandEnabled)
             .apply()
     }
 
@@ -142,6 +144,8 @@ class ReminderStore(context: Context) {
         private const val KEY_VIBRATION = "vibration"
         /** 手环提醒开关，默认关闭（需要手环端安装快应用才有意义） */
         private const val KEY_WEARABLE = "wearable_enabled"
+        /** 超级岛/焦点通知形态开关，默认开启（非小米设备无影响） */
+        private const val KEY_ISLAND = "island_enabled"
         private const val KEY_ITEMS = "items"
         private const val KEY_ITEM_CATALOG = "catalog"
         private const val KEY_ITEM_NAME = "name"
