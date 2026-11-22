@@ -72,13 +72,6 @@ android {
             ?: localProps.getProperty("amap.sdk.key", "")
         manifestPlaceholders["AMAP_SDK_KEY"] = amapSdkKey
 
-        // 小米超级岛联调鉴权：APP_ID 在 dev.mi.com 开通"小米超级岛"服务后生成
-        // （管理中心 → 开放服务 → 小米超级岛），从 local.properties 或环境变量注入；
-        // 未配置时留空字符串，不影响构建，仅岛通知鉴权不通过。
-        val xmsAppId = System.getenv("XMS_APP_ID")?.takeIf { it.isNotBlank() }
-            ?: localProps.getProperty("xms.app.id", "")
-        manifestPlaceholders["XMS_APP_ID"] = xmsAppId
-
         // 高德 Web 服务 Key（天气/逆地理编码）：本地从 local.properties 读取，
         // CI 用 AMAP_WEB_KEY。它同样随 APK 分发，可按包名/SHA-1 限制 SDK Key，
         // 但 Web Key 无法绑定 Android 包名，只能靠配额/用量监控。
@@ -217,14 +210,6 @@ gradle.taskGraph.whenReady {
 androidComponents {
     onVariants(selector().withBuildType("release")) {
         it.packaging.resources.excludes.addAll(listOf("META-INF/**", "kotlin/**", "**.bin"))
-    }
-    // 小米超级岛 BUILD_TYPE_DEBUG 标识：按构建变体而非 task 名判断——
-    // debug 变体（测试签名联调）为 true，release 变体为 false。
-    // 系统 SDK 联调鉴权会校验该值与 APK 签名是否匹配。
-    onVariants { variant ->
-        val isDebug = variant.buildType == "debug"
-        // AGP 9 的 manifestPlaceholders 是 MapProperty，需显式 put 而非 []=
-        variant.manifestPlaceholders.put("XMS_BUILD_TYPE_DEBUG", isDebug.toString())
     }
 }
 

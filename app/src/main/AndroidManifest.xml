@@ -70,19 +70,6 @@
             android:name="com.amap.api.v2.apikey"
             android:value="${AMAP_SDK_KEY}" />
 
-        <!--
-          小米超级岛/焦点通知联调鉴权（小米超级岛《接入流程》）：
-          - APP_ID：在 dev.mi.com 开通"小米超级岛"服务后生成，走 XMS_APP_ID 占位符注入；
-          - BUILD_TYPE_DEBUG：使用 debug 测试签名联调时为 true，正式签名为 false。
-            白名单设备联调时系统通过这两项校验应用身份，未配置时岛通知鉴权失败。
-        -->
-        <meta-data
-            android:name="com.xiaomi.xms.APP_ID"
-            android:value="${XMS_APP_ID}" />
-        <meta-data
-            android:name="com.xiaomi.xms.BUILD_TYPE_DEBUG"
-            android:value="${XMS_BUILD_TYPE_DEBUG}" />
-
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"

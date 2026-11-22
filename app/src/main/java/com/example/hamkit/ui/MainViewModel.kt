@@ -305,7 +305,7 @@ class MainViewModel : ViewModel() {
         )
         val helper = ReminderNotificationHelper(app)
         helper.createChannel(_reminderSettings.value)
-        helper.showPassReminder(item, islandEnabled = _reminderSettings.value.islandEnabled)
+        helper.showPassReminder(item)
     }
 
     /** 设置页进入「手环提醒」分组时刷新一次链路状态 */

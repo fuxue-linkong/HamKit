@@ -80,13 +80,8 @@ class ReminderNotificationHelper(private val context: Context) {
      * 动作都会带上 [SstvLaunchIntent] 的 extra，点一下即进入解码器并开始接收，
      * 免去「展开应用 → 找卫星 → 进详情页 → 点接收」的四步。预置模式由
      * [SstvSatelliteLink.presetModeNameFor] 决定（ISS 为 PD-120，其余交给 VIS）。
-     *
-     * **小米超级岛 / 焦点通知**：设备支持（OS2 焦点通知 / OS3 超级岛）且用户开启
-     * [ReminderSettings.islandEnabled] 时，额外附加岛扩展参数（[IslandParams]），
-     * 该通知在小米 HyperOS 上将以岛/焦点通知形式展示；不支持或附加失败时
-     * 仍按普通通知发送，行为与既有版本一致。
      */
-    fun showPassReminder(item: ReminderItem, islandEnabled: Boolean = true) {
+    fun showPassReminder(item: ReminderItem) {
         val isSstv = SstvSatelliteLink.isSstvSatellite(item.modes, item.catalogNumber)
         val sstvPresetMode = if (isSstv) {
             SstvSatelliteLink.presetModeNameFor(item.catalogNumber)
@@ -164,14 +159,6 @@ class ReminderNotificationHelper(private val context: Context) {
                 }
             }
             .build()
-
-        // 超级岛/焦点通知扩展参数：仅 OS2+ 且用户开启时附加。
-        // extras 是对已 build 通知的修改，需要在 notify 之前完成。
-        if (islandEnabled && IslandSupport.isFocusSupported(context)) {
-            IslandParams.buildExtras(context, item)?.let { islandExtras ->
-                notification.extras.putAll(islandExtras)
-            }
-        }
 
         try {
             notificationManager.notify(item.catalogNumber, notification)

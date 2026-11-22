@@ -11,8 +11,6 @@ import androidx.compose.runtime.Immutable
  * @param soundEnabled 通知声音开关
  * @param vibrationEnabled 通知振动开关
  * @param wearableEnabled 是否把提醒同步到手环（小米手环快应用，AOS 前 1 分钟）
- * @param islandEnabled 是否以小米超级岛/焦点通知形态展示（HyperOS 2/3 设备生效，
- *   其他设备自动退回普通通知）
  */
 @Immutable
 data class ReminderSettings(
@@ -21,8 +19,7 @@ data class ReminderSettings(
     val repeatMode: RepeatMode = RepeatMode.ALWAYS,
     val soundEnabled: Boolean = true,
     val vibrationEnabled: Boolean = true,
-    val wearableEnabled: Boolean = false,
-    val islandEnabled: Boolean = true
+    val wearableEnabled: Boolean = false
 )
 
 /**

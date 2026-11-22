@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Watch
@@ -99,25 +98,6 @@ fun LabRouteScreenMaterial() {
                                 }
                             )
                         }
-                    }
-                )
-            }
-            // 小米超级岛：整体从设置页迁移而来
-            item {
-                SegmentedColumn(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    content = listOf {
-                        SegmentedSwitchItem(
-                            icon = Icons.Filled.Lightbulb,
-                            title = stringResource(id = R.string.island_enable),
-                            summary = stringResource(id = R.string.island_enable_desc),
-                            checked = settings.islandEnabled,
-                            onCheckedChange = { enabled ->
-                                mainViewModel.updateReminderSettings(
-                                    settings.copy(islandEnabled = enabled)
-                                )
-                            }
-                        )
                     }
                 )
             }

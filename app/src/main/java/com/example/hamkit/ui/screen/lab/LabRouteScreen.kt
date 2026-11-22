@@ -19,7 +19,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.rounded.Science
 import androidx.compose.material.icons.rounded.Watch
 import androidx.compose.material.icons.rounded.Notifications
-import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -167,33 +166,6 @@ fun LabRouteScreenMiuix() {
                                 )
                             },
                             onClick = mainViewModel::sendTestWearableAlert
-                        )
-                    }
-                }
-                // 小米超级岛：整体从设置页迁移而来
-                item {
-                    Card(
-                        modifier = Modifier
-                            .padding(start = 16.dp, end = 16.dp, top = 12.dp)
-                            .fillMaxWidth(),
-                    ) {
-                        SwitchPreference(
-                            title = stringResource(id = R.string.island_enable),
-                            summary = stringResource(id = R.string.island_enable_desc),
-                            startAction = {
-                                androidx.compose.material3.Icon(
-                                    Icons.Rounded.Lightbulb,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    contentDescription = stringResource(id = R.string.island_enable),
-                                    tint = colorScheme.onBackground
-                                )
-                            },
-                            checked = settings.islandEnabled,
-                            onCheckedChange = { enabled ->
-                                mainViewModel.updateReminderSettings(
-                                    settings.copy(islandEnabled = enabled)
-                                )
-                            }
                         )
                     }
                 }

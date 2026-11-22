@@ -58,9 +58,7 @@ class ReminderReceiver : BroadcastReceiver() {
 
                     // 渠道可能未创建（首次触发）或被用户修改，重新创建一次保证一致
                     helper.createChannel(settings)
-                    // 岛通知开关跟随提醒总开关：提醒开了岛开关才生效（IslandParams 内部
-                    // 还会做设备能力探测，非小米设备自动退回普通通知）
-                    helper.showPassReminder(item, islandEnabled = settings.islandEnabled)
+                    helper.showPassReminder(item)
                 }
             } finally {
                 pendingResult.finish()

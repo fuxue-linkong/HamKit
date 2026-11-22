@@ -1,5 +1,11 @@
 # 小米超级岛（Xiaomi HyperIsland）通知接入研究与实现记录
 
+> **⚠️ 方案已弃用（2026-11-22）**：本方案的 `miui.focus.param` extras 代码已从工程中全部移除，
+> 通知能力改走 Android 16 原生 Live Updates（`Notification.ProgressStyle`），见
+> `docs/ANDROID_LIVE_UPDATES.md`。本文件保留为研究记录——超级岛需要企业认证、场景预审、
+> 正式提报、白名单联调与灰度上线，流程成本高且仅覆盖小米设备；原生 API 无需审核、
+> Android 16+ 全设备通用。未来若要重启超级岛接入，本文档第二节的 extras 协议仍然有效。
+
 > 研究时间：2026-11-22 · 分支：miuix · 数据来源：小米澎湃OS开发者平台官方文档
 > - [业务介绍](https://dev.mi.com/xiaomihyperos/documentation/detail?pId=2140)
 > - [接入流程](https://dev.mi.com/xiaomihyperos/documentation/detail?pId=2132)
