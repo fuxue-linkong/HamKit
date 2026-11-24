@@ -31,6 +31,15 @@
 
     <!-- 日程提醒所需权限 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!--
+      Android 16 QPR2+ Live Updates（实时动态通知）：允许通知升级为
+      锁屏顶部卡片 / 通知栏置顶 / 状态栏 chip。
+      非运行时权限（manifest 声明即可），配合
+      NotificationCompat.Builder.setRequestPromotedOngoing(true) 使用；
+      androidx.core 1.17.0 起提供该 API。用户可在系统设置中按应用关闭。
+    -->
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />

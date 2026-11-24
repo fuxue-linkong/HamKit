@@ -62,12 +62,21 @@ class AprsService : Service() {
     }
 
     private fun buildNotification(text: String): Notification {
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("APRS")
             .setContentText(text)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
+
+        // Android 16 QPR2+ Live Updates：把 APRS 连接状态升级为
+        // 锁屏顶部卡片 / 通知栏置顶 / 状态栏 chip（资格详见官方文档）。
+        // 前提：manifest 已声明 POST_PROMOTED_NOTIFICATIONS 权限；
+        // 需要 androidx.core 1.17.0+ 的 NotificationCompat API，
+        // 旧版本库上编译期不可见，运行时也无需调用（extras 方案兼容性差，不用）。
+        if (Build.VERSION.SDK_INT >= 36) {
+            builder.setRequestPromotedOngoing(true)
+        }
+        return builder.build()
     }
 }
